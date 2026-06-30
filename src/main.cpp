@@ -1,17 +1,8 @@
-#include "test.hpp"
+#include "cli.hpp"
 #include <iostream>
 
-int main()
+int main(int argc, char** argv)
 {
     std::cout << std::unitbuf;
-
-    const VectorsLoader::RunSummary summary = run_all_tests();
-
-    std::cout << "\n============================\n";
-    std::cout << " SUMMARY\n";
-    std::cout << "============================\n";
-    std::cout << "Passed: " << summary.passed << "\n";
-    std::cout << "Failed: " << summary.failed << "\n";
-
-    return summary.failed == 0 ? 0 : 1;
+    return Cli::Run(argc, argv);
 }

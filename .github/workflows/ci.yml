@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Build
+        run: make
+
+      - name: Run regression tests
+        run: make run
+
+      - name: Build C example
+        run: make example-c
+
+      - name: Run C example (MLP)
+        run: ./examples/infer_c models/test_mlp.json 1 2
+
+      - name: Run C example (CNN)
+        run: ./examples/infer_c models/cnn_4x4_single.json 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+
+      - name: CLI smoke test
+        run: |
+          ./netkit run models/test_mlp.json --input 1,2
+          ./netkit inspect models/test_mlp.json

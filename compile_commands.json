@@ -6,6 +6,11 @@
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/cli.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/cli.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
     "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/test.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/test.cpp"
   },
@@ -36,11 +41,6 @@
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/inference.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/inference.cpp"
-  },
-  {
-    "directory": "/Users/jimlavrenz/workspace/netkit",
     "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/mlp.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/mlp.cpp"
   },
@@ -63,5 +63,15 @@
     "directory": "/Users/jimlavrenz/workspace/netkit",
     "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/vectors_loader.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/vectors_loader.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/netkit_api.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/netkit_api.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -c examples/infer_c.c",
+    "file": "/Users/jimlavrenz/workspace/netkit/examples/infer_c.c"
   }
 ]

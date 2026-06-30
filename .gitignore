@@ -1,8 +1,13 @@
 # Executables
 netkit
+examples/infer_c
+
+# Libraries
+libnetkit.a
 
 # Object files
 *.o
+*.o.tmp
 
 # VS Code
 .vscode/
@@ -12,3 +17,6 @@ netkit.dSYM/
 
 # macOS
 .DS_Store
+
+# clangd index cache
+.cache/
