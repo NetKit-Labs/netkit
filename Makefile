@@ -5,7 +5,7 @@
 # Common targets:
 #   make              — netkit CLI + libnetkit.a (default)
 #   make build-all    — netkit + usage examples + C API test binary
-#   make test         — C++ regression, then C API regression (18 inference cases)
+#   make test         — C++ regression, then C API regression (36 inference cases)
 #   make test-cpp     — ./netkit test
 #   make test-c       — ./tests/test_c_api
 #   make examples     — infer_cpp + infer_c

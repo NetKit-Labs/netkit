@@ -284,7 +284,7 @@ namespace Cli {
 }
 ```
 
-Commands: `test`, `run <model.json> --input ...`, `inspect <model.json>`. Full reference: [CLI.md](CLI.md).
+Commands: `test`, `run <model.json> --input ...`, `inspect <model.json> [--full]`, `help` / `-h` / `--help`. Full reference: [CLI.md](CLI.md).
 
 ---
 

@@ -30,8 +30,10 @@ Each case:
 
 1. Loads a 784-float input from MNIST test set
 2. Runs `./netkit test` MNIST suite (or `run_mnist_tests()`)
-3. Compares **each of the 10 output neurons** to reference within tolerance (`0.05` default)
+3. Compares all 10 softmax outputs to reference within tolerance (`0.05` default)
 4. Checks **classification** (argmax vs label)
+
+Console output shows the predicted digit, winner probability, and any runner-up classes above `0.01` — not all ten neurons (most are `0.0000` after softmax).
 
 The MNIST suite uses a **2 MiB** dedicated arena (weights alone need ~400 KiB).
 

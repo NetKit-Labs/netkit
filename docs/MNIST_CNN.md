@@ -40,6 +40,8 @@ Recorded in `models/mnist_cnn/training_meta.json`.
 | `models/mnist_cnn/case_*.expected.bin` | 10 softmax outputs |
 | `tools/export_mnist_cnn.py` | Train + export script |
 
+Each case loads binary input/expected tensors, compares all 10 softmax outputs within tolerance, and checks argmax vs label. Console output shows predicted class, winner probability, and runner-ups above `0.01` (see [TESTING.md](TESTING.md)).
+
 ## Running
 
 MNIST CNN tests run automatically in `make test` / `./netkit test` — see [TESTING.md](TESTING.md).

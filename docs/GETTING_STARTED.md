@@ -185,4 +185,4 @@ netkit/
 - Read [TESTING.md](TESTING.md) for regression suite layout
 - Read [CLI.md](CLI.md) for `test`, `run`, and `inspect`
 - Add a regression case — [VECTORS_TESTS.md](VECTORS_TESTS.md)
-- Use `./netkit inspect` to size your arena before deploying to embedded targets
+- Use `./netkit inspect --full` to size your arena before deploying to embedded targets

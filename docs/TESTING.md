@@ -44,6 +44,12 @@ Sections printed in order:
 3. **MNIST MLP TESTS** — `run_mnist_tests()` in `src/test_mnist.cpp`  
 4. **MNIST CNN TESTS** — `run_mnist_cnn_tests()` in `src/test_mnist.cpp`
 
+## Test output
+
+**Hand vector cases** print the input tensor, then a per-output line (`out[i]: actual=… expected=…`) so small models show meaningful numeric checks. See [VECTORS_TESTS.md](VECTORS_TESTS.md).
+
+**MNIST cases** print predicted class, winner softmax probability, and any runner-up outputs above `0.01` (most classes stay at `0.0000` after softmax and are omitted from the log). All 10 outputs are still compared internally within tolerance.
+
 ## C API suite (`make test-c`)
 
 Entry: `./tests/test_c_api` (C23).
