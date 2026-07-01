@@ -486,7 +486,7 @@ namespace ModelLoader
         }
 
         float_count = static_cast<std::size_t>(file_size / sizeof(float));
-        void* buffer = arena.alloc(file_size);
+        void* buffer = arena.alloc(file_size, alignof(float));
         if (!buffer)
         {
             std::fclose(file);
@@ -598,7 +598,7 @@ namespace ModelLoader
         if (float_count != expected_floats)
             return Fail(LoadStatus::BinSizeMismatch, "MLP .bin float count does not match architecture", NetworkKind::MLP);
 
-        void* network_mem = arena.alloc(sizeof(MLPNetwork));
+        void* network_mem = arena.alloc(sizeof(MLPNetwork), alignof(MLPNetwork));
         if (!network_mem)
             return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating MLPNetwork", NetworkKind::MLP);
 
@@ -728,7 +728,7 @@ namespace ModelLoader
         if (float_count != expected_floats)
             return Fail(LoadStatus::BinSizeMismatch, "CNN .bin float count does not match architecture", NetworkKind::CNN);
 
-        void* network_mem = arena.alloc(sizeof(CNNNetwork));
+        void* network_mem = arena.alloc(sizeof(CNNNetwork), alignof(CNNNetwork));
         if (!network_mem)
             return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating CNNNetwork", NetworkKind::CNN);
 

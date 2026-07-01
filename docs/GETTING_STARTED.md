@@ -16,6 +16,8 @@ No external dependencies beyond the standard library.
 
 All inference tensors, weights (`.bin`), and math use **float32** (`float`). There is no float64 path in the engine.
 
+Arena allocations use **explicit alignment** (`alignof(float)` for weights/tensors, `alignof(T)` for network structs). See [API.md — Memory model](API.md#memory-model).
+
 ## Build
 
 ```bash

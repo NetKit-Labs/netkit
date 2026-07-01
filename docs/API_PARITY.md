@@ -46,7 +46,7 @@ Both suites exercise the same eight vector models; the C suite adds direct API s
 | C++ | C |
 |-----|---|
 | `Arena::init` | `nk_arena_init` |
-| `Arena::alloc` | `nk_arena_alloc` |
+| `Arena::alloc` | `nk_arena_alloc` (size + alignment) |
 | `Arena::reset` | `nk_arena_reset` |
 | `Arena::capacity` / `offset` / `remaining` | `nk_arena_capacity`, `nk_arena_used`, `nk_arena_remaining` |
 | `Arena::kDefaultCapacity` | `NK_ARENA_DEFAULT_CAPACITY` |

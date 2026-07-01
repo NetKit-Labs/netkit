@@ -130,12 +130,27 @@ typedef struct nk_inspect_info {
 
 ```c
 void nk_arena_init(nk_arena_t* arena, void* memory, size_t size);
-void* nk_arena_alloc(nk_arena_t* arena, size_t size);
+void* nk_arena_alloc(nk_arena_t* arena, size_t size, size_t alignment);
 void nk_arena_reset(nk_arena_t* arena);
 size_t nk_arena_capacity(const nk_arena_t* arena);
 size_t nk_arena_used(const nk_arena_t* arena);
 size_t nk_arena_remaining(const nk_arena_t* arena);
 ```
+
+### Alignment
+
+`nk_arena_alloc` is a **bump allocator with explicit alignment**. When the current offset is not a multiple of `alignment`, padding bytes are skipped before the returned pointer. `alignment` must be a power of two (e.g. `4`, `8`, `16`).
+
+| Use | `alignment` |
+|-----|-------------|
+| Raw float buffers, tensor payload | `4` or `alignof(float)` |
+| Structs, pointers, `max_align_t` types | `8` or `alignof(T)` on 64-bit targets |
+
+Returns `NULL` when the arena is uninitialized, arguments are invalid (`size == 0`, bad alignment), or the arena is full.
+
+**Backing memory** passed to `nk_arena_init` should be declared `alignas(max_align_t)`.
+
+Model load / run APIs allocate internally with the correct alignment; you only need `nk_arena_alloc` when building custom integrations on top of the C API.
 
 ## Tensor, ops, conv, MLP, CNN
 

@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdalign.h>
+#include <stdint.h>
 #include <string.h>
 
 static int g_failures = 0;
@@ -66,13 +67,31 @@ static void TestArena(void)
     ExpectTrue(nk_arena_capacity(&arena) == sizeof(memory), "arena capacity");
     ExpectTrue(nk_arena_used(&arena) == 0, "arena initially empty");
 
-    void* block = nk_arena_alloc(&arena, 64);
+    void* block = nk_arena_alloc(&arena, 64, 8);
     ExpectTrue(block != NULL, "arena alloc");
     ExpectTrue(nk_arena_used(&arena) == 64, "arena used after alloc");
     ExpectTrue(nk_arena_remaining(&arena) == sizeof(memory) - 64, "arena remaining");
 
     nk_arena_reset(&arena);
     ExpectTrue(nk_arena_used(&arena) == 0, "arena reset");
+}
+
+static void TestArenaAlignment(void)
+{
+    printf("\n--- arena alignment ---\n");
+
+    alignas(max_align_t) unsigned char memory[512];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    /* Simulate odd float-count weight blob (test_cnn.bin is 28 bytes). */
+    void* weights = nk_arena_alloc(&arena, 28, 4);
+    ExpectTrue(weights != NULL, "arena alloc weights");
+
+    void* network = nk_arena_alloc(&arena, 32, 8);
+    ExpectTrue(network != NULL, "arena alloc aligned struct after odd weight blob");
+    ExpectTrue(((uintptr_t)network % 8u) == 0u, "struct pointer 8-byte aligned");
+    ExpectTrue(nk_arena_used(&arena) > 28, "arena used includes alignment padding");
 }
 
 static void TestTensorOps(void)
@@ -195,6 +214,7 @@ int main(void)
     printf("============================\n");
 
     TestArena();
+    TestArenaAlignment();
     TestTensorOps();
     TestParseArchitecture();
     TestModelLoadRun();

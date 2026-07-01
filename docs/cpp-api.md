@@ -33,15 +33,15 @@ struct Arena {
     static constexpr std::size_t kDefaultCapacity = 64 * 1024;
 
     void init(void* memory, std::size_t size);
-    void* alloc(std::size_t size);   // nullptr on overflow
+    void* alloc(std::size_t size, std::size_t alignment);  // alignment: power of two
     void reset();
     std::size_t remaining() const;
-
-    std::byte* base;
-    std::size_t capacity;
-    std::size_t offset;
 };
 ```
+
+`alloc` inserts padding when the current offset is not a multiple of `alignment`. Use `alignof(float)` for tensor payloads and weight blobs; use `alignof(T)` for struct arrays and placement-new targets.
+
+**Why alignment matters:** weight `.bin` files can have an odd float count, leaving the arena offset at 4 mod 8 on 64-bit platforms. Without padding, a following `MLPNetwork` or `CNNNetwork` allocation would be misaligned for `placement new`. The engine passes the correct `alignof` at every internal call site.
 
 All network and tensor allocations during load/inference draw from the arena. No `free()` — call `reset()` to reuse the buffer.
 

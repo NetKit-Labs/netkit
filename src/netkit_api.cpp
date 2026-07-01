@@ -278,11 +278,11 @@ void nk_arena_init(nk_arena_t* arena, void* memory, size_t size)
     ArenaPtr(arena)->init(memory, size);
 }
 
-void* nk_arena_alloc(nk_arena_t* arena, size_t size)
+void* nk_arena_alloc(nk_arena_t* arena, size_t size, size_t alignment)
 {
     if (!arena)
         return nullptr;
-    return ArenaPtr(arena)->alloc(size);
+    return ArenaPtr(arena)->alloc(size, alignment);
 }
 
 void nk_arena_reset(nk_arena_t* arena)
@@ -495,7 +495,7 @@ nk_status_t nk_mlp_create(nk_arena_t* arena, uint32_t num_layers, nk_mlp_t* mlp)
     if (!arena || !mlp)
         return NK_ERR_INVALID_ARGUMENT;
     std::memset(mlp->storage, 0, sizeof(mlp->storage));
-    void* mem = ArenaPtr(arena)->alloc(sizeof(MLPNetwork));
+    void* mem = ArenaPtr(arena)->alloc(sizeof(MLPNetwork), alignof(MLPNetwork));
     if (!mem)
         return NK_ERR_ARENA_OVERFLOW;
     MLPNetwork* net = new (mem) MLPNetwork(num_layers, *ArenaPtr(arena));
@@ -543,7 +543,7 @@ nk_status_t nk_cnn_create(nk_arena_t* arena, uint32_t num_layers, nk_cnn_t* cnn)
     if (!arena || !cnn)
         return NK_ERR_INVALID_ARGUMENT;
     std::memset(cnn->storage, 0, sizeof(cnn->storage));
-    void* mem = ArenaPtr(arena)->alloc(sizeof(CNNNetwork));
+    void* mem = ArenaPtr(arena)->alloc(sizeof(CNNNetwork), alignof(CNNNetwork));
     if (!mem)
         return NK_ERR_ARENA_OVERFLOW;
     CNNNetwork* net = new (mem) CNNNetwork(num_layers, *ArenaPtr(arena));

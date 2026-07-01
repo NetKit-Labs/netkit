@@ -183,7 +183,7 @@ const char* nk_last_error(void);
 /* -------------------------------------------------------------------------- */
 
 void nk_arena_init(nk_arena_t* arena, void* memory, size_t size);
-void* nk_arena_alloc(nk_arena_t* arena, size_t size);
+void* nk_arena_alloc(nk_arena_t* arena, size_t size, size_t alignment);
 void nk_arena_reset(nk_arena_t* arena);
 size_t nk_arena_capacity(const nk_arena_t* arena);
 size_t nk_arena_used(const nk_arena_t* arena);

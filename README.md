@@ -32,7 +32,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **Dual API** — C23 (`netkit.h`) and C++26 (native headers)
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — High-level network abstractions with JSON + `.bin` loading
-- **Arena allocator** — Bump-pointer memory management (no heap in layer paths)
+- **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
 - **Vectors test runner** — Declarative regression tests in `*.vectors.json`
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 
@@ -148,7 +148,7 @@ Both suites cover the same eight vector models plus API-specific smoke checks.
 ## Design principles
 
 - **Lightweight** — Standard C/C++ only, no external dependencies
-- **Memory-conscious** — Arena allocator throughout
+- **Memory-conscious** — Arena bump allocator with explicit alignment; caller-owned backing buffer
 - **Single-threaded** — Sequential forward pass
 - **Inference-only** — No training
 

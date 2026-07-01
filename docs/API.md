@@ -100,9 +100,22 @@ Build the library with `make lib`.
 
 Both APIs require a caller-provided buffer for the arena. Default size is 64 KiB (`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`).
 
+**Backing buffer:** declare with `alignas(max_align_t)` / `alignas(std::max_align_t)` so the arena base address satisfies the platform’s strictest alignment.
+
+**Aligned bump allocation:** `Arena::alloc(size, alignment)` and `nk_arena_alloc(arena, size, alignment)` insert padding when the current offset is not a multiple of `alignment`. `alignment` must be a power of two. Returns `nullptr` on overflow or invalid arguments.
+
+| Allocation kind | Typical alignment |
+|-----------------|-------------------|
+| float tensors, weight `.bin` blobs | `alignof(float)` (4) |
+| Structs, placement `new`, pointer arrays | `alignof(T)` (usually 8 on 64-bit) |
+
+The engine uses these rules internally so odd-sized weight files (e.g. an odd float count) do not misalign network structs. Direct C callers using `nk_arena_alloc` must pass the correct alignment themselves.
+
 Size the buffer using `./netkit inspect` or `nk_inspect_model()`. When allocation fails, functions return an arena overflow error — there is no automatic growth.
 
 Call `nk_arena_reset()` / `Arena::reset()` between inference batches to reuse the same buffer.
+
+netkit implements its own minimal arena (~86 lines) rather than linking [memkit](https://github.com/jameslavrenz/memkit); alignment behavior matches memkit’s `static_arena` bump policy.
 
 ## Supported model format
 

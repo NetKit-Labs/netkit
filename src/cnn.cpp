@@ -57,8 +57,8 @@ static uint32_t CalcConvOutputDim(uint32_t input_dim, int kernel_size, int strid
 CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)
     : layers(nullptr), num_layers(num_layers), intermediate_outputs(nullptr), arena(arena)
 {
-    layers = static_cast<Conv2DLayer*>(arena.alloc(sizeof(Conv2DLayer) * num_layers));
-    intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers));
+    layers = static_cast<Conv2DLayer*>(arena.alloc(sizeof(Conv2DLayer) * num_layers, alignof(Conv2DLayer)));
+    intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers, alignof(Tensor)));
 }
 
 // No destructor - Arena manages all memory automatically

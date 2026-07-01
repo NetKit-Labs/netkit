@@ -51,8 +51,8 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
 MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
     : layers(nullptr), num_layers(num_layers), intermediate_outputs(nullptr), arena(arena)
 {
-    layers = static_cast<MLPLayer*>(arena.alloc(sizeof(MLPLayer) * num_layers));
-    intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers));
+    layers = static_cast<MLPLayer*>(arena.alloc(sizeof(MLPLayer) * num_layers, alignof(MLPLayer)));
+    intermediate_outputs = static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers, alignof(Tensor)));
 }
 
 // No destructor - Arena manages all memory automatically

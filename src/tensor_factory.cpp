@@ -57,7 +57,7 @@ namespace TensorFactory
         t.num_elements = rows * cols;
         t.bytes = t.num_elements * sizeof(float);
 
-        t.data = arena.alloc(t.bytes);
+        t.data = arena.alloc(t.bytes, alignof(float));
 
         return t;
     }
@@ -87,7 +87,7 @@ namespace TensorFactory
         t.num_elements = num_elements;
         t.bytes = num_elements * sizeof(float);
 
-        t.data = arena.alloc(t.bytes);
+        t.data = arena.alloc(t.bytes, alignof(float));
 
         return t;
     }
