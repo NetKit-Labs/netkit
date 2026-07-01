@@ -2,7 +2,7 @@
 
 This guide gets you from clone to running inference on the desktop in a few minutes.
 
-**Related docs:** [CLI](CLI.md) · [Model format](MODEL_FORMAT.md) · [Testing](TESTING.md) · [Vectors tests](VECTORS_TESTS.md) · [MNIST](MNIST.md) · [C API](c-api.md) · [C++ API](cpp-api.md)
+**Related docs:** [CLI](CLI.md) · [Arena](ARENA.md) · [Data types](DATATYPES.md) · [Model format](MODEL_FORMAT.md) · [Testing](TESTING.md) · [Vectors tests](VECTORS_TESTS.md) · [MNIST](MNIST.md) · [MNIST CNN](MNIST_CNN.md) · [C API](c-api.md) · [C++ API](cpp-api.md)
 
 ## Requirements
 
@@ -14,9 +14,9 @@ This guide gets you from clone to running inference on the desktop in a few minu
 
 No external dependencies beyond the standard library.
 
-All inference tensors, weights (`.bin`), and math use **float32** (`float`). There is no float64 path in the engine.
+All inference tensors, weights (`.bin`), and math use **float32** (`float`) today. There is no float64 path. Planned types: float16, int16, int8, int4 — see [DATATYPES.md](DATATYPES.md).
 
-Arena allocations use **explicit alignment** (`alignof(float)` for weights/tensors, `alignof(T)` for network structs). See [API.md — Memory model](API.md#memory-model).
+Arena allocations use **explicit alignment** (`alignof(float)` for weights/tensors, `alignof(T)` for network structs). See [ARENA.md](ARENA.md) and [API.md — Memory model](API.md#memory-model).
 
 ## Build
 

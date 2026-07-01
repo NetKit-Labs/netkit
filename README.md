@@ -2,7 +2,7 @@
 
 netkit is a C++26 neural network kit for on-device inference on MCUs and MPUs. It is developed and validated on the desktop, then deployed to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-Models are loaded from JSON architecture files and companion float32 `.bin` weight files.
+Models are loaded from JSON architecture files and companion float32 `.bin` weight files. **Inference is float32-only today**; float16, int16, int8, and int4 are on the roadmap — see [docs/DATATYPES.md](docs/DATATYPES.md).
 
 ## Documentation
 
@@ -10,6 +10,8 @@ Models are loaded from JSON architecture files and companion float32 `.bin` weig
 |-------|-------------|
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, and first inference in minutes |
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
+| **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
+| **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int8 roadmap |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` commands |
 | **[Model File Format](docs/MODEL_FORMAT.md)** | JSON architecture + float32 `.bin` weights |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI |

@@ -134,6 +134,26 @@ static void TestParseArchitecture(void)
     ExpectTrue(info.kind == NK_NETWORK_MLP, "mlp kind");
     ExpectTrue(info.input_elements == 2, "mlp input elements");
     ExpectTrue(info.output_elements == 2, "mlp output elements");
+
+    ExpectStatus(nk_parse_architecture("models/mnist_cnn.json", &info), NK_OK, "parse mnist_cnn.json");
+    ExpectTrue(info.kind == NK_NETWORK_CNN, "mnist cnn kind");
+    ExpectTrue(info.input_elements == 784, "mnist cnn input elements");
+    ExpectTrue(info.output_elements == 10, "mnist cnn output elements");
+}
+
+static void TestMnistCnnLoad(void)
+{
+    printf("\n--- mnist cnn load ---\n");
+
+    alignas(max_align_t) static unsigned char memory[4U * 1024U * 1024U];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    nk_cnn_t cnn;
+    nk_arch_info_t info = {0};
+    ExpectStatus(nk_cnn_load("models/mnist_cnn.json", &arena, &cnn, &info), NK_OK, "nk_cnn_load mnist_cnn");
+    ExpectTrue(nk_cnn_is_valid(&cnn), "mnist cnn valid");
+    ExpectTrue(info.output_elements == 10, "loaded mnist cnn output count");
 }
 
 static void TestModelLoadRun(void)
@@ -217,6 +237,7 @@ int main(void)
     TestArenaAlignment();
     TestTensorOps();
     TestParseArchitecture();
+    TestMnistCnnLoad();
     TestModelLoadRun();
     TestVectorsRegression();
 

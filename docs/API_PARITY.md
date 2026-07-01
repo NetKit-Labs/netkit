@@ -122,12 +122,17 @@ Both suites exercise the same **28 inference regression cases** (8 hand vector +
 
 | C++ | C |
 |-----|---|
+| `CnnBlockType` | `nk_cnn_block_type_t` |
 | `ConvActivationType` | `nk_conv_activation_t` |
 | `CNNNetwork` | `nk_cnn_t` |
 | `CNNNetwork::IsValid` | `nk_cnn_is_valid` |
 | `CNNNetwork` constructor | `nk_cnn_create` |
-| `InitLayer` | `nk_cnn_init_layer` |
+| `InitConvLayer` / `InitLayer` | `nk_cnn_init_conv_layer`, `nk_cnn_init_layer` |
+| `InitPoolLayer` | `nk_cnn_init_pool_layer` |
+| `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
+| `InitDenseLayer` | `nk_cnn_init_dense_layer` |
 | `forward` | `nk_cnn_forward` |
+| `LoadCNN` (mixed conv/pool/flatten/dense JSON) | `nk_cnn_load` |
 
 ### ModelLoader (`model_loader.hpp`)
 

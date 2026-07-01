@@ -1,8 +1,11 @@
 /*
  * netkit.h — C23 public API for netkit
  *
- * Inference uses float32 only. Documentation:
+ * Inference uses float32 only today. Planned: float16, int16, int8, int4.
+ * Documentation:
  *   docs/GETTING_STARTED.md  — build, test, first inference
+ *   docs/DATATYPES.md        — float32 today, quantized types roadmap
+ *   docs/ARENA.md            — bump allocator memory model
  *   docs/c-api.md            — full C API reference
  *   docs/API_PARITY.md       — C ↔ C++ symbol map
  *
@@ -97,6 +100,14 @@ typedef enum nk_conv_activation
     NK_CONV_ACTIVATION_RELU6,
     NK_CONV_ACTIVATION_SOFTMAX
 } nk_conv_activation_t;
+
+typedef enum nk_cnn_block_type
+{
+    NK_CNN_BLOCK_CONV2D = 0,
+    NK_CNN_BLOCK_MAX_POOL2D,
+    NK_CNN_BLOCK_FLATTEN,
+    NK_CNN_BLOCK_DENSE
+} nk_cnn_block_type_t;
 
 /* -------------------------------------------------------------------------- */
 /* Opaque / value handles                                                     */
@@ -265,6 +276,33 @@ nk_status_t nk_mlp_forward(nk_mlp_t* mlp,
 
 nk_status_t nk_cnn_create(nk_arena_t* arena, uint32_t num_layers, nk_cnn_t* cnn);
 bool nk_cnn_is_valid(const nk_cnn_t* cnn);
+
+/* Conv2D block (nk_cnn_init_layer is a backward-compatible alias). */
+nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
+                                   uint32_t layer_idx,
+                                   int kernel_size,
+                                   int stride,
+                                   int in_channels,
+                                   int out_channels,
+                                   float* weights,
+                                   float* bias,
+                                   nk_conv_activation_t activation,
+                                   float leaky_alpha);
+
+nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn,
+                                   uint32_t layer_idx,
+                                   int pool_size,
+                                   int stride);
+
+nk_status_t nk_cnn_init_flatten_layer(nk_cnn_t* cnn, uint32_t layer_idx);
+
+nk_status_t nk_cnn_init_dense_layer(nk_cnn_t* cnn,
+                                    uint32_t layer_idx,
+                                    const nk_tensor_t* weights,
+                                    const nk_tensor_t* bias,
+                                    nk_activation_t activation,
+                                    float leaky_alpha);
+
 nk_status_t nk_cnn_init_layer(nk_cnn_t* cnn,
                               uint32_t layer_idx,
                               int kernel_size,
@@ -275,6 +313,7 @@ nk_status_t nk_cnn_init_layer(nk_cnn_t* cnn,
                               float* bias,
                               nk_conv_activation_t activation,
                               float leaky_alpha);
+
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            nk_arena_t* arena,
                            const nk_tensor_t* input,

@@ -1,6 +1,6 @@
 # Model File Format
 
-netkit models are **file bundles**: a JSON architecture descriptor and a companion binary weight file. All numeric values are **float32** (IEEE-754 single precision, little-endian on disk).
+netkit models are **file bundles**: a JSON architecture descriptor and a companion binary weight file. All numeric values are **float32** (IEEE-754 single precision, little-endian on disk). Quantized types (float16, int16, int8, int4) are planned — see [DATATYPES.md](DATATYPES.md).
 
 ## Bundle layout
 

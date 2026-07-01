@@ -2,7 +2,7 @@
 
 Headers live in [`include/`](../include/). All implementation files use `-std=c++26`.
 
-**Numeric type:** inference uses **float32 only** — `DataType::Float32`, `float` tensors, float32 `.bin` weights, and `expf`/`tanhf` in activations. No double-precision inference path.
+**Numeric type:** inference uses **float32 only** today — see [DATATYPES.md](DATATYPES.md) for the quantized-type roadmap (float16, int16, int8, int4 planned).
 
 ## Core headers
 
@@ -27,6 +27,8 @@ For a stable C interface from C++ projects or embedded firmware, use [`netkit.h`
 ---
 
 ## Arena (`arena.hpp`)
+
+See [ARENA.md](ARENA.md) for the full bump-allocator guide.
 
 ```cpp
 struct Arena {
@@ -158,26 +160,33 @@ Weight matrix shape per layer: `[in_features, out_features]` row-major.
 
 ## CNNNetwork (`cnn.hpp`)
 
+CNN pipelines support mixed blocks: conv2d, max_pool2d, flatten, and dense (classification head). See [MODEL_FORMAT.md](MODEL_FORMAT.md).
+
 ```cpp
+enum class CnnBlockType { Conv2D, MaxPool2D, Flatten, Dense };
+
 class CNNNetwork {
 public:
     CNNNetwork(uint32_t num_layers, Arena& arena);
     bool IsValid() const;
 
-    void InitLayer(uint32_t layer_idx,
-                   int kernel_size, int stride,
-                   int in_channels, int out_channels,
-                   float* weights, float* bias,
-                   ConvActivationType activation,
-                   float leaky_alpha = 0.01f);
+    void InitConvLayer(uint32_t layer_idx, ...);   // conv2d + activation
+    void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+    void InitFlattenLayer(uint32_t layer_idx);
+    void InitDenseLayer(uint32_t layer_idx, const Tensor& W, const Tensor& b,
+                        ActivationType activation, float leaky_alpha = 0.01f);
+
+    void InitLayer(...);  // alias for InitConvLayer (pure conv stacks)
 
     Tensor& forward(const Tensor& input, Arena& arena);
-    Conv2DLayer& GetLayer(uint32_t idx);
+    CnnBlock& GetBlock(uint32_t idx);
     Tensor& GetOutput();
 };
 ```
 
-Calculates intermediate tensor shapes automatically. Returns a tensor with null `data` on arena overflow.
+Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow.
+
+`ModelLoader::LoadCNN` builds full pipelines from JSON (including `models/mnist_cnn.json`).
 
 ---
 

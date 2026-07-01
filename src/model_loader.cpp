@@ -363,6 +363,56 @@ namespace ModelLoader
         }
     }
 
+    uint32_t ComputeMlpOutputElements(const ArchitectureSpec& spec)
+    {
+        if (spec.num_layers == 0)
+            return 0;
+        return spec.input_shape[0] * spec.dense_layers[spec.num_layers - 1].units;
+    }
+
+    uint32_t ComputeCnnOutputElements(const ArchitectureSpec& spec)
+    {
+        uint32_t h = spec.input_shape[0];
+        uint32_t w = spec.input_shape[1];
+        uint32_t c = spec.input_shape[2];
+        uint32_t features = h * w * c;
+        bool flattened = false;
+
+        for (uint32_t i = 0; i < spec.num_layers; ++i)
+        {
+            switch (spec.cnn_layer_kinds[i])
+            {
+                case CnnLayerKind::Conv2D:
+                {
+                    const ConvLayerConfig& layer = spec.conv_layers[i];
+                    h = (h - layer.kernel_size) / layer.stride + 1;
+                    w = (w - layer.kernel_size) / layer.stride + 1;
+                    c = layer.filters;
+                    break;
+                }
+                case CnnLayerKind::MaxPool2D:
+                {
+                    const PoolLayerConfig& layer = spec.pool_layers[i];
+                    h = (h - layer.pool_size) / layer.stride + 1;
+                    w = (w - layer.pool_size) / layer.stride + 1;
+                    break;
+                }
+                case CnnLayerKind::Flatten:
+                    features = h * w * c;
+                    flattened = true;
+                    break;
+                case CnnLayerKind::Dense:
+                    features = spec.cnn_dense_layers[i].units;
+                    flattened = true;
+                    break;
+            }
+        }
+
+        if (flattened)
+            return features;
+        return h * w * c;
+    }
+
     LoadResult ParseArchitecture(const char* json_path, ArchitectureSpec& spec)
     {
         spec = {};

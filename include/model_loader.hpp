@@ -89,6 +89,9 @@ namespace ModelLoader
     // Parse JSON architecture only (no .bin load, no network construction).
     LoadResult ParseArchitecture(const char* json_path, ArchitectureSpec& spec);
 
+    uint32_t ComputeMlpOutputElements(const ArchitectureSpec& spec);
+    uint32_t ComputeCnnOutputElements(const ArchitectureSpec& spec);
+
     void PrintArchitecture(const ArchitectureSpec& spec);
 
     void PrintWeightsSummary(const char* json_path,

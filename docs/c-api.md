@@ -57,7 +57,18 @@ const char* nk_last_error(void);  // detail after failed call; thread-local
 
 ### `nk_dtype_t`, `nk_activation_t`, `nk_conv_activation_t`
 
-Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`.
+Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. **Only `NK_DTYPE_FLOAT32` is used for inference today** — see [DATATYPES.md](DATATYPES.md).
+
+### `nk_cnn_block_type_t`
+
+| Value | C++ `CnnBlockType` |
+|-------|---------------------|
+| `NK_CNN_BLOCK_CONV2D` | `Conv2D` |
+| `NK_CNN_BLOCK_MAX_POOL2D` | `MaxPool2D` |
+| `NK_CNN_BLOCK_FLATTEN` | `Flatten` |
+| `NK_CNN_BLOCK_DENSE` | `Dense` |
+
+Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from JSON automatically.
 
 ### `nk_tensor_t`, `nk_conv2d_t`
 
@@ -159,7 +170,23 @@ See [`netkit.h`](../include/netkit.h) for:
 - `nk_tensor_*` — create, view, fill, print, data access
 - `nk_ops_*` — validation, arithmetic, activations
 - `nk_conv2d_forward`
-- `nk_mlp_*` / `nk_cnn_*` — create, init layer, forward
+- `nk_mlp_*` — create, init layer, forward
+- `nk_cnn_*` — create, init blocks, forward
+
+### CNN pipeline (C)
+
+Hybrid CNN models (conv → max pool → flatten → dense) use:
+
+```c
+nk_cnn_init_conv_layer(cnn, idx, kernel, stride, in_c, out_c, w, b, act, alpha);
+nk_cnn_init_pool_layer(cnn, idx, pool_size, stride);
+nk_cnn_init_flatten_layer(cnn, idx);
+nk_cnn_init_dense_layer(cnn, idx, &weights, &bias, NK_ACTIVATION_RELU, 0.01f);
+```
+
+`nk_cnn_init_layer` is a backward-compatible alias for `nk_cnn_init_conv_layer`.
+
+For file-based models (including `models/mnist_cnn.json`), use `nk_cnn_load` or `nk_model_load` — all block types are configured from JSON.
 
 ## Model loader
 

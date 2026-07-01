@@ -13,18 +13,21 @@ Both APIs share:
 - **JSON + `.bin`** model loading
 - **MLP** and **CNN** forward-only inference
 - **NHWC** tensor layout for convolutions
-- **Float32 only** — all tensors, weights, and math use IEEE-754 single precision (`float`); no float64 inference path
+- **Float32 only (today)** — all inference tensors, weights, and math use IEEE-754 single precision; float16, int16, int8, and int4 planned ([DATATYPES.md](DATATYPES.md))
 
 ## Documentation map
 
 | Document | Contents |
 |----------|----------|
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Build, test, first inference, examples |
+| [ARENA.md](ARENA.md) | Bump allocator memory model |
+| [DATATYPES.md](DATATYPES.md) | Float32 today; float16/int roadmap |
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect` |
 | [MODEL_FORMAT.md](MODEL_FORMAT.md) | JSON schema, `.bin` weight layout |
 | [TESTING.md](TESTING.md) | Regression suites, Make targets, CI |
 | [VECTORS_TESTS.md](VECTORS_TESTS.md) | Hand `*.vectors.json` format |
 | [MNIST.md](MNIST.md) | Trained MNIST MLP test bundle |
+| [MNIST_CNN.md](MNIST_CNN.md) | Trained MNIST CNN test bundle |
 | [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map and parity policy |
 | [c-api.md](c-api.md) | Full C23 reference (`netkit.h`) |
 | [cpp-api.md](cpp-api.md) | Full C++26 reference (headers in `include/`) |
@@ -99,6 +102,8 @@ Build the library with `make lib`.
 | C++ | `ModelLoader::LoadResult` with `LoadStatus` and `message` |
 
 ## Memory model
+
+Full guide: [ARENA.md](ARENA.md). Data type constraints: [DATATYPES.md](DATATYPES.md).
 
 Both APIs require a caller-provided buffer for the arena. Default size is 64 KiB (`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`).
 

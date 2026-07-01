@@ -172,24 +172,12 @@ namespace
 
     uint32_t MlpOutputElements(const ModelLoader::ArchitectureSpec& spec)
     {
-        if (spec.num_layers == 0)
-            return 0;
-        return spec.input_shape[0] * spec.dense_layers[spec.num_layers - 1].units;
+        return ModelLoader::ComputeMlpOutputElements(spec);
     }
 
     uint32_t CnnOutputElements(const ModelLoader::ArchitectureSpec& spec)
     {
-        uint32_t h = spec.input_shape[0];
-        uint32_t w = spec.input_shape[1];
-        uint32_t c = spec.input_shape[2];
-        for (uint32_t i = 0; i < spec.num_layers; ++i)
-        {
-            const ModelLoader::ConvLayerConfig& layer = spec.conv_layers[i];
-            h = (h - layer.kernel_size) / layer.stride + 1;
-            w = (w - layer.kernel_size) / layer.stride + 1;
-            c = layer.filters;
-        }
-        return h * w * c;
+        return ModelLoader::ComputeCnnOutputElements(spec);
     }
 
     void FillArchInfo(const ModelLoader::ArchitectureSpec& spec, nk_arch_info_t* info)
@@ -558,6 +546,64 @@ bool nk_cnn_is_valid(const nk_cnn_t* cnn)
     return cnn && CnnPtr(cnn)->net && CnnPtr(cnn)->net->IsValid();
 }
 
+nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
+                                   uint32_t layer_idx,
+                                   int kernel_size,
+                                   int stride,
+                                   int in_channels,
+                                   int out_channels,
+                                   float* weights,
+                                   float* bias,
+                                   nk_conv_activation_t activation,
+                                   float leaky_alpha)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return NK_ERR_NOT_INITIALIZED;
+    CnnPtr(cnn)->net->InitConvLayer(static_cast<uint32_t>(layer_idx),
+                                    kernel_size,
+                                    stride,
+                                    in_channels,
+                                    out_channels,
+                                    weights,
+                                    bias,
+                                    ToCnnActivation(activation),
+                                    leaky_alpha);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx, int pool_size, int stride)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return NK_ERR_NOT_INITIALIZED;
+    CnnPtr(cnn)->net->InitPoolLayer(layer_idx, pool_size, stride);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_flatten_layer(nk_cnn_t* cnn, uint32_t layer_idx)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return NK_ERR_NOT_INITIALIZED;
+    CnnPtr(cnn)->net->InitFlattenLayer(layer_idx);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_dense_layer(nk_cnn_t* cnn,
+                                    uint32_t layer_idx,
+                                    const nk_tensor_t* weights,
+                                    const nk_tensor_t* bias,
+                                    nk_activation_t activation,
+                                    float leaky_alpha)
+{
+    if (!nk_cnn_is_valid(cnn) || !weights || !bias)
+        return NK_ERR_INVALID_ARGUMENT;
+    CnnPtr(cnn)->net->InitDenseLayer(layer_idx,
+                                     *AsTensor(weights),
+                                     *AsTensor(bias),
+                                     ToMlpActivation(activation),
+                                     leaky_alpha);
+    return NK_OK;
+}
+
 nk_status_t nk_cnn_init_layer(nk_cnn_t* cnn,
                               uint32_t layer_idx,
                               int kernel_size,
@@ -569,18 +615,16 @@ nk_status_t nk_cnn_init_layer(nk_cnn_t* cnn,
                               nk_conv_activation_t activation,
                               float leaky_alpha)
 {
-    if (!nk_cnn_is_valid(cnn))
-        return NK_ERR_NOT_INITIALIZED;
-    CnnPtr(cnn)->net->InitLayer(static_cast<uint32_t>(layer_idx),
-                                kernel_size,
-                                stride,
-                                in_channels,
-                                out_channels,
-                                weights,
-                                bias,
-                                ToCnnActivation(activation),
-                                leaky_alpha);
-    return NK_OK;
+    return nk_cnn_init_conv_layer(cnn,
+                                  layer_idx,
+                                  kernel_size,
+                                  stride,
+                                  in_channels,
+                                  out_channels,
+                                  weights,
+                                  bias,
+                                  activation,
+                                  leaky_alpha);
 }
 
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
