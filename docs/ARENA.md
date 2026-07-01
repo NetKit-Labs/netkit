@@ -90,7 +90,7 @@ High-level loaders (`nk_model_load`, `nk_mlp_load`, `nk_cnn_load`) allocate from
 
 ## Sizing for deployment
 
-1. Run `./netkit inspect models/your_model.json` (or `nk_inspect_model`).
+1. Run `./netkit inspect models/your_model.json --full` (or `nk_inspect_model`).
 2. Note **arena bytes after forward** — add headroom (typically 1.5–2× for batch variance).
 3. Use one arena per model context, or `reset()` between runs on the same buffer.
 

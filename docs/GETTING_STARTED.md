@@ -53,6 +53,8 @@ Each suite runs **28 inference regression cases** (8 hand-written vector models 
 See [CLI.md](CLI.md) for full command reference.
 
 ```bash
+./netkit help    # or: ./netkit -h  /  ./netkit --help
+
 # MLP: 2 inputs -> 2 outputs
 ./netkit run models/test_mlp.json --input 1,2
 
@@ -64,9 +66,10 @@ See [CLI.md](CLI.md) for full command reference.
 
 ```bash
 ./netkit inspect models/test_mlp.json
+./netkit inspect models/test_mlp.json --full
 ```
 
-Prints architecture, weight file info, and arena memory usage after load and forward pass.
+Default mode prints a boxed network summary. `--full` adds weight file info and arena memory usage after load and forward pass.
 
 ## Use the C API (C23)
 

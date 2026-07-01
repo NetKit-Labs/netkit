@@ -22,7 +22,7 @@ Both APIs share:
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Build, test, first inference, examples |
 | [ARENA.md](ARENA.md) | Bump allocator memory model |
 | [DATATYPES.md](DATATYPES.md) | Float32 today; float16/int roadmap |
-| [CLI.md](CLI.md) | `netkit test`, `run`, `inspect` |
+| [CLI.md](CLI.md) | `netkit test`, `run`, `inspect`, help, network summary |
 | [MODEL_FORMAT.md](MODEL_FORMAT.md) | JSON schema, `.bin` weight layout |
 | [TESTING.md](TESTING.md) | Regression suites, Make targets, CI |
 | [VECTORS_TESTS.md](VECTORS_TESTS.md) | Hand `*.vectors.json` format |
@@ -66,7 +66,10 @@ The `netkit` binary is a desktop development tool (C++26). See [CLI.md](CLI.md).
 |---------|-------------|
 | `netkit test` | Run all registered `*.vectors.json` regression tests |
 | `netkit run <model.json> --input a,b,c` | Single inference |
-| `netkit inspect <model.json>` | Architecture, weights, arena sizing |
+| `netkit inspect <model.json>` | Boxed network summary (`--full` for weights/arena sizing) |
+| `netkit help`, `netkit -h`, `netkit --help` | Print CLI usage |
+
+Full option reference: [CLI.md](CLI.md).
 
 ## Language standards
 
@@ -118,7 +121,7 @@ Both APIs require a caller-provided buffer for the arena. Default size is 64 KiB
 
 The engine uses these rules internally so odd-sized weight files (e.g. an odd float count) do not misalign network structs. Direct C callers using `nk_arena_alloc` must pass the correct alignment themselves.
 
-Size the buffer using `./netkit inspect` or `nk_inspect_model()`. When allocation fails, functions return an arena overflow error — there is no automatic growth.
+Size the buffer using `./netkit inspect --full` or `nk_inspect_model()`. When allocation fails, functions return an arena overflow error — there is no automatic growth.
 
 Call `nk_arena_reset()` / `Arena::reset()` between inference batches to reuse the same buffer.
 

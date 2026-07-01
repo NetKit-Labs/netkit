@@ -213,6 +213,7 @@ struct ArchitectureSpec { /* version, kind, input_shape, layers, expected_weight
 
 LoadResult ParseArchitecture(const char* json_path, ArchitectureSpec& spec);
 void PrintArchitecture(const ArchitectureSpec& spec);
+void PrintNetworkSummary(const char* json_path, const ArchitectureSpec& spec);
 
 bool JsonPathToBinPath(const char* json_path, char* bin_path, std::size_t capacity);
 

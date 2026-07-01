@@ -663,8 +663,7 @@ void nk_arch_print(const char* json_path)
     const char* resolved = nullptr;
     if (ParseSpec(json_path, spec, &resolved) != NK_OK)
         return;
-    std::cout << "Model: " << resolved << "\n\nArchitecture:\n";
-    ModelLoader::PrintArchitecture(spec);
+    ModelLoader::PrintNetworkSummary(resolved, spec);
 }
 
 bool nk_json_path_to_bin_path(const char* json_path, char* bin_path, size_t bin_path_capacity)

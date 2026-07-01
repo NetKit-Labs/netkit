@@ -183,7 +183,7 @@ Hand-crafted models in this repo use [`tools/write_hand_models.py`](../tools/wri
 python3 tools/write_hand_models.py
 ```
 
-This writes `models/mlp_hand.bin` and `models/cnn_hand.bin`. Use `./netkit inspect <model.json>` to verify `expected weight floats` matches the `.bin` file size ÷ 4.
+This writes `models/mlp_hand.bin` and `models/cnn_hand.bin`. Use `./netkit inspect <model.json> --full` to verify `expected weight floats` matches the `.bin` file size ÷ 4.
 
 ## Path resolution
 
@@ -193,8 +193,9 @@ Loaders try the path as given, then `../<path>` relative to the current working 
 
 ```bash
 ./netkit inspect models/test_mlp.json
+./netkit inspect models/test_mlp.json --full
 ```
 
-Prints architecture, weight file path and float count, and arena high-water marks after load and a zero-input forward pass. Use this to size embedded memory buffers.
+Default mode prints a boxed network summary. `--full` adds weight file summary and arena high-water marks after load and a zero-input forward pass — use that to size embedded memory buffers.
 
 See also [VECTORS_TESTS.md](VECTORS_TESTS.md) for adding regression cases.

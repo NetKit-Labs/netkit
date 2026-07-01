@@ -17,12 +17,59 @@ namespace Cli
 
         alignas(std::max_align_t) unsigned char g_arena_buffer[Arena::kDefaultCapacity];
 
-        void PrintUsage(const char* program)
+        void PrintHelp(const char* program)
         {
+            std::cout << "netkit — neural network inference CLI\n\n";
             std::cout << "Usage:\n";
             std::cout << "  " << program << " test\n";
-            std::cout << "  " << program << " run <model.json> --input <a,b,c,...>\n";
-            std::cout << "  " << program << " inspect <model.json>\n";
+            std::cout << "  " << program << " run <model.json> --input <values>\n";
+            std::cout << "  " << program << " inspect <model.json> [--full]\n";
+            std::cout << "  " << program << " help\n";
+            std::cout << "  " << program << " -h | --help\n\n";
+
+            std::cout << "Global options:\n";
+            std::cout << "  -h, --help    Print this help message and exit\n";
+            std::cout << "  help          Same as -h / --help\n\n";
+
+            std::cout << "Commands:\n";
+            std::cout << "  test\n";
+            std::cout << "      Run the full vectors regression suite (same as make test-cpp).\n";
+            std::cout << "      Exit 0 if all cases pass, 1 otherwise.\n\n";
+
+            std::cout << "  run <model.json> --input <values>\n";
+            std::cout << "      Load a model, print its network summary, and run one forward pass.\n";
+            std::cout << "      Options:\n";
+            std::cout << "        --input <values>   Required. Comma-separated float32 input values.\n";
+            std::cout << "                           Forms: --input 1,2,3  or  --input=1,2,3\n";
+            std::cout << "      Input count must match the model input shape:\n";
+            std::cout << "        MLP: batch × features (product of JSON \"input\" array)\n";
+            std::cout << "        CNN: H × W × C in NHWC flatten order\n";
+            std::cout << "      Maximum 4096 input floats per invocation.\n\n";
+
+            std::cout << "  inspect <model.json> [--full]\n";
+            std::cout << "      Print a boxed network summary (architecture at a glance).\n";
+            std::cout << "      Options:\n";
+            std::cout << "        --full   Also load weights, print weight summary, and report\n";
+            std::cout << "                 arena memory usage after load and a zero-input forward pass.\n";
+            std::cout << "                 Use --full to size embedded arena buffers.\n\n";
+
+            std::cout << "Path resolution:\n";
+            std::cout << "  If <model.json> is not found in the current directory, netkit tries\n";
+            std::cout << "  ../<model.json> relative to the working directory.\n\n";
+
+            std::cout << "See docs/CLI.md for full reference.\n";
+        }
+
+        bool IsHelpRequest(int argc, char** argv, int start_index = 1)
+        {
+            for (int i = start_index; i < argc; ++i)
+            {
+                if (std::strcmp(argv[i], "-h") == 0 ||
+                    std::strcmp(argv[i], "--help") == 0 ||
+                    std::strcmp(argv[i], "help") == 0)
+                    return true;
+            }
+            return false;
         }
 
         bool FileReadable(const char* path)
@@ -120,6 +167,16 @@ namespace Cli
             return nullptr;
         }
 
+        bool HasFlag(int argc, char** argv, int start_index, const char* flag)
+        {
+            for (int i = start_index; i < argc; ++i)
+            {
+                if (std::strcmp(argv[i], flag) == 0)
+                    return true;
+            }
+            return false;
+        }
+
         int CmdTest()
         {
             const VectorsLoader::RunSummary summary = run_all_tests();
@@ -133,20 +190,8 @@ namespace Cli
             return summary.failed == 0 ? 0 : 1;
         }
 
-        int CmdInspect(const char* model_path)
+        int CmdInspectFull(const char* resolved, const ModelLoader::ArchitectureSpec& spec)
         {
-            char path_buffer[ModelLoader::kMaxPathLen] = {};
-            const char* resolved = ResolveModelPath(model_path, path_buffer, sizeof(path_buffer));
-
-            ModelLoader::ArchitectureSpec spec{};
-            const ModelLoader::LoadResult arch_result = ModelLoader::ParseArchitecture(resolved, spec);
-            if (arch_result.status != ModelLoader::LoadStatus::Ok)
-            {
-                std::cerr << "Failed to parse " << resolved << ": "
-                          << (arch_result.message ? arch_result.message : "unknown error") << "\n";
-                return 1;
-            }
-
             std::cout << "Model: " << resolved << "\n\n";
             std::cout << "Architecture:\n";
             ModelLoader::PrintArchitecture(spec);
@@ -251,6 +296,27 @@ namespace Cli
             return 0;
         }
 
+        int CmdInspect(const char* model_path, bool full)
+        {
+            char path_buffer[ModelLoader::kMaxPathLen] = {};
+            const char* resolved = ResolveModelPath(model_path, path_buffer, sizeof(path_buffer));
+
+            ModelLoader::ArchitectureSpec spec{};
+            const ModelLoader::LoadResult arch_result = ModelLoader::ParseArchitecture(resolved, spec);
+            if (arch_result.status != ModelLoader::LoadStatus::Ok)
+            {
+                std::cerr << "Failed to parse " << resolved << ": "
+                          << (arch_result.message ? arch_result.message : "unknown error") << "\n";
+                return 1;
+            }
+
+            if (full)
+                return CmdInspectFull(resolved, spec);
+
+            ModelLoader::PrintNetworkSummary(resolved, spec);
+            return 0;
+        }
+
         int CmdRun(const char* model_path, const char* input_text)
         {
             if (!input_text)
@@ -290,7 +356,8 @@ namespace Cli
             Arena arena;
             arena.init(g_arena_buffer, sizeof(g_arena_buffer));
 
-            std::cout << "Model: " << resolved << "\n";
+            ModelLoader::PrintNetworkSummary(resolved, spec);
+            std::cout << "\n";
 
             std::array<uint32_t, kMaxTensorRank> input_shape{};
             uint32_t input_rank = 0;
@@ -370,8 +437,14 @@ namespace Cli
     {
         if (argc < 2)
         {
-            PrintUsage(argv[0]);
+            PrintHelp(argv[0]);
             return 1;
+        }
+
+        if (IsHelpRequest(argc, argv))
+        {
+            PrintHelp(argv[0]);
+            return 0;
         }
 
         const char* command = argv[1];
@@ -384,11 +457,11 @@ namespace Cli
             if (argc < 3)
             {
                 std::cerr << "Missing model path\n";
-                PrintUsage(argv[0]);
+                PrintHelp(argv[0]);
                 return 1;
             }
 
-            return CmdInspect(argv[2]);
+            return CmdInspect(argv[2], HasFlag(argc, argv, 3, "--full"));
         }
 
         if (std::strcmp(command, "run") == 0)
@@ -396,7 +469,7 @@ namespace Cli
             if (argc < 3)
             {
                 std::cerr << "Missing model path\n";
-                PrintUsage(argv[0]);
+                PrintHelp(argv[0]);
                 return 1;
             }
 
@@ -405,7 +478,7 @@ namespace Cli
         }
 
         std::cerr << "Unknown command: " << command << "\n";
-        PrintUsage(argv[0]);
+        PrintHelp(argv[0]);
         return 1;
     }
 }

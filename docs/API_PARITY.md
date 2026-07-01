@@ -139,7 +139,8 @@ Both suites exercise the same **28 inference regression cases** (8 hand vector +
 | C++ | C |
 |-----|---|
 | `ParseArchitecture` | `nk_parse_architecture` |
-| `PrintArchitecture` | `nk_arch_print` |
+| `PrintArchitecture` | — (compact text; CLI `--full` only) |
+| `PrintNetworkSummary` | `nk_arch_print` |
 | `JsonPathToBinPath` | `nk_json_path_to_bin_path` |
 | `LoadWeightsBin` | `nk_load_weights_bin` |
 | `LoadMLP` | `nk_mlp_load` |

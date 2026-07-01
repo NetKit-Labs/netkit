@@ -94,6 +94,9 @@ namespace ModelLoader
 
     void PrintArchitecture(const ArchitectureSpec& spec);
 
+    // Boxed human-readable network summary (CLI inspect / run / nk_arch_print).
+    void PrintNetworkSummary(const char* json_path, const ArchitectureSpec& spec);
+
     void PrintWeightsSummary(const char* json_path,
                              float* weights,
                              std::size_t float_count,

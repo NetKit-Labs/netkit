@@ -361,6 +361,117 @@ namespace ModelLoader
                 default: return "unknown";
             }
         }
+
+        const char* NetworkTypeLabel(NetworkKind kind)
+        {
+            switch (kind)
+            {
+                case NetworkKind::MLP: return "MLP";
+                case NetworkKind::CNN: return "CNN";
+                default: return "Unknown";
+            }
+        }
+
+        bool ModelNameFromPath(const char* json_path, char* name, std::size_t name_capacity)
+        {
+            if (!json_path || !name || name_capacity == 0)
+                return false;
+
+            const char* base = json_path;
+            for (const char* cursor = json_path; *cursor; ++cursor)
+            {
+                if (*cursor == '/' || *cursor == '\\')
+                    base = cursor + 1;
+            }
+
+            std::strncpy(name, base, name_capacity - 1);
+            name[name_capacity - 1] = '\0';
+
+            const std::size_t name_len = std::strlen(name);
+            if (name_len >= 5 && std::strcmp(name + name_len - 5, ".json") == 0)
+                name[name_len - 5] = '\0';
+
+            return name[0] != '\0';
+        }
+
+        void FormatActivationDisplay(const char* activation, char* out, std::size_t out_capacity)
+        {
+            if (!out || out_capacity == 0)
+                return;
+
+            out[0] = '\0';
+            if (!activation || std::strcmp(activation, "none") == 0)
+                return;
+
+            if (std::strcmp(activation, "relu") == 0)
+                std::strncpy(out, "ReLU", out_capacity - 1);
+            else if (std::strcmp(activation, "leaky_relu") == 0)
+                std::strncpy(out, "LeakyReLU", out_capacity - 1);
+            else if (std::strcmp(activation, "relu6") == 0)
+                std::strncpy(out, "ReLU6", out_capacity - 1);
+            else if (std::strcmp(activation, "sigmoid") == 0)
+                std::strncpy(out, "Sigmoid", out_capacity - 1);
+            else if (std::strcmp(activation, "tanh") == 0)
+                std::strncpy(out, "Tanh", out_capacity - 1);
+            else if (std::strcmp(activation, "softmax") == 0)
+                std::strncpy(out, "Softmax", out_capacity - 1);
+            else
+                std::strncpy(out, activation, out_capacity - 1);
+
+            out[out_capacity - 1] = '\0';
+        }
+
+        void PrintInputShapeSummary(const ArchitectureSpec& spec)
+        {
+            for (uint32_t i = 0; i < spec.input_rank; ++i)
+            {
+                if (i > 0)
+                    std::cout << " x ";
+                std::cout << spec.input_shape[i];
+            }
+        }
+
+        void PrintLayerIndex(uint32_t index)
+        {
+            if (index < 10)
+                std::cout << ' ';
+            std::cout << index << ' ';
+        }
+
+        void PrintActivationSuffix(const char* activation)
+        {
+            char label[Json::kMaxStringLen] = {};
+            FormatActivationDisplay(activation, label, sizeof(label));
+            if (label[0] != '\0')
+                std::cout << "  " << label;
+        }
+
+        void PrintConvLayerSummary(const ConvLayerConfig& layer)
+        {
+            std::cout << " Conv2D      " << layer.filters << " filters   "
+                      << layer.kernel_size << 'x' << layer.kernel_size
+                      << "  stride=" << layer.stride;
+            PrintActivationSuffix(layer.activation);
+            std::cout << "\n";
+        }
+
+        void PrintPoolLayerSummary(const PoolLayerConfig& layer)
+        {
+            std::cout << " MaxPool2D   " << layer.pool_size << 'x' << layer.pool_size
+                      << "           stride=" << layer.stride << "\n";
+        }
+
+        void PrintDenseLayerSummary(const DenseLayerConfig& layer)
+        {
+            std::cout << " Dense       " << layer.units << " units";
+            PrintActivationSuffix(layer.activation);
+            std::cout << "\n";
+        }
+
+        void PrintFlattenLayerSummary()
+        {
+            std::cout << " Flatten\n";
+        }
     }
 
     uint32_t ComputeMlpOutputElements(const ArchitectureSpec& spec)
@@ -526,6 +637,53 @@ namespace ModelLoader
 
             std::cout << "\n";
         }
+    }
+
+    void PrintNetworkSummary(const char* json_path, const ArchitectureSpec& spec)
+    {
+        char name[kMaxPathLen] = {"model"};
+        if (json_path)
+            ModelNameFromPath(json_path, name, sizeof(name));
+
+        std::cout << "=====================================================\n";
+        std::cout << "Network Summary\n";
+        std::cout << "=====================================================\n\n";
+        std::cout << "Name        : " << name << "\n";
+        std::cout << "Type        : " << NetworkTypeLabel(spec.kind) << "\n";
+        std::cout << "Version     : " << spec.version << "\n\n";
+        std::cout << "Input Shape : ";
+        PrintInputShapeSummary(spec);
+        std::cout << "\n\n";
+        std::cout << "Layers (" << spec.num_layers << ")\n";
+        std::cout << "-----------------------------------------------------\n";
+
+        for (uint32_t i = 0; i < spec.num_layers; ++i)
+        {
+            PrintLayerIndex(i);
+
+            if (spec.kind == NetworkKind::MLP)
+                PrintDenseLayerSummary(spec.dense_layers[i]);
+            else if (spec.kind == NetworkKind::CNN)
+            {
+                switch (spec.cnn_layer_kinds[i])
+                {
+                    case CnnLayerKind::Conv2D:
+                        PrintConvLayerSummary(spec.conv_layers[i]);
+                        break;
+                    case CnnLayerKind::MaxPool2D:
+                        PrintPoolLayerSummary(spec.pool_layers[i]);
+                        break;
+                    case CnnLayerKind::Flatten:
+                        PrintFlattenLayerSummary();
+                        break;
+                    case CnnLayerKind::Dense:
+                        PrintDenseLayerSummary(spec.cnn_dense_layers[i]);
+                        break;
+                }
+            }
+        }
+
+        std::cout << "\n=====================================================\n";
     }
 
     void PrintWeightsSummary(const char* json_path,

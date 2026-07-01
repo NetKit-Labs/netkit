@@ -192,7 +192,7 @@ For file-based models (including `models/mnist_cnn.json`), use `nk_cnn_load` or 
 
 ```c
 nk_status_t nk_parse_architecture(const char* json_path, nk_arch_info_t* info);
-void nk_arch_print(const char* json_path);
+void nk_arch_print(const char* json_path);  /* boxed network summary to stdout */
 bool nk_json_path_to_bin_path(const char* json_path, char* bin_path, size_t capacity);
 nk_status_t nk_load_weights_bin(const char* json_path, nk_arena_t* arena, float** weights, size_t* float_count);
 nk_status_t nk_mlp_load(const char* json_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);

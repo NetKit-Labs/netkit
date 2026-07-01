@@ -5,9 +5,35 @@ The `netkit` binary is a **desktop development tool** implemented in C++26 (`src
 ```bash
 make              # builds ./netkit
 ./netkit <command> [arguments]
+./netkit help     # print usage (also: -h, --help)
 ```
 
 A C API equivalent exists as `nk_cli_run(argc, argv)` for embedding the same command dispatch.
+
+## Global options
+
+| Option | Description |
+|--------|-------------|
+| `-h`, `--help` | Print command usage and exit (exit code `0`) |
+| `help` | Same as `-h` / `--help` when used as the command or flag |
+
+Examples:
+
+```bash
+./netkit --help
+./netkit help
+./netkit run --help          # global help (any position after argv[0])
+```
+
+Running `./netkit` with no arguments prints the same help text and exits with code `1`.
+
+## Command options summary
+
+| Command | Options | Required arguments |
+|---------|---------|-------------------|
+| `test` | — | — |
+| `run` | `--input <values>` | `<model.json>` |
+| `inspect` | `--full` | `<model.json>` |
 
 ## Commands
 
@@ -54,10 +80,11 @@ Load a model and run one forward pass.
 
 **Behavior:**
 
-1. Parses architecture from `<model.json>` and loads companion `.bin` weights
-2. Validates input element count against the model's `input` shape
-3. Runs forward pass using the internal 64 KiB arena
-4. Prints labeled input and output tensors
+1. Parses architecture from `<model.json>` and prints a boxed network summary
+2. Loads companion `.bin` weights
+3. Validates input element count against the model's `input` shape
+4. Runs forward pass using the internal 64 KiB arena
+5. Prints labeled input and output tensors
 
 **Input count:**
 
@@ -72,19 +99,44 @@ Maximum 4096 input floats per invocation.
 
 ### `inspect`
 
-Print architecture metadata, weight file summary, and arena memory usage.
+Pretty-print the model architecture as a boxed network summary.
 
 ```bash
 ./netkit inspect <model.json>
+./netkit inspect <model.json> --full
 ```
 
-**Output includes:**
+**Default output:** Network Summary block with name, type, version, input shape, and a numbered layer list.
 
-- JSON fields: version, network kind, input shape, layer list, expected weight float count
-- Weight file path, loaded float count, match/mismatch vs architecture
-- Arena bytes used after load and after a zero-input forward pass, plus remaining capacity
+Example (`./netkit inspect models/mnist_cnn.json`):
 
-Use this to size embedded arena buffers before deployment. The C API equivalent is `nk_inspect_model()`.
+```
+=====================================================
+Network Summary
+=====================================================
+
+Name        : mnist_cnn
+Type        : CNN
+Version     : 1
+
+Input Shape : 28 x 28 x 1
+
+Layers (7)
+-----------------------------------------------------
+ 0  Conv2D      32 filters   3x3  stride=1  ReLU
+ 1  MaxPool2D   2x2           stride=2
+ 2  Conv2D      64 filters   3x3  stride=1  ReLU
+ 3  MaxPool2D   2x2           stride=2
+ 4  Flatten
+ 5  Dense       128 units  ReLU
+ 6  Dense       10 units  Softmax
+
+=====================================================
+```
+
+The C API equivalent is `nk_arch_print()`.
+
+**`--full`:** Legacy diagnostic mode — compact architecture dump, weight file summary, and arena memory usage after load and a zero-input forward pass. Use this to size embedded arena buffers before deployment. The C API equivalent for arena sizing is `nk_inspect_model()`.
 
 ## Path resolution
 

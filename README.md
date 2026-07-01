@@ -58,9 +58,11 @@ See [Getting Started](docs/GETTING_STARTED.md) for full details.
 Full reference: [docs/CLI.md](docs/CLI.md)
 
 ```bash
+./netkit help                              # print usage (-h / --help also work)
 ./netkit test                              # C++ API regression suite
 ./netkit run models/test_mlp.json --input 1,2
-./netkit inspect models/test_mlp.json      # architecture + arena sizing
+./netkit inspect models/test_mlp.json      # boxed network summary
+./netkit inspect models/test_mlp.json --full   # + weights and arena sizing
 ```
 
 ## Examples
