@@ -12,10 +12,12 @@ Models are loaded from JSON architecture files and companion float32 `.bin` weig
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` commands |
 | **[Model File Format](docs/MODEL_FORMAT.md)** | JSON architecture + float32 `.bin` weights |
-| **[Vectors Tests](docs/VECTORS_TESTS.md)** | Declarative regression test files |
+| **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI |
+| **[Vectors Tests](docs/VECTORS_TESTS.md)** | Hand-written `*.vectors.json` format |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
+| **[MNIST MLP Test](docs/MNIST.md)** | Trained 784→128→10 MLP on handwritten digits |
 | **[MLP Background](docs/nn.md)** | Optional theory (training/backprop); netkit is inference-only |
 
 ## Language standards
@@ -33,7 +35,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — High-level network abstractions with JSON + `.bin` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Vectors test runner** — Declarative regression tests in `*.vectors.json`
+- **Regression tests** — hand vector suites plus MNIST MLP (18 cases via `make test`)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 
 ## Quick start
@@ -84,10 +86,12 @@ netkit/
 │   └── infer_c.c           # C23 usage example
 ├── tests/
 │   └── test_c_api.c        # C23 API regression tests
-├── models/                 # JSON + bin + vectors bundles
+├── models/                 # Hand test bundles, mnist_mlp, models/mnist/ cases
 ├── tools/
-│   └── write_hand_models.py
+│   ├── write_hand_models.py
+│   └── export_mnist_mlp.py
 └── docs/                   # Guides and API reference
+    ├── TESTING.md
     ├── GETTING_STARTED.md
     ├── API.md
     ├── CLI.md
@@ -106,7 +110,7 @@ netkit/
 | `model.vectors.json` | Regression test cases (optional) |
 
 Full schema, weight layout, and activations: [docs/MODEL_FORMAT.md](docs/MODEL_FORMAT.md).  
-Regression tests: [docs/VECTORS_TESTS.md](docs/VECTORS_TESTS.md).
+Regression tests: [docs/TESTING.md](docs/TESTING.md) (hand vectors + MNIST).
 
 ## Building
 
@@ -120,30 +124,36 @@ Regression tests: [docs/VECTORS_TESTS.md](docs/VECTORS_TESTS.md).
 
 ```bash
 make              # netkit CLI + libnetkit.a
-make lib          # libnetkit.a only
-make test         # C++ API tests + C API tests
+make build-all    # netkit + examples + C API test binary
+make test         # C++ API tests + C API tests (18 regression cases)
 make test-cpp     # C++ API regression only
 make test-c       # C API regression only
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
+make export-mnist # regenerate MNIST model (requires numpy)
 make clean
 make rebuild
 ```
 
+See [docs/TESTING.md](docs/TESTING.md) for the full regression layout.
+
 ## Testing
+
+Full guide: [docs/TESTING.md](docs/TESTING.md)
 
 ```bash
 make test       # C++ API tests, then C API tests
-make test-cpp   # ./netkit test  (C++26 vectors regression)
-make test-c     # ./tests/test_c_api  (C23 API regression)
+make test-cpp   # ./netkit test
+make test-c     # ./tests/test_c_api
 ```
 
-| Suite | Language | Entry point |
-|-------|----------|-------------|
-| C++ API | C++26 | `src/test.cpp` via `./netkit test` |
-| C API | C23 | `tests/test_c_api.c` |
+| Suite | Language | Entry point | Inference cases |
+|-------|----------|-------------|-----------------|
+| C++ API | C++26 | `./netkit test` → `src/test.cpp` | 18 (8 hand vector + 10 MNIST) |
+| C API | C23 | `tests/test_c_api.c` | Same 18 + API smoke tests |
 
-Both suites cover the same eight vector models plus API-specific smoke checks.
+Hand cases use `models/*.vectors.json` ([VECTORS_TESTS.md](docs/VECTORS_TESTS.md)).  
+MNIST uses trained weights in `models/mnist_mlp.bin` ([MNIST.md](docs/MNIST.md)).
 
 ## Design principles
 

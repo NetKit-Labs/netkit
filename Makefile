@@ -1,12 +1,17 @@
 # netkit Makefile
 #
-# Targets:
-#   make              — netkit CLI + libnetkit.a
-#   make test         — C++ API tests, then C API tests
-#   make example-cpp  — C++26 usage demo (examples/infer_cpp)
-#   make example-c    — C23 usage demo (examples/infer_c)
+# Primary build system (GNU Make). See docs/TESTING.md for full test layout.
 #
-# See README.md and docs/GETTING_STARTED.md for full documentation.
+# Common targets:
+#   make              — netkit CLI + libnetkit.a (default)
+#   make build-all    — netkit + usage examples + C API test binary
+#   make test         — C++ regression, then C API regression (18 inference cases)
+#   make test-cpp     — ./netkit test
+#   make test-c       — ./tests/test_c_api
+#   make examples     — infer_cpp + infer_c
+#   make export-mnist — regenerate MNIST model + cases (requires numpy)
+#   make clean        — remove build products
+#   make rebuild      — clean + make
 
 CC = clang
 CXX = clang++
@@ -17,7 +22,7 @@ LIB = libnetkit.a
 
 CORE_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp \
                src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/json_parser.cpp \
-               src/model_loader.cpp src/vectors_loader.cpp src/netkit_api.cpp \
+               src/model_loader.cpp src/vectors_loader.cpp src/test_mnist.cpp src/netkit_api.cpp \
                src/cli.cpp src/test.cpp
 CLI_SOURCES = src/main.cpp
 
@@ -36,7 +41,11 @@ TEST_C = tests/test_c_api
 TEST_C_SRC = tests/test_c_api.c
 TEST_C_OBJ = tests/test_c_api.o
 
+.PHONY: all lib clean rebuild test test-cpp test-c run example-c example-cpp examples export-mnist build-all
+
 all: $(TARGET)
+
+build-all: all examples $(TEST_C)
 
 lib: $(LIB)
 
@@ -73,15 +82,12 @@ clean:
 
 rebuild: clean all
 
-# C++ API regression (primary CLI test path)
 test-cpp: $(TARGET)
 	./$(TARGET) test
 
-# C API regression (C23 test harness only)
 test-c: $(TEST_C)
 	./$(TEST_C)
 
-# Full suite: C++ API tests then C API tests
 test: test-cpp test-c
 
 run: test
@@ -92,4 +98,5 @@ example-cpp: $(EXAMPLE_CPP)
 
 examples: example-cpp example-c
 
-.PHONY: all lib clean rebuild test test-cpp test-c run example-c example-cpp examples
+export-mnist:
+	python3 tools/export_mnist_mlp.py

@@ -29,7 +29,7 @@ Related docs: [MODEL_FORMAT.md](MODEL_FORMAT.md), [VECTORS_TESTS.md](VECTORS_TES
 | C API | C23 | `make test-c` | `tests/test_c_api.c` |
 | Both | — | `make test` | runs C++ then C |
 
-Both suites exercise the same eight vector models; the C suite adds direct API smoke tests (arena, tensor, ops, load/run).
+Both suites exercise the same **18 inference regression cases** (8 hand vector + 10 MNIST); the C suite adds direct API smoke tests (arena, tensor, ops, load/run).
 
 ## Symbol map
 

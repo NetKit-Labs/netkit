@@ -1,0 +1,60 @@
+# MNIST MLP Test
+
+End-to-end regression test: real MNIST handwritten digits (28×28 grayscale) through a trained two-layer MLP in netkit.
+
+## Architecture
+
+| Stage | Shape | Activation |
+|-------|-------|--------------|
+| Input | `[1, 784]` | — (pixels ÷ 255) |
+| Dense hidden | 128 units | ReLU |
+| Dense output | 10 units | Softmax (digit probabilities) |
+
+Weights and biases are **float32** in `models/mnist_mlp.bin` (~398 KiB). Trained offline with `tools/export_mnist_mlp.py`: **Adam**, cross-entropy, 40 epochs (~**97–98%** test accuracy on full MNIST).
+
+## Test assets
+
+```
+models/
+├── mnist_mlp.json          # architecture
+├── mnist_mlp.bin           # float32 weights
+└── mnist/
+    ├── manifest.json       # 10 cases + tolerance
+    ├── case_000.input.bin  # 784 float32 pixels
+    ├── case_000.expected.bin # 10 float32 reference outputs
+    └── ...
+```
+
+Each case:
+
+1. Loads a 784-float input from MNIST test set
+2. Runs `./netkit test` MNIST suite (or `run_mnist_tests()`)
+3. Compares **each of the 10 output neurons** to reference within tolerance (`0.05` default)
+4. Checks **classification** (argmax vs label)
+
+The MNIST suite uses a **2 MiB** dedicated arena (weights alone need ~400 KiB).
+
+## Regenerate model and cases
+
+Requires **numpy**. MNIST data from (in order):
+
+1. `../python/mnist/mnist_{train,test}.csv` (sibling repo path), or
+2. Download IDX gzip files from Google CVDF mirror into `data/mnist/`
+
+```bash
+make export-mnist
+# or: python3 tools/export_mnist_mlp.py
+make test-cpp
+```
+
+Commit updated `models/mnist_mlp.*` and `models/mnist/*` after regenerating so CI stays offline.
+
+## Running
+
+MNIST tests run automatically as part of `make test` / `./netkit test` — see [TESTING.md](TESTING.md). They are wired in `src/test.cpp`:
+
+```cpp
+merge(run_mnist_tests());  // after hand MLP/CNN vector suites
+```
+
+Both C++ and C API suites call the same path via `run_all_tests()` / `nk_run_all_tests()`.

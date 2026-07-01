@@ -2,7 +2,7 @@
 
 This guide gets you from clone to running inference on the desktop in a few minutes.
 
-**Related docs:** [CLI](CLI.md) · [Model format](MODEL_FORMAT.md) · [Vectors tests](VECTORS_TESTS.md) · [C API](c-api.md) · [C++ API](cpp-api.md)
+**Related docs:** [CLI](CLI.md) · [Model format](MODEL_FORMAT.md) · [Testing](TESTING.md) · [Vectors tests](VECTORS_TESTS.md) · [MNIST](MNIST.md) · [C API](c-api.md) · [C++ API](cpp-api.md)
 
 ## Requirements
 
@@ -46,7 +46,7 @@ make test-cpp    # C++26 only: ./netkit test
 make test-c      # C23 only:  ./tests/test_c_api
 ```
 
-Each suite validates the same eight vector models. The C API suite adds direct smoke tests for arena, tensor, ops, and model load/run.
+Each suite runs **18 inference regression cases** (8 hand-written vector models + 10 MNIST digits) plus C API smoke tests. See [TESTING.md](TESTING.md).
 
 ## Run inference from the CLI
 
@@ -158,6 +158,8 @@ Example workflow:
 4. Register the vectors file in `src/test.cpp` if it is a new bundle
 5. Run `make test`
 
+For MNIST or other large binary-driven tests, see [TESTING.md](TESTING.md) and [MNIST.md](MNIST.md).
+
 ## Project layout
 
 ```
@@ -177,6 +179,7 @@ netkit/
 ## Next steps
 
 - Read [API.md](API.md) for an overview of both APIs
+- Read [TESTING.md](TESTING.md) for regression suite layout
 - Read [CLI.md](CLI.md) for `test`, `run`, and `inspect`
 - Add a regression case — [VECTORS_TESTS.md](VECTORS_TESTS.md)
 - Use `./netkit inspect` to size your arena before deploying to embedded targets

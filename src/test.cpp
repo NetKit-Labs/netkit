@@ -1,4 +1,5 @@
 #include "vectors_loader.hpp"
+#include "test_mnist.hpp"
 #include <iostream>
 
 VectorsLoader::RunSummary run_all_tests()
@@ -26,6 +27,11 @@ VectorsLoader::RunSummary run_all_tests()
     merge(VectorsLoader::RunVectorsFile("models/test_cnn.vectors.json"));
     merge(VectorsLoader::RunVectorsFile("models/cnn_4x4_single.vectors.json"));
     merge(VectorsLoader::RunVectorsFile("models/cnn_hand.vectors.json"));
+
+    std::cout << "\n============================\n";
+    std::cout << " MNIST MLP TESTS\n";
+    std::cout << "============================\n";
+    merge(run_mnist_tests());
 
     return total;
 }

@@ -1,6 +1,8 @@
 # Vectors Regression Tests
 
-netkit validates inference with **declarative test files**: `*.vectors.json` paired with model bundles. Both test suites (`make test-cpp` and `make test-c`) exercise the same vector models.
+Hand-written regression tests use **declarative JSON files**: `*.vectors.json` paired with small model bundles. They run alongside the [MNIST MLP suite](MNIST.md) as part of `make test` (8 hand cases + 10 MNIST = **18 total**). Overview: [TESTING.md](TESTING.md).
+
+Both `make test-cpp` and `make test-c` invoke the same cases through `run_all_tests()` / `nk_run_all_tests()`.
 
 ## File format
 
@@ -49,7 +51,7 @@ The C++ suite is implemented in `src/test.cpp` via `VectorsLoader::RunVectorsFil
 
 ## Registered vector files
 
-These eight files are wired in `src/test.cpp`:
+These five files (eight cases total) are wired in `src/test.cpp`:
 
 | Vectors file | Model | Network |
 |--------------|-------|---------|
@@ -72,6 +74,8 @@ merge(VectorsLoader::RunVectorsFile("models/my_model.vectors.json"));
 ```
 
 4. Run `make test` — both C++ and C suites pick up the change automatically (C suite calls the same `run_all_tests` via the C API bridge).
+
+For large binary-driven tests (e.g. MNIST), see [MNIST.md](MNIST.md).
 
 ## Input layout reminders
 

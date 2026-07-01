@@ -203,8 +203,8 @@ static void TestVectorsRegression(void)
     printf("============================\n");
 
     const nk_test_summary_t summary = nk_run_all_tests();
-    ExpectTrue(summary.failed == 0, "vectors regression failed count");
-    ExpectTrue(summary.passed == 8, "vectors regression passed count");
+    ExpectTrue(summary.failed == 0, "regression failed count");
+    ExpectTrue(summary.passed == 18, "regression passed count (8 vector + 10 MNIST)");
 }
 
 int main(void)

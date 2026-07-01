@@ -22,3 +22,4 @@ netkit.dSYM/
 
 # clangd index cache
 .cache/
+/data/

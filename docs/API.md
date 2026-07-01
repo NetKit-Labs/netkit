@@ -22,7 +22,9 @@ Both APIs share:
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Build, test, first inference, examples |
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect` |
 | [MODEL_FORMAT.md](MODEL_FORMAT.md) | JSON schema, `.bin` weight layout |
-| [VECTORS_TESTS.md](VECTORS_TESTS.md) | Regression test file format |
+| [TESTING.md](TESTING.md) | Regression suites, Make targets, CI |
+| [VECTORS_TESTS.md](VECTORS_TESTS.md) | Hand `*.vectors.json` format |
+| [MNIST.md](MNIST.md) | Trained MNIST MLP test bundle |
 | [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map and parity policy |
 | [c-api.md](c-api.md) | Full C23 reference (`netkit.h`) |
 | [cpp-api.md](cpp-api.md) | Full C++26 reference (headers in `include/`) |
@@ -128,7 +130,7 @@ Summary — full details in [MODEL_FORMAT.md](MODEL_FORMAT.md):
 
 ## Testing
 
-Both API test suites cover the same eight vector models. See [VECTORS_TESTS.md](VECTORS_TESTS.md).
+Both API test suites run **18 inference regression cases** (8 hand vector + 10 MNIST). See [TESTING.md](TESTING.md), [VECTORS_TESTS.md](VECTORS_TESTS.md), and [MNIST.md](MNIST.md).
 
 ```bash
 make test       # C++ then C
