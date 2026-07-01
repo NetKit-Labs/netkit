@@ -5,7 +5,7 @@
 # Common targets:
 #   make              — netkit CLI + libnetkit.a (default)
 #   make build-all    — netkit + usage examples + C API test binary
-#   make test         — C++ regression, then C API regression (36 inference cases)
+#   make test         — C++ regression, then C API regression (72 inference cases)
 #   make test-cpp     — ./netkit test
 #   make test-c       — ./tests/test_c_api
 #   make examples     — infer_cpp + infer_c
@@ -23,6 +23,7 @@ LIB = libnetkit.a
 CORE_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp \
                src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/json_parser.cpp \
                src/model_loader.cpp src/vectors_loader.cpp src/test_mnist.cpp src/netkit_api.cpp \
+               src/protobuf_wire.cpp src/onnx_model.cpp src/onnx_importer.cpp src/test_onnx.cpp \
                src/cli.cpp src/test.cpp
 CLI_SOURCES = src/main.cpp
 
@@ -105,3 +106,6 @@ export-mnist-cnn:
 	python3 tools/export_mnist_cnn.py
 
 export-mnist-all: export-mnist export-mnist-cnn
+
+export-onnx-test:
+	python3 tools/export_onnx_test_models.py

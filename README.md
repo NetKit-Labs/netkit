@@ -12,7 +12,8 @@ Models are loaded from JSON architecture files and companion float32 `.bin` weig
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
 | **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int8 roadmap |
-| **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` commands |
+| **[ONNX Import](docs/ONNX.md)** | Import `.onnx` models into netkit JSON + `.bin` |
+| **[CLI Reference](docs/CLI.md)** | `test`, `run`, `inspect`, and `import` commands |
 | **[Model File Format](docs/MODEL_FORMAT.md)** | JSON architecture + float32 `.bin` weights |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI |
 | **[Vectors Tests](docs/VECTORS_TESTS.md)** | Hand-written `*.vectors.json` format |
@@ -38,7 +39,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — High-level network abstractions with JSON + `.bin` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — hand vector suites plus MNIST MLP and CNN (36 cases via `make test`)
+- **Regression tests** — hand vector suites plus MNIST MLP and CNN (72 cases via `make test`)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 
 ## Quick start
@@ -133,7 +134,7 @@ Regression tests: [docs/TESTING.md](docs/TESTING.md) (hand vectors + MNIST).
 ```bash
 make              # netkit CLI + libnetkit.a
 make build-all    # netkit + examples + C API test binary
-make test         # C++ API tests + C API tests (36 regression cases)
+make test         # C++ API tests + C API tests (72 regression cases)
 make test-cpp     # C++ API regression only
 make test-c       # C API regression only
 make example-cpp  # C++26 usage demo

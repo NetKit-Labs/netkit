@@ -1,6 +1,7 @@
 #include "cli.hpp"
 #include "test.hpp"
 #include "model_loader.hpp"
+#include "onnx_importer.hpp"
 #include "tensor_factory.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
@@ -24,6 +25,7 @@ namespace Cli
             std::cout << "  " << program << " test\n";
             std::cout << "  " << program << " run <model.json> --input <values>\n";
             std::cout << "  " << program << " inspect <model.json> [--full]\n";
+            std::cout << "  " << program << " import <model.onnx> --out <base_path>\n";
             std::cout << "  " << program << " help\n";
             std::cout << "  " << program << " -h | --help\n\n";
 
@@ -52,6 +54,12 @@ namespace Cli
             std::cout << "        --full   Also load weights, print weight summary, and report\n";
             std::cout << "                 arena memory usage after load and a zero-input forward pass.\n";
             std::cout << "                 Use --full to size embedded arena buffers.\n\n";
+
+            std::cout << "  import <model.onnx> --out <base_path>\n";
+            std::cout << "      Convert a supported ONNX model to netkit JSON + float32 .bin files.\n";
+            std::cout << "      Writes <base_path>.json and <base_path>.bin (extension optional on --out).\n";
+            std::cout << "      Supported ops: Gemm, Conv, MaxPool, Flatten, Relu, Softmax.\n";
+            std::cout << "      CNN inputs may be NCHW [N,C,H,W]; netkit uses NHWC in the exported JSON.\n\n";
 
             std::cout << "Path resolution:\n";
             std::cout << "  If <model.json> is not found in the current directory, netkit tries\n";
@@ -431,6 +439,52 @@ namespace Cli
 
             return 0;
         }
+
+        int CmdImport(const char* onnx_path, const char* out_base)
+        {
+            if (!out_base || out_base[0] == '\0')
+            {
+                std::cerr << "Missing --out base path\n";
+                return 1;
+            }
+
+            char resolved_onnx[ModelLoader::kMaxPathLen] = {};
+            const char* resolved = ResolveModelPath(onnx_path, resolved_onnx, sizeof(resolved_onnx));
+
+            char json_path[ModelLoader::kMaxPathLen] = {};
+            char bin_path[ModelLoader::kMaxPathLen] = {};
+
+            const std::size_t out_len = std::strlen(out_base);
+            if (out_len >= 5 && std::strcmp(out_base + out_len - 5, ".json") == 0)
+            {
+                std::snprintf(json_path, sizeof(json_path), "%s", out_base);
+                std::snprintf(bin_path, sizeof(bin_path), "%s", out_base);
+                char* dot = std::strrchr(bin_path, '.');
+                if (dot)
+                    std::strcpy(dot, ".bin");
+            }
+            else
+            {
+                std::snprintf(json_path, sizeof(json_path), "%s.json", out_base);
+                std::snprintf(bin_path, sizeof(bin_path), "%s.bin", out_base);
+            }
+
+            const OnnxImporter::ImportResult result =
+                OnnxImporter::ImportToNetkitFiles(resolved, json_path, bin_path);
+            if (result.status != OnnxImporter::ImportStatus::Ok)
+            {
+                std::cerr << "ONNX import failed: "
+                          << (result.message ? result.message : OnnxImporter::StatusMessage(result.status))
+                          << "\n";
+                return 1;
+            }
+
+            std::cout << "Imported ONNX model\n";
+            std::cout << "  network: " << (result.kind == ModelLoader::NetworkKind::MLP ? "mlp" : "cnn") << "\n";
+            std::cout << "  json:    " << json_path << "\n";
+            std::cout << "  weights: " << bin_path << "\n";
+            return 0;
+        }
     }
 
     int Run(int argc, char** argv)
@@ -475,6 +529,19 @@ namespace Cli
 
             const char* input_text = FindOptionValue(argc, argv, 3, "--input");
             return CmdRun(argv[2], input_text);
+        }
+
+        if (std::strcmp(command, "import") == 0)
+        {
+            if (argc < 3)
+            {
+                std::cerr << "Missing ONNX model path\n";
+                PrintHelp(argv[0]);
+                return 1;
+            }
+
+            const char* out_base = FindOptionValue(argc, argv, 3, "--out");
+            return CmdImport(argv[2], out_base);
         }
 
         std::cerr << "Unknown command: " << command << "\n";

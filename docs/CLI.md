@@ -140,6 +140,16 @@ The C API equivalent is `nk_arch_print()`.
 
 The CLI uses a **64 KiB** internal arena (`Arena::kDefaultCapacity`). That is enough for hand test models. **MNIST models** need multi-MiB buffers — `inspect --full` on `mnist_mlp.json` / `mnist_cnn.json` may fail with arena overflow on the CLI even though `make test` passes (tests use 2 MiB / 4 MiB). Size your own firmware buffer from `nk_inspect_model()` with a large enough arena, or see [ARENA.md](ARENA.md).
 
+## `import`
+
+Convert a supported ONNX model into netkit JSON + `.bin` files.
+
+```bash
+./netkit import models/my_model.onnx --out models/my_model
+```
+
+Writes `models/my_model.json` and `models/my_model.bin`. See [ONNX.md](ONNX.md) for supported operators and layout notes.
+
 ## Path resolution
 
 If `<model.json>` is not found in the current directory, the CLI tries `../<model.json>`. Run from the repo root or ensure model paths are reachable.

@@ -39,3 +39,7 @@ jobs:
         run: |
           ./netkit run models/test_mlp.json --input 1,2
           ./netkit inspect models/test_mlp.json
+          ./netkit import models/test_mlp.onnx --out /tmp/test_mlp_from_onnx
+          ./netkit run /tmp/test_mlp_from_onnx.json --input 1,2
+          ./netkit import models/mnist_cnn.onnx --out /tmp/mnist_cnn_from_onnx
+          ./netkit inspect /tmp/mnist_cnn_from_onnx.json

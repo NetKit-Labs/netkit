@@ -16,7 +16,7 @@ make rebuild      # clean + make
 
 ## Regression suites
 
-Both `make test-cpp` and `make test-c` exercise the **same 36 inference cases** via `run_all_tests()` / `nk_run_all_tests()`:
+Both `make test-cpp` and `make test-c` exercise the **same 72 inference cases** via `run_all_tests()` / `nk_run_all_tests()`:
 
 | Suite | Cases | Source | Description |
 |-------|------:|--------|-------------|
@@ -24,8 +24,9 @@ Both `make test-cpp` and `make test-c` exercise the **same 36 inference cases** 
 | Hand CNN vectors | 7 | `models/test_cnn.vectors.json`, `models/cnn_4x4_single.vectors.json`, `models/cnn_hand.vectors.json` | Small hand-checked CNN forwards (pure conv) |
 | MNIST MLP | 10 | `models/mnist/manifest.json` | Trained 784→128→10 MLP (98.06% test acc) |
 | MNIST CNN | 10 | `models/mnist_cnn/manifest.json` | Conv+pool+flatten+dense CNN (99.02% test acc) |
+| ONNX parity | 36 | `models/*.onnx` vs matching JSON + `.bin` | Same inputs: JSON forward must match ONNX import forward |
 
-**Total: 36 passed** when healthy (`16` hand vector + `10` MNIST MLP + `10` MNIST CNN).
+**Total: 72 passed** when healthy (`16` hand vector + `10` MNIST MLP + `10` MNIST CNN + `36` ONNX parity).
 
 | Doc | Contents |
 |-----|----------|
@@ -42,6 +43,7 @@ All regression paths use an arena; only the **backing buffer size** varies:
 | Hand vector tests | `src/vectors_loader.cpp` | **64 KiB** | `*.vectors.json` hand models |
 | MNIST MLP | `src/test_mnist.cpp` | **2 MiB** | `mnist_mlp.json` |
 | MNIST CNN | `src/test_mnist.cpp` | **4 MiB** | `mnist_cnn.json` |
+| ONNX parity | `src/test_onnx.cpp` | **64 KiB / 2 MiB / 4 MiB** | hand / MNIST MLP / MNIST CNN `.onnx` |
 | C API smoke / unit tests | `tests/test_c_api.c` | **64 KiB** | hand models + parse/load smoke |
 | CLI `run` / `inspect` | `src/cli.cpp` | **64 KiB** | hand models (MNIST may overflow `--full`) |
 
@@ -56,7 +58,8 @@ Sections printed in order:
 1. **MLP TESTS** — hand `*.vectors.json` files  
 2. **CNN TESTS** — hand `*.vectors.json` files  
 3. **MNIST MLP TESTS** — `run_mnist_tests()` in `src/test_mnist.cpp`  
-4. **MNIST CNN TESTS** — `run_mnist_cnn_tests()` in `src/test_mnist.cpp`
+4. **MNIST CNN TESTS** — `run_mnist_cnn_tests()` in `src/test_mnist.cpp`  
+5. **ONNX PARITY TESTS** — `run_onnx_import_tests()` in `src/test_onnx.cpp`
 
 ## Test output
 
@@ -75,7 +78,7 @@ Entry: `./tests/test_c_api` (C23).
 | Parse architecture | MLP and CNN JSON metadata |
 | Model load / run | `nk_model_load` + `nk_model_run` on hand MLP/CNN |
 | Hybrid CNN | `nk_parse_architecture` + `nk_cnn_load` on `mnist_cnn.json` |
-| Full regression | `nk_run_all_tests()` — same **36** inference cases as C++ |
+| Full regression | `nk_run_all_tests()` — same **72** inference cases as C++ |
 
 The C API regression path uses the same C++ runner internally (`nk_run_all_tests` → `run_all_tests`), so MNIST CNN (conv / pool / flatten / dense) is covered without retraining in CI.
 
@@ -84,6 +87,7 @@ The C API regression path uses the same C++ runner internally (`nk_run_all_tests
 | Kind | How |
 |------|-----|
 | Hand vector case | Edit `models/*.vectors.json`, register file in `src/test.cpp` if new bundle |
+| ONNX parity case | Add matching `models/<name>.onnx` via `make export-onnx-test`, register in `src/test_onnx.cpp` |
 | MNIST MLP case | `make export-mnist` (requires numpy) |
 | MNIST CNN case | `make export-mnist-cnn` (requires numpy) |
 

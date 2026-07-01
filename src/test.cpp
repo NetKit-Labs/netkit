@@ -1,5 +1,6 @@
 #include "vectors_loader.hpp"
 #include "test_mnist.hpp"
+#include "test_onnx.hpp"
 #include <iostream>
 
 VectorsLoader::RunSummary run_all_tests()
@@ -37,6 +38,8 @@ VectorsLoader::RunSummary run_all_tests()
     std::cout << " MNIST CNN TESTS\n";
     std::cout << "============================\n";
     merge(run_mnist_cnn_tests());
+
+    merge(run_onnx_import_tests());
 
     return total;
 }
