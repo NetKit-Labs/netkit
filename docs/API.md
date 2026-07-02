@@ -11,7 +11,7 @@ Both APIs share:
 
 - Bump-pointer **arena** memory management (no heap in layer code paths on MCU/MPU)
 - **`.nk`** single-file model loading
-- **MLP** and **CNN** forward-only inference (conv / pool / flatten / dense)
+- **MLP** and **CNN** forward-only inference (conv with symmetric padding, max/avg pool, batch norm, flatten, dense)
 - **NHWC** tensor layout for convolutions
 - **Float32 only (today)** — float16, int16, int8, int4 planned ([DATATYPES.md](DATATYPES.md))
 
@@ -132,7 +132,16 @@ netkit implements its own minimal arena rather than linking [memkit](https://git
 
 Runtime models are **`.nk` v2** single files — [NK_FORMAT.md](NK_FORMAT.md).
 
-Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`.
+Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`. Supported ONNX ops: [ONNX.md](ONNX.md).
+
+## Optional CMSIS backends
+
+| Backend | When enabled | Targets |
+|---------|----------------|---------|
+| **CMSIS-NN** | `NETKIT_CMSIS_NN=1` + `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` | MCU firmware (CM4, M33, …) |
+| **CMSIS-DSP** | `NETKIT_CMSIS_DSP=1` | Desktop, MCU, MPU |
+
+On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` prints a Make warning and is ignored — reference kernels (and optional CMSIS-DSP) apply. See [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
 
 ## Testing
 

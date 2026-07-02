@@ -23,18 +23,18 @@ Both use the same optional CMSIS backends and `NETKIT_ARCH` → `ARM_MATH_*` map
 
 | `NETKIT_ARCH` | CMSIS-DSP flag(s) | Profile | CMSIS-NN |
 |---------------|-------------------|---------|----------|
-| *(unset)* | `__GNUC_PYTHON__` (desktop host only) | CPU | off (reference NN) |
-| `CM0`, `M0` | `ARM_MATH_CM0` | MCU | on |
-| `CM0PLUS`, `M0PLUS` | `ARM_MATH_CM0PLUS` | MCU | on |
-| `CM3`, `M3` | `ARM_MATH_CM3` | MCU | on |
-| `CM4`, `M4` | `ARM_MATH_CM4` | MCU | on |
-| `CM7`, `M7` | `ARM_MATH_CM7` | MCU | on |
-| `M23`, `CM23` | `ARM_MATH_ARMV8MBL` | MCU | on |
-| `M33`, `CM33` | `ARM_MATH_ARMV8MML`, `__DSP_PRESENT=1` | MCU | on |
-| `M55`, `CM55` | `ARM_MATH_M55`, `ARM_MATH_MVEF`, `ARM_MATH_MVEI` | MCU | on |
-| `M85`, `CM85` | `ARM_MATH_M85`, `ARM_MATH_MVEF`, `ARM_MATH_MVEI` | MCU | on |
-| `A32`, `MPU` | `ARM_MATH_A32` | MPU | off (reference NN) |
-| `NEON`, `A64` | `ARM_MATH_NEON` | MPU | off (reference NN) |
+| *(unset)* | `__GNUC_PYTHON__` (desktop host only) | CPU | off (flag ignored) |
+| `CM0`, `M0` | `ARM_MATH_CM0` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `CM0PLUS`, `M0PLUS` | `ARM_MATH_CM0PLUS` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `CM3`, `M3` | `ARM_MATH_CM3` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `CM4`, `M4` | `ARM_MATH_CM4` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `CM7`, `M7` | `ARM_MATH_CM7` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `M23`, `CM23` | `ARM_MATH_ARMV8MBL` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `M33`, `CM33` | `ARM_MATH_ARMV8MML`, `__DSP_PRESENT=1` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `M55`, `CM55` | `ARM_MATH_M55`, `ARM_MATH_MVEF`, `ARM_MATH_MVEI` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `M85`, `CM85` | `ARM_MATH_M85`, `ARM_MATH_MVEF`, `ARM_MATH_MVEI` | MCU | when `NETKIT_CMSIS_NN=1` |
+| `A32`, `MPU` | `ARM_MATH_A32` | MPU | off (flag ignored) |
+| `NEON`, `A64` | `ARM_MATH_NEON` | MPU | off (flag ignored) |
 
 Aliases like `Cortex-M4` normalize to `CM4`. CMake also sets `NETKIT_TARGET` from the arch (`cpu` / `mcu` / `mpu`); with Make you pass `NETKIT_TARGET` explicitly for firmware.
 
@@ -119,20 +119,16 @@ make test-embedded-smoke-matrix   # 7-profile host smoke (see TESTING.md)
 ## Quick commands (CMake)
 
 ```bash
-# Desktop — CMSIS-DSP on by default, reference NN, loop unroll enabled
+# Desktop — CMSIS-DSP on by default, reference NN
 cmake -B cmake-build
 cmake --build cmake-build
 ./cmake-build/netkit test
 
-# Desktop — force CMSIS-NN for parity testing
-cmake -B cmake-build -DNETKIT_CMSIS_NN=ON -DNETKIT_CMSIS_DSP=ON
-cmake --build cmake-build
-
-# Embedded firmware (use with your toolchain file)
-cmake -B build-firmware -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_ARCH=CM7
+# MCU firmware (use with your toolchain file)
+cmake -B build-firmware -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu -DNETKIT_ARCH=CM7 -DNETKIT_CMSIS_NN=ON
 cmake --build build-firmware
 
-cmake -B build-m55 -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_ARCH=M55
+cmake -B build-m55 -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu -DNETKIT_ARCH=M55 -DNETKIT_CMSIS_NN=ON
 ```
 
 CMake cache options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_GLOBAL_ARENA`, `NETKIT_HEAP_ARENA`.

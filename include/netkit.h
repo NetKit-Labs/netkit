@@ -108,7 +108,9 @@ typedef enum nk_cnn_block_type
     NK_CNN_BLOCK_CONV2D = 0,
     NK_CNN_BLOCK_MAX_POOL2D,
     NK_CNN_BLOCK_FLATTEN,
-    NK_CNN_BLOCK_DENSE
+    NK_CNN_BLOCK_DENSE,
+    NK_CNN_BLOCK_AVG_POOL2D,
+    NK_CNN_BLOCK_BATCH_NORM2D
 } nk_cnn_block_type_t;
 
 /* -------------------------------------------------------------------------- */
@@ -150,6 +152,8 @@ typedef struct nk_conv2d
 {
     int kernel_size;
     int stride;
+    int pad_h;
+    int pad_w;
     int in_channels;
     int out_channels;
     float* weights;
@@ -293,12 +297,25 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
                                    float* weights,
                                    float* bias,
                                    nk_conv_activation_t activation,
-                                   float leaky_alpha);
+                                   float leaky_alpha,
+                                   int pad_h,
+                                   int pad_w);
 
 nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn,
                                    uint32_t layer_idx,
                                    int pool_size,
                                    int stride);
+
+nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn,
+                                       uint32_t layer_idx,
+                                       int pool_size,
+                                       int stride);
+
+nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn,
+                                         uint32_t layer_idx,
+                                         int channels,
+                                         float* scale,
+                                         float* bias);
 
 nk_status_t nk_cnn_init_flatten_layer(nk_cnn_t* cnn, uint32_t layer_idx);
 

@@ -225,7 +225,17 @@ public:
 
     bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);  // LoadCNN
 
-    void InitConvLayer(uint32_t layer_idx, ...);   // conv2d + activation (+ pad_h/pad_w)
+    void InitConvLayer(uint32_t layer_idx,
+                       int kernel_size,
+                       int stride,
+                       int in_channels,
+                       int out_channels,
+                       float* weights,
+                       float* bias,
+                       ConvActivationType activation,
+                       float leaky_alpha = 0.01f,
+                       int pad_h = 0,
+                       int pad_w = 0);
     void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride);
     void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride);
     void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);

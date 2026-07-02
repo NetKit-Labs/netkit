@@ -131,7 +131,6 @@ Fetch once, then enable at compile time (no runtime switching):
 make cmsis-init
 make NETKIT_CMSIS_DSP=1 test-cpp   # desktop / MPU vector ops
 make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib   # MCU CMSIS-NN (firmware)
-make NETKIT_CMSIS_DSP=1 test-cpp  # Ops add/mul/scale/clip/matmul
 ```
 
 ### Embedded smoke (MCU/MPU bring-up)
@@ -140,7 +139,7 @@ Before flashing firmware, validate lean runtime linking on the host:
 
 ```bash
 make cmsis-init
-make test-embedded-smoke-matrix   # mcu/mpu × reference + CMSIS × CM4/M33/A32
+make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles
 ```
 
 Single profile:

@@ -111,12 +111,16 @@ Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. **Only `NK_DT
 | `NK_CNN_BLOCK_MAX_POOL2D` | `MaxPool2D` |
 | `NK_CNN_BLOCK_FLATTEN` | `Flatten` |
 | `NK_CNN_BLOCK_DENSE` | `Dense` |
+| `NK_CNN_BLOCK_AVG_POOL2D` | `AvgPool2D` |
+| `NK_CNN_BLOCK_BATCH_NORM2D` | `BatchNorm2d` |
 
 Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from the `.nk` layer list.
 
 ### `nk_tensor_t`, `nk_conv2d_t`
 
 Mirror C++ `Tensor` and `Conv2D` layouts. Safe to pass by pointer to all `nk_tensor_*` and `nk_ops_*` functions.
+
+`nk_conv2d_t` includes symmetric padding (`pad_h`, `pad_w`) applied on all four sides before convolution. Output spatial size: `(input + 2*pad - kernel) / stride + 1`.
 
 ### `nk_mlp_t`, `nk_cnn_t`
 
@@ -278,9 +282,22 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_cnn_is_valid` | `CNNNetwork::IsValid` |
 | `nk_cnn_init_conv_layer` | `CNNNetwork::InitConvLayer` |
 | `nk_cnn_init_pool_layer` | `CNNNetwork::InitPoolLayer` |
+| `nk_cnn_init_avg_pool_layer` | `CNNNetwork::InitAvgPoolLayer` |
+| `nk_cnn_init_batch_norm_layer` | `CNNNetwork::InitBatchNormLayer` |
 | `nk_cnn_init_flatten_layer` | `CNNNetwork::InitFlattenLayer` |
 | `nk_cnn_init_dense_layer` | `CNNNetwork::InitDenseLayer` |
 | `nk_cnn_forward` | `CNNNetwork::forward` |
+
+```c
+nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn, uint32_t layer_idx,
+    int kernel_size, int stride, int in_channels, int out_channels,
+    float* weights, float* bias, nk_conv_activation_t activation, float leaky_alpha,
+    int pad_h, int pad_w);
+nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx, int pool_size, int stride);
+nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx, int pool_size, int stride);
+nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn, uint32_t layer_idx,
+    int channels, float* scale, float* bias);
+```
 
 ### Conv2D (`conv2d.hpp`)
 
@@ -290,16 +307,18 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 
 ### CNN pipeline (manual construction)
 
-Hybrid CNN models (conv → max pool → flatten → dense) use:
+Hybrid CNN models (conv → pool → batch norm → flatten → dense) use:
 
 ```c
-nk_cnn_init_conv_layer(cnn, idx, kernel, stride, in_c, out_c, w, b, act, alpha);
-nk_cnn_init_pool_layer(cnn, idx, pool_size, stride);
+nk_cnn_init_conv_layer(cnn, idx, kernel, stride, in_c, out_c, w, b, act, alpha, pad_h, pad_w);
+nk_cnn_init_pool_layer(cnn, idx, pool_size, stride);           /* max pool */
+nk_cnn_init_avg_pool_layer(cnn, idx, pool_size, stride);
+nk_cnn_init_batch_norm_layer(cnn, idx, channels, scale, bias);
 nk_cnn_init_flatten_layer(cnn, idx);
 nk_cnn_init_dense_layer(cnn, idx, &weights, &bias, NK_ACTIVATION_RELU, 0.01f);
 ```
 
-For file-based models (including `models/mnist_cnn.nk`), use `nk_cnn_load` or `nk_model_load` — all block types are configured from the `.nk` layer list.
+For file-based models, use `nk_cnn_load` or `nk_model_load` — all block types (including avg pool, batch norm, padded conv) are configured from the `.nk` layer list.
 
 ## Model loader (`.nk`)
 
@@ -308,7 +327,7 @@ For file-based models (including `models/mnist_cnn.nk`), use `nk_cnn_load` or `n
 | `nk_parse_architecture` | `NkLoader::ParseFile` + `FillArchInfo` | Populates `nk_arch_info_t` |
 | `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
 | `nk_mlp_load` | `NkLoader::LoadMLP` | |
-| `nk_cnn_load` | `NkLoader::LoadCNN` | Conv / pool / flatten / dense |
+| `nk_cnn_load` | `NkLoader::LoadCNN` | Conv / max & avg pool / batch norm / flatten / dense |
 | `nk_model_load_auto` | `NkLoader::Load` | Dispatches by network kind |
 
 ```c

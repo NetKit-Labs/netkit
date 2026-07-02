@@ -105,7 +105,7 @@ Both suites exercise the same **69 embedded `.nk` inference cases** (16 hand-che
 
 | C++ | C |
 |-----|---|
-| `Conv2D` | `nk_conv2d_t` |
+| `Conv2D` | `nk_conv2d_t` (includes `pad_h`, `pad_w`) |
 | `Conv2D::forward` | `nk_conv2d_forward` |
 
 ### MLP (`mlp.hpp`)
@@ -130,10 +130,12 @@ Both suites exercise the same **69 embedded `.nk` inference cases** (16 hand-che
 | `CNNNetwork` constructor | `nk_cnn_create` |
 | `InitConvLayer` | `nk_cnn_init_conv_layer` |
 | `InitPoolLayer` | `nk_cnn_init_pool_layer` |
+| `InitAvgPoolLayer` | `nk_cnn_init_avg_pool_layer` |
+| `InitBatchNormLayer` | `nk_cnn_init_batch_norm_layer` |
 | `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |
 | `forward` | `nk_cnn_forward` |
-| `LoadCNN` (mixed conv/pool/flatten/dense `.nk`) | `nk_cnn_load` |
+| `LoadCNN` (mixed conv/pool/avg pool/batch norm/flatten/dense `.nk`) | `nk_cnn_load` |
 
 ### NkLoader (`nk_loader.hpp`)
 

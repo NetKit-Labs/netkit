@@ -39,7 +39,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 - **Dual API** — C23 (`netkit.h`) and C++26 (native headers)
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
-- **MLP & CNN** — High-level network abstractions with `.nk` loading
+- **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
 - **Regression tests** — embedded `.nk` cases (69 C++) plus Python ONNX parity (69) via `make test`
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness (`make test-embedded-smoke-matrix`)

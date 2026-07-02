@@ -465,6 +465,8 @@ void nk_conv2d_forward(const nk_conv2d_t* conv, const nk_tensor_t* input, nk_ten
     Conv2D c{};
     c.kernel_size = conv->kernel_size;
     c.stride = conv->stride;
+    c.pad_h = conv->pad_h;
+    c.pad_w = conv->pad_w;
     c.in_channels = conv->in_channels;
     c.out_channels = conv->out_channels;
     c.weights = conv->weights;
@@ -549,7 +551,9 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
                                    float* weights,
                                    float* bias,
                                    nk_conv_activation_t activation,
-                                   float leaky_alpha)
+                                   float leaky_alpha,
+                                   int pad_h,
+                                   int pad_w)
 {
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
@@ -561,7 +565,9 @@ nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
                                     weights,
                                     bias,
                                     ToCnnActivation(activation),
-                                    leaky_alpha);
+                                    leaky_alpha,
+                                    pad_h,
+                                    pad_w);
     return NK_OK;
 }
 
@@ -570,6 +576,26 @@ nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx, int pool_s
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
     CnnPtr(cnn)->net->InitPoolLayer(layer_idx, pool_size, stride);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn, uint32_t layer_idx, int pool_size, int stride)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return NK_ERR_NOT_INITIALIZED;
+    CnnPtr(cnn)->net->InitAvgPoolLayer(layer_idx, pool_size, stride);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn,
+                                         uint32_t layer_idx,
+                                         int channels,
+                                         float* scale,
+                                         float* bias)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return NK_ERR_NOT_INITIALIZED;
+    CnnPtr(cnn)->net->InitBatchNormLayer(layer_idx, channels, scale, bias);
     return NK_OK;
 }
 
