@@ -41,7 +41,6 @@ SEED = 43
 NUM_CASES = 10
 
 ARCH = {
-    "version": 1,
     "network": "cnn",
     "input": [IMG_H, IMG_W, IMG_C],
     "layers": [

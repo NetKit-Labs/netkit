@@ -70,7 +70,7 @@ const char* nk_version_string(void);  // "0.1.0"
 | `NK_MAX_MESSAGE_LEN` | 128 | Max length of last error message |
 | `NK_ARENA_DEFAULT_CAPACITY` | 4 MiB (CPU) / 64 KiB (MCU) / 128 KiB (MPU) | Default static arena size by build target |
 | `NK_ARENA_STORAGE_BYTES` | 32 | Size of `nk_arena_t.storage` |
-| `NK_MODEL_STORAGE_BYTES` | 64 | Size of `nk_model_t.storage` |
+| `NK_MODEL_STORAGE_BYTES` | 96 | Size of `nk_model_t.storage` |
 | `NK_MLP_STORAGE_BYTES` | 16 | Size of `nk_mlp_t.storage` |
 | `NK_CNN_STORAGE_BYTES` | 16 | Size of `nk_cnn_t.storage` |
 
@@ -156,7 +156,7 @@ Architecture metadata parsed from a `.nk` file (no full weight load required).
 
 ```c
 typedef struct nk_arch_info {
-    uint32_t version;
+    uint32_t version;  /* .nk format version (currently 2) */
     nk_network_kind_t kind;
     uint32_t input_shape[NK_MAX_TENSOR_RANK];
     uint32_t input_rank;
@@ -280,7 +280,6 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_cnn_init_pool_layer` | `CNNNetwork::InitPoolLayer` |
 | `nk_cnn_init_flatten_layer` | `CNNNetwork::InitFlattenLayer` |
 | `nk_cnn_init_dense_layer` | `CNNNetwork::InitDenseLayer` |
-| `nk_cnn_init_layer` | `CNNNetwork::InitLayer` (conv alias) |
 | `nk_cnn_forward` | `CNNNetwork::forward` |
 
 ### Conv2D (`conv2d.hpp`)
@@ -299,8 +298,6 @@ nk_cnn_init_pool_layer(cnn, idx, pool_size, stride);
 nk_cnn_init_flatten_layer(cnn, idx);
 nk_cnn_init_dense_layer(cnn, idx, &weights, &bias, NK_ACTIVATION_RELU, 0.01f);
 ```
-
-`nk_cnn_init_layer` is a backward-compatible alias for `nk_cnn_init_conv_layer`.
 
 For file-based models (including `models/mnist_cnn.nk`), use `nk_cnn_load` or `nk_model_load` — all block types are configured from the `.nk` layer list.
 

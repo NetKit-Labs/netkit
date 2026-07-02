@@ -21,11 +21,6 @@ function(netkit_resolve_architecture)
     set(_generic_nn OFF)
     set(_target_default cpu)
 
-    if(MCU_CORE AND NOT NETKIT_ARCH)
-        message(STATUS "MCU_CORE is deprecated; use -DNETKIT_ARCH=${MCU_CORE} instead")
-        set(NETKIT_ARCH "${MCU_CORE}" CACHE STRING "Target core (empty=desktop CPU)" FORCE)
-    endif()
-
     if(NOT NETKIT_ARCH)
         message(STATUS "NETKIT_ARCH: (unset) — native desktop / CPU application")
         set(HOST ON CACHE BOOL "Enable CMSIS Host Mode" FORCE)

@@ -93,21 +93,6 @@ public:
                         ActivationType activation,
                         float leaky_alpha = 0.01f);
 
-    // Backward-compatible alias for pure conv stacks
-    void InitLayer(uint32_t layer_idx,
-                   int kernel_size,
-                   int stride,
-                   int in_channels,
-                   int out_channels,
-                   float* weights,
-                   float* bias,
-                   ConvActivationType activation,
-                   float leaky_alpha = 0.01f)
-    {
-        InitConvLayer(layer_idx, kernel_size, stride, in_channels, out_channels, weights, bias, activation,
-                      leaky_alpha);
-    }
-
     Tensor& forward(const Tensor& input, Arena& arena);
 
     CnnBlock& GetBlock(uint32_t idx) { return blocks[idx]; }

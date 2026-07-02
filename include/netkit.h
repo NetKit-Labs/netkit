@@ -41,7 +41,7 @@ extern "C" {
 #define NK_MAX_STRING_LEN  64
 
 #define NK_ARENA_STORAGE_BYTES 32
-#define NK_MODEL_STORAGE_BYTES 64
+#define NK_MODEL_STORAGE_BYTES 96
 #define NK_MLP_STORAGE_BYTES   16
 #define NK_CNN_STORAGE_BYTES   16
 
@@ -283,7 +283,7 @@ nk_status_t nk_mlp_forward(nk_mlp_t* mlp,
 nk_status_t nk_cnn_create(nk_arena_t* arena, uint32_t num_layers, nk_cnn_t* cnn);
 bool nk_cnn_is_valid(const nk_cnn_t* cnn);
 
-/* Conv2D block (nk_cnn_init_layer is a backward-compatible alias). */
+/* Conv2D block */
 nk_status_t nk_cnn_init_conv_layer(nk_cnn_t* cnn,
                                    uint32_t layer_idx,
                                    int kernel_size,
@@ -308,17 +308,6 @@ nk_status_t nk_cnn_init_dense_layer(nk_cnn_t* cnn,
                                     const nk_tensor_t* bias,
                                     nk_activation_t activation,
                                     float leaky_alpha);
-
-nk_status_t nk_cnn_init_layer(nk_cnn_t* cnn,
-                              uint32_t layer_idx,
-                              int kernel_size,
-                              int stride,
-                              int in_channels,
-                              int out_channels,
-                              float* weights,
-                              float* bias,
-                              nk_conv_activation_t activation,
-                              float leaky_alpha);
 
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            nk_arena_t* arena,

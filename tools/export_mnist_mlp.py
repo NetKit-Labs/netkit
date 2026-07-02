@@ -33,7 +33,6 @@ SEED = 42
 NUM_CASES = 10
 
 ARCH = {
-    "version": 1,
     "network": "mlp",
     "input": [1, 784],
     "layers": [

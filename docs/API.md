@@ -130,7 +130,7 @@ netkit implements its own minimal arena rather than linking [memkit](https://git
 
 ## Supported model format
 
-Runtime models are **`.nk` v1** single files — [NK_FORMAT.md](NK_FORMAT.md).
+Runtime models are **`.nk` v2** single files — [NK_FORMAT.md](NK_FORMAT.md).
 
 Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`.
 

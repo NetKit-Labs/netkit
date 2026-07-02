@@ -128,7 +128,7 @@ Both suites exercise the same **69 embedded `.nk` inference cases** (16 hand-che
 | `CNNNetwork` | `nk_cnn_t` |
 | `CNNNetwork::IsValid` | `nk_cnn_is_valid` |
 | `CNNNetwork` constructor | `nk_cnn_create` |
-| `InitConvLayer` / `InitLayer` | `nk_cnn_init_conv_layer`, `nk_cnn_init_layer` |
+| `InitConvLayer` | `nk_cnn_init_conv_layer` |
 | `InitPoolLayer` | `nk_cnn_init_pool_layer` |
 | `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |

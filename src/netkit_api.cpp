@@ -103,13 +103,10 @@ namespace
 
     struct ModelState
     {
+        nk_arch_info_t arch{};
         nk_network_kind_t kind = NK_NETWORK_UNKNOWN;
         MLPNetwork* mlp = nullptr;
         CNNNetwork* cnn = nullptr;
-        std::array<uint32_t, kMaxTensorRank> input_shape{};
-        uint32_t input_rank = 0;
-        uint32_t input_elements = 0;
-        uint32_t output_elements = 0;
         bool loaded = false;
     };
 
@@ -601,29 +598,6 @@ nk_status_t nk_cnn_init_dense_layer(nk_cnn_t* cnn,
     return NK_OK;
 }
 
-nk_status_t nk_cnn_init_layer(nk_cnn_t* cnn,
-                              uint32_t layer_idx,
-                              int kernel_size,
-                              int stride,
-                              int in_channels,
-                              int out_channels,
-                              float* weights,
-                              float* bias,
-                              nk_conv_activation_t activation,
-                              float leaky_alpha)
-{
-    return nk_cnn_init_conv_layer(cnn,
-                                  layer_idx,
-                                  kernel_size,
-                                  stride,
-                                  in_channels,
-                                  out_channels,
-                                  weights,
-                                  bias,
-                                  activation,
-                                  leaky_alpha);
-}
-
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            nk_arena_t* arena,
                            const nk_tensor_t* input,
@@ -808,16 +782,17 @@ nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* mo
 
     std::memset(model->storage, 0, sizeof(model->storage));
     ModelState* state = ModelPtr(model);
-    state->input_rank = parsed.header.input_rank;
-    state->input_elements = NkLoader::InputElements(parsed);
-    state->output_elements = NkLoader::OutputElements(parsed);
-    for (uint32_t i = 0; i < parsed.header.input_rank; ++i)
-        state->input_shape[i] = parsed.header.input_shape[i];
+    NkLoader::ArchInfo arch{};
+    NkLoader::FillArchInfo(parsed, arch);
+    FillArchInfo(arch, &state->arch);
+    std::array<uint32_t, kMaxTensorRank> input_shape{};
+    for (uint32_t i = 0; i < state->arch.input_rank; ++i)
+        input_shape[i] = state->arch.input_shape[i];
 
     if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
     {
         const NkLoader::LoadResult load_result =
-            NkLoader::LoadMLP(resolved, *ArenaPtr(arena), state->mlp, state->input_shape, state->input_rank);
+            NkLoader::LoadMLP(resolved, *ArenaPtr(arena), state->mlp, input_shape, state->arch.input_rank);
         if (load_result.status != NkLoader::LoadStatus::Ok || !state->mlp || !state->mlp->IsValid())
         {
             SetLastError(load_result.message ? load_result.message : "MLP load failed");
@@ -829,7 +804,7 @@ nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* mo
     else if (parsed.header.network_kind == NkFormat::NetworkKind::Cnn)
     {
         const NkLoader::LoadResult load_result =
-            NkLoader::LoadCNN(resolved, *ArenaPtr(arena), state->cnn, state->input_shape, state->input_rank);
+            NkLoader::LoadCNN(resolved, *ArenaPtr(arena), state->cnn, input_shape, state->arch.input_rank);
         if (load_result.status != NkLoader::LoadStatus::Ok || !state->cnn || !state->cnn->IsValid())
         {
             SetLastError(load_result.message ? load_result.message : "CNN load failed");
@@ -855,25 +830,18 @@ nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info)
     const ModelState* state = ModelPtr(model);
     if (!state->loaded)
         return NK_ERR_MODEL_NOT_LOADED;
-    std::memset(info, 0, sizeof(*info));
-    info->version = 1;
-    info->kind = state->kind;
-    info->input_rank = state->input_rank;
-    info->input_elements = state->input_elements;
-    info->output_elements = state->output_elements;
-    for (uint32_t i = 0; i < NK_MAX_TENSOR_RANK; ++i)
-        info->input_shape[i] = i < state->input_rank ? state->input_shape[i] : 0;
+    *info = state->arch;
     return NK_OK;
 }
 
 uint32_t nk_model_input_count(const nk_model_t* model)
 {
-    return model ? ModelPtr(model)->input_elements : 0;
+    return model && ModelPtr(model)->loaded ? ModelPtr(model)->arch.input_elements : 0;
 }
 
 uint32_t nk_model_output_count(const nk_model_t* model)
 {
-    return model ? ModelPtr(model)->output_elements : 0;
+    return model && ModelPtr(model)->loaded ? ModelPtr(model)->arch.output_elements : 0;
 }
 
 nk_network_kind_t nk_model_kind(const nk_model_t* model)
@@ -894,27 +862,27 @@ nk_status_t nk_model_run(const nk_model_t* model,
     const ModelState* state = ModelPtr(model);
     if (!state->loaded)
         return NK_ERR_MODEL_NOT_LOADED;
-    if (input_count != state->input_elements)
+    if (input_count != state->arch.input_elements)
         return NK_ERR_INVALID_ARGUMENT;
-    if (output_capacity < state->output_elements)
+    if (output_capacity < state->arch.output_elements)
         return NK_ERR_BUFFER_TOO_SMALL;
 
     if (state->kind == NK_NETWORK_MLP)
     {
         Tensor input_tensor =
-            TensorFactory::Create2D(*ArenaPtr(arena), state->input_shape[0], state->input_shape[1]);
+            TensorFactory::Create2D(*ArenaPtr(arena), state->arch.input_shape[0], state->arch.input_shape[1]);
         if (!input_tensor.data)
             return NK_ERR_ARENA_OVERFLOW;
         float* input_data = static_cast<float*>(input_tensor.data);
         for (uint32_t i = 0; i < input_count; ++i)
             input_data[i] = input[i];
-        const uint32_t output_cols = state->output_elements / state->input_shape[0];
-        Tensor output_tensor = TensorFactory::Create2D(*ArenaPtr(arena), state->input_shape[0], output_cols);
+        const uint32_t output_cols = state->arch.output_elements / state->arch.input_shape[0];
+        Tensor output_tensor = TensorFactory::Create2D(*ArenaPtr(arena), state->arch.input_shape[0], output_cols);
         if (!output_tensor.data)
             return NK_ERR_ARENA_OVERFLOW;
         state->mlp->forward(input_tensor, output_tensor, *ArenaPtr(arena));
         const float* out_data = static_cast<const float*>(output_tensor.data);
-        for (uint32_t i = 0; i < state->output_elements; ++i)
+        for (uint32_t i = 0; i < state->arch.output_elements; ++i)
             output[i] = out_data[i];
     }
     else if (state->kind == NK_NETWORK_CNN)
@@ -925,14 +893,14 @@ nk_status_t nk_model_run(const nk_model_t* model,
         for (uint32_t i = 0; i < input_count; ++i)
             input_buffer[i] = input[i];
         Tensor input_tensor = MakeNhwcInput(input_buffer,
-                                            state->input_shape[0],
-                                            state->input_shape[1],
-                                            state->input_shape[2]);
+                                            state->arch.input_shape[0],
+                                            state->arch.input_shape[1],
+                                            state->arch.input_shape[2]);
         Tensor& output_tensor = state->cnn->forward(input_tensor, *ArenaPtr(arena));
         if (!output_tensor.data)
             return NK_ERR_ARENA_OVERFLOW;
         const float* out_data = static_cast<const float*>(output_tensor.data);
-        for (uint32_t i = 0; i < state->output_elements; ++i)
+        for (uint32_t i = 0; i < state->arch.output_elements; ++i)
             output[i] = out_data[i];
     }
     else
@@ -940,7 +908,7 @@ nk_status_t nk_model_run(const nk_model_t* model,
         return NK_ERR_UNSUPPORTED_NETWORK;
     }
 
-    *output_count = state->output_elements;
+    *output_count = state->arch.output_elements;
     return NK_OK;
 }
 
