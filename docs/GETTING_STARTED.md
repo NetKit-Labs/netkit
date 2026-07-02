@@ -198,6 +198,9 @@ python -m netkit aot models/test_mlp.nk -o build/aot --language c
 
 # Optional smoke main (compile with -DNETKIT_AOT_MAIN)
 python -m netkit aot models/test_mlp.nk -o build/aot --main
+
+# Optional graph optimizations (fewer ops at runtime; verified against original .nk)
+python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize
 ```
 
 Typical pipeline (single build session):
@@ -209,6 +212,8 @@ model.onnx  →  convert  →  model.nk  →  aot  →  model_aot.{hpp,cpp}
 ```
 
 At runtime the generated code calls `NkLoader::LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C++) or `nk_model_load_memory` (C) — same `.nk` format, loaded from flash/RAM instead of a filesystem path.
+
+With `--optimize`, the packager applies stable graph passes before embedding (conv+BN fusion, BN folded into the following dense head, consecutive linear dense merge, identity BN removal). Each pass is checked against the original model numerically before the optimized `.nk` is emitted.
 
 Link generated sources with `libnetkit.a`:
 

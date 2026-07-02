@@ -34,17 +34,37 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
                 "filters": layer["filters"],
                 "activation": layer["activation"],
             }
+            if layer.get("pad_h", 0):
+                entry["pad_h"] = layer["pad_h"]
+            if layer.get("pad_w", 0):
+                entry["pad_w"] = layer["pad_w"]
             if layer.get("activation") == "leaky_relu":
                 entry["alpha"] = float(layer.get("alpha", 0.01))
             arch_layers.append(entry)
         elif kind == "max_pool2d":
-            arch_layers.append(
-                {
-                    "type": "max_pool2d",
-                    "pool_size": layer["pool_size"],
-                    "stride": layer["stride"],
-                }
-            )
+            entry = {
+                "type": "max_pool2d",
+                "pool_size": layer["pool_size"],
+                "stride": layer["stride"],
+            }
+            if layer.get("pad_h", 0):
+                entry["pad_h"] = layer["pad_h"]
+            if layer.get("pad_w", 0):
+                entry["pad_w"] = layer["pad_w"]
+            arch_layers.append(entry)
+        elif kind == "avg_pool2d":
+            entry = {
+                "type": "avg_pool2d",
+                "pool_size": layer["pool_size"],
+                "stride": layer["stride"],
+            }
+            if layer.get("pad_h", 0):
+                entry["pad_h"] = layer["pad_h"]
+            if layer.get("pad_w", 0):
+                entry["pad_w"] = layer["pad_w"]
+            arch_layers.append(entry)
+        elif kind == "batch_norm2d":
+            arch_layers.append({"type": "batch_norm2d", "channels": layer["channels"]})
         elif kind == "flatten":
             arch_layers.append({"type": "flatten"})
         else:

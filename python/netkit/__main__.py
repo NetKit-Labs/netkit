@@ -38,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Include optional NETKIT_AOT_MAIN smoke main in the generated source",
     )
 
+    aot.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Apply stable graph optimizations before embedding (BN fold, linear dense merge)",
+    )
+
     args = parser.parse_args(argv)
     input_path = Path(args.input)
 
@@ -63,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
             language=args.language,
             model_name=args.name,
             include_main=args.main,
+            optimize=args.optimize,
         )
         print(f"Wrote {result.header_path}")
         print(f"Wrote {result.source_path}")
@@ -70,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
             f"network={result.network} input={result.input_elements} "
             f"output={result.output_elements} bytes={result.nk_bytes} language={result.language.value}"
         )
+        if result.optimizations_applied:
+            print(f"optimizations={','.join(result.optimizations_applied)}")
         return 0
 
     return 1

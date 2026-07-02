@@ -278,6 +278,35 @@ class TestAotCompile(unittest.TestCase):
                             err_msg=f"AOT {language} mismatch for {model_file}",
                         )
 
+    def test_aot_optimize_matches_reference(self) -> None:
+        nk_path = MODELS / "cnn_extended_ops.nk"
+        arch, weights = read_nk(nk_path)
+        suite = read_test_suite(nk_path)
+        case = suite.cases[0]
+        expected = _reference_output(arch, weights, np.asarray(case.input, dtype=np.float32))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            out_dir = tmp / "optimized"
+            result = compile_aot(nk_path, out_dir, language=AotLanguage.CPP, optimize=True)
+            self.assertTrue(result.optimized)
+            self.assertIn("fold_batch_norm_into_dense", result.optimizations_applied)
+            harness = _write_cpp_harness(out_dir, result.model_name, case.input)
+            stdout = _compile_and_run_cpp(
+                out_dir,
+                result.source_path,
+                harness,
+                out_dir / "aot_runner",
+            )
+            actual = np.array([float(v) for v in stdout.split(",")], dtype=np.float32)
+            np.testing.assert_allclose(
+                actual,
+                expected,
+                rtol=0,
+                atol=suite.tolerance,
+                err_msg="optimized AOT mismatch for cnn_extended_ops.nk",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

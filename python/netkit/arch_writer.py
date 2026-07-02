@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from .format import activation_from_name
-from .writer import LayerSpec, ModelSpec, RegressionCase, RegressionSuite, write_nk
+from .writer import LayerSpec, ModelSpec, RegressionCase, RegressionSuite, write_nk, write_nk_bytes
 
 
 def _out_dim(in_dim: int, kernel: int, stride: int, pad: int = 0) -> int:
@@ -174,3 +174,13 @@ def write_nk_from_arch(
     spec.tests = tests
     write_nk(output_path, spec)
     return output_path
+
+
+def arch_to_nk_bytes(
+    arch: dict,
+    weights: np.ndarray,
+    tests: RegressionSuite | None = None,
+) -> bytes:
+    spec = _arch_to_spec(arch, weights)
+    spec.tests = tests
+    return write_nk_bytes(spec)

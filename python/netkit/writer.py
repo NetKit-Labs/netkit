@@ -64,6 +64,10 @@ class ModelSpec:
 
 
 def write_nk(path: str | Path, spec: ModelSpec) -> None:
+    Path(path).write_bytes(write_nk_bytes(spec))
+
+
+def write_nk_bytes(spec: ModelSpec) -> bytes:
     network_kind = NetworkKind.MLP if spec.network == "mlp" else NetworkKind.CNN
     input_rank = len(spec.input_shape)
 
@@ -134,4 +138,4 @@ def write_nk(path: str | Path, spec: ModelSpec) -> None:
     if spec.tests and spec.tests.cases:
         body += pack_test_section(tolerance=spec.tests.tolerance, cases=spec.tests.cases)
 
-    Path(path).write_bytes(body)
+    return body

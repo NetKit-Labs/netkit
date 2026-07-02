@@ -10,8 +10,9 @@ from typing import Literal
 
 import numpy as np
 
-from .format import HEADER_BYTES, unpack_header
-from .reader import read_nk
+from .arch_writer import arch_to_nk_bytes
+from .nk_optimize import OptimizeOptions, optimize_nk
+from .reader import read_nk, read_test_suite
 from .reference_forward import forward_cnn, forward_mlp
 
 
@@ -34,6 +35,8 @@ class AotCompileResult:
     output_elements: int
     network: str
     nk_bytes: int
+    optimized: bool = False
+    optimizations_applied: tuple[str, ...] = ()
 
 
 def _sanitize_symbol(name: str) -> str:
@@ -72,17 +75,6 @@ def _format_byte_array(data: bytes, indent: str = "    ", width: int = 12) -> st
     return "\n".join(lines)
 
 
-def _read_model_bytes(path: Path) -> bytes:
-    raw = path.read_bytes()
-    if len(raw) < HEADER_BYTES:
-        raise ValueError(f"truncated .nk file: {path}")
-    header = unpack_header(raw[:HEADER_BYTES])
-    network = header["network_kind"].name.lower()
-    if network not in {"mlp", "cnn"}:
-        raise ValueError(f"unsupported network kind in {path}: {network}")
-    return raw
-
-
 def compile_aot(
     nk_path: str | Path,
     output_dir: str | Path,
@@ -90,10 +82,15 @@ def compile_aot(
     language: Literal["cpp", "c"] | AotLanguage = AotLanguage.CPP,
     model_name: str | None = None,
     include_main: bool = False,
+    optimize: bool = False,
+    optimize_options: OptimizeOptions | None = None,
 ) -> AotCompileResult:
     """Compile a .nk model into embeddable C or C++ source files.
 
     Default output is C++26 (.hpp + .cpp). Pass ``language="c"`` for C23 (.h + .c).
+    Set ``optimize=True`` to apply stable graph optimizations (BN folding, linear dense
+    merge) before embedding — fewer runtime layer dispatches, verified against the
+    original model numerically.
     """
     path = Path(nk_path)
     out_dir = Path(output_dir)
@@ -103,13 +100,25 @@ def compile_aot(
     stem = model_name or path.stem
     symbol = _sanitize_symbol(stem)
 
-    nk_bytes = _read_model_bytes(path)
     arch, weights = read_nk(path)
+    tests = read_test_suite(path)
+    optimizations_applied: tuple[str, ...] = ()
+    if optimize:
+        opt = optimize_nk(arch, weights, options=optimize_options)
+        arch, weights = opt.arch, opt.weights
+        optimizations_applied = tuple(opt.applied)
+    nk_bytes = arch_to_nk_bytes(arch, weights, tests=tests)
+
     input_elements, output_elements = _compute_io(arch, weights)
     network = arch["network"]
     input_shape = arch["input"]
 
     blob_lines = _format_byte_array(nk_bytes)
+
+    opt_comment = ""
+    if optimizations_applied:
+        joined = ", ".join(optimizations_applied)
+        opt_comment = f"\n/* Optimizations: {joined} */"
 
     if lang is AotLanguage.CPP:
         header_path = out_dir / f"{symbol}_aot.hpp"
@@ -119,7 +128,8 @@ def compile_aot(
             encoding="utf-8",
         )
         source_path.write_text(
-            _render_cpp_source(
+            opt_comment
+            + _render_cpp_source(
                 symbol,
                 network,
                 input_elements,
@@ -139,7 +149,8 @@ def compile_aot(
             encoding="utf-8",
         )
         source_path.write_text(
-            _render_c_source(
+            opt_comment
+            + _render_c_source(
                 symbol,
                 input_elements,
                 output_elements,
@@ -159,6 +170,8 @@ def compile_aot(
         output_elements=output_elements,
         network=network,
         nk_bytes=len(nk_bytes),
+        optimized=bool(optimizations_applied),
+        optimizations_applied=optimizations_applied,
     )
 
 

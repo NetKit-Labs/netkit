@@ -59,7 +59,9 @@ make test-python
 
 `python/tests/test_aot_compile.py` generates C++26 and C23 sources from hand `.nk` models, compiles them against `libnetkit.a`, and checks outputs against the NumPy reference forward pass (embedded TCAS inputs).
 
-Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`.
+Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`. With `--optimize` / `optimize=True`, `cnn_extended_ops.nk` is also checked end-to-end (optimized graph embedded, runtime parity preserved).
+
+`python/tests/test_nk_optimize.py` covers individual graph passes (BN folding, conv+BN fusion, linear dense merge) with numeric checks against the reference forward pass.
 
 ## Embedded smoke (MCU/MPU)
 

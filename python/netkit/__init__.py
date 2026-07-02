@@ -2,6 +2,7 @@
 
 from .aot_compile import AotCompileResult, AotLanguage, compile_aot
 from .arch_writer import write_nk_from_arch
+from .nk_optimize import OptimizeOptions, OptimizeResult, optimize_nk
 from .onnx_convert import convert_onnx_to_nk
 from .inspect import inspect_nk
 from .reader import read_nk, read_test_suite
@@ -13,6 +14,9 @@ __all__ = [
     "compile_aot",
     "convert_onnx_to_nk",
     "inspect_nk",
+    "optimize_nk",
+    "OptimizeOptions",
+    "OptimizeResult",
     "read_nk",
     "read_test_suite",
     "write_nk",
