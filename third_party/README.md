@@ -5,7 +5,7 @@
 [ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) is Apache-2.0 licensed and provides
 optimized neural-network kernels for Arm Cortex-M (with portable scalar fallbacks for host builds).
 
-When enabled (`NETKIT_CMSIS_NN=1` / `-DNETKIT_CMSIS_NN=ON`), netkit uses CMSIS-NN for:
+When enabled on **`NETKIT_TARGET=mcu`** with a **Cortex-M `NETKIT_ARCH`**, netkit uses CMSIS-NN for conv, pool, batch norm, FC, and activations. On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` is ignored (build warning) and reference kernels are used.
 
 - Conv2d (with symmetric padding), max-pool, avg-pool, batch norm, fully-connected (dense weights in `[out, in]` layout)
 - Activations (ReLU, sigmoid, tanh, leaky ReLU, ReLU6) and softmax
@@ -23,8 +23,7 @@ When enabled (`NETKIT_CMSIS_DSP=1` / `-DNETKIT_CMSIS_DSP=ON`), netkit uses CMSIS
 - Fully-connected fallback via `arm_mat_vec_mult_f32` (desktop, or MCU/MPU when CMSIS-NN is off)
 - Batch-norm fallback via `arm_mult_f32` + `arm_add_f32` (same gating as FC)
 
-On **MCU/MPU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then generic reference — DSP does not substitute for NN layer kernels. On **desktop**, DSP backs NN when the host NN path returns 0.
-- `ARM_MATH_LOOPUNROLL` on all CMSIS-DSP builds (desktop and embedded)
+On **MCU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then generic reference. On **desktop and MPU**, `NETKIT_CMSIS_NN=1` is ignored — use CMSIS-DSP for vector/math acceleration where enabled.
 
 ## Fetching
 

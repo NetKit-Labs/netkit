@@ -15,9 +15,8 @@ make clean        # remove objects and binaries
 make rebuild      # clean + make
 
 # Optional CMSIS backend parity (after make cmsis-init)
-make NETKIT_CMSIS_NN=1 test-cpp
 make NETKIT_CMSIS_DSP=1 test-cpp
-make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp
+make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles
 
 # Optional CMake build + test
 cmake -B cmake-build && cmake --build cmake-build
@@ -164,10 +163,9 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP (submodule pins)
 2. `make` — default desktop build
-3. `make NETKIT_CMSIS_NN=1 test-cpp` — CMSIS-NN parity
+3. `make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib` — CMSIS-NN MCU link smoke
 4. `make NETKIT_CMSIS_DSP=1 test-cpp` — CMSIS-DSP parity
-5. `make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp` — both backends
-6. `make test` — full C++ embedded + C API + Python ONNX parity + convert ops
+5. `make test` — full C++ embedded + C API + Python ONNX parity + convert ops
 7. Example and CLI smoke tests
 8. CMake configure + build smoke test
 9. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS smoke matrix (last; rebuilds lean profiles)

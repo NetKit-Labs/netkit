@@ -62,6 +62,16 @@ ifneq ($(NETKIT_ARCH),)
   endif
 endif
 
+# Cortex-M profile (CMSIS-NN is restricted to NETKIT_TARGET=mcu + these arches).
+NETKIT_ARCH_IS_M_PROFILE := 0
+ifneq ($(NETKIT_ARCH),)
+  ifeq ($(filter $(NETKIT_ARCH_UPPER),A32 MPU NEON CORTEXA A64),$(NETKIT_ARCH_UPPER))
+    NETKIT_ARCH_IS_M_PROFILE := 0
+  else
+    NETKIT_ARCH_IS_M_PROFILE := 1
+  endif
+endif
+
 # Desktop host builds use CMSIS-DSP's portable GNUC_PYTHON path.
 ifeq ($(NETKIT_ARCH),)
   ifeq ($(NETKIT_TARGET),cpu)

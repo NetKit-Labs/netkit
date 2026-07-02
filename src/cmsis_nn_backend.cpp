@@ -5,7 +5,7 @@
  */
 #include "netkit_backend.h"
 
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
 
 #include <arm_nnfunctions.h>
 

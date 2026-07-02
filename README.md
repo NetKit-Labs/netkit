@@ -44,7 +44,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **Regression tests** — embedded `.nk` cases (69 C++) plus Python ONNX parity (69) via `make test`
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness (`make test-embedded-smoke-matrix`)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
-- **Optional CMSIS backends** — CMSIS-NN (conv, pool, batch norm, FC) and CMSIS-DSP (vector ops + desktop NN fallbacks); see dispatch rules in [BUILD_TARGETS.md](docs/BUILD_TARGETS.md#cmsis-backends)
+- **Optional CMSIS backends** — CMSIS-NN when `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` (flag ignored on cpu/mpu); CMSIS-DSP on any target
 
 ## Quick start
 
@@ -157,12 +157,8 @@ make rebuild
 
 ```bash
 make cmsis-init
-make NETKIT_CMSIS_NN=1 test-cpp                    # CMSIS-NN conv/pool/batch-norm/FC/activations
-make NETKIT_CMSIS_DSP=1 test-cpp                   # CMSIS-DSP Ops + desktop FC/batch-norm fallback
-make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp # both (NN owns overlapping ops on MCU/MPU)
-
-# Firmware with core-specific ARM_MATH_* flags
-make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+make NETKIT_CMSIS_DSP=1 test-cpp                   # CMSIS-DSP (desktop / MPU / MCU)
+make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib   # MCU + NN
 
 # Host smoke before on-device bring-up (7 profiles; sets NETKIT_HOST_SMOKE=1)
 make cmsis-init

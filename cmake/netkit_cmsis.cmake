@@ -34,6 +34,12 @@ function(netkit_apply_cmsis_target_flags cmsis_target)
 endfunction()
 
 function(netkit_add_cmsis_nn target)
+    if(NOT NETKIT_TARGET STREQUAL "mcu" OR NOT NETKIT_ENV_CMSIS_NN)
+        message(WARNING
+            "NETKIT_CMSIS_NN=ON ignored — requires NETKIT_TARGET=mcu and Cortex-M NETKIT_ARCH; using reference kernels")
+        return()
+    endif()
+
     set(CMSIS_NN_DIR "${CMAKE_SOURCE_DIR}/third_party/CMSIS-NN")
     if(NOT EXISTS "${CMSIS_NN_DIR}/Include/arm_nnfunctions.h")
         message(FATAL_ERROR "NETKIT_CMSIS_NN=ON requires CMSIS-NN at ${CMSIS_NN_DIR} — run ./tools/fetch_cmsis_nn.sh")

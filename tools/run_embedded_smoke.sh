@@ -46,11 +46,11 @@ if [[ ! -f third_party/CMSIS-DSP/Include/arm_math.h ]]; then
   exit 1
 fi
 
-run_profile "mcu+cmsis" NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
+run_profile "mcu+dsp" NETKIT_TARGET=mcu NETKIT_CMSIS_DSP=1
 run_profile "mcu+cm4+cmsis" NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
 run_profile "mcu+m33+cmsis" NETKIT_TARGET=mcu NETKIT_ARCH=M33 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
-run_profile "mpu+cmsis" NETKIT_TARGET=mpu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
-run_profile "mpu+a32+cmsis" NETKIT_TARGET=mpu NETKIT_ARCH=A32 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
+run_profile "mpu+dsp" NETKIT_TARGET=mpu NETKIT_CMSIS_DSP=1
+run_profile "mpu+a32+dsp" NETKIT_TARGET=mpu NETKIT_ARCH=A32 NETKIT_CMSIS_DSP=1
 
 echo ""
 echo "All embedded smoke profiles passed."

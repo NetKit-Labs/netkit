@@ -12,7 +12,7 @@
 #   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
 #
 # Optional CMSIS-NN kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_nn.sh):
-#   NETKIT_CMSIS_NN=1      — use ARM CMSIS-NN float32 conv2d + pool + batch norm + FC backends
+#   NETKIT_CMSIS_NN=1      — Cortex-M MCU only (NETKIT_TARGET=mcu + NETKIT_ARCH=CM4|M33|...)
 #
 # Optional CMSIS-DSP kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_dsp.sh):
 #   NETKIT_CMSIS_DSP=1     — use ARM CMSIS-DSP float32 vector/matrix ops in Ops::
@@ -73,7 +73,19 @@ RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src
 TARGET_CPPFLAGS = $(NETKIT_ARCH_CFLAGS)
 
 CMSIS_NN_OBJECTS =
+NETKIT_CMSIS_NN_EFFECTIVE := 0
 ifeq ($(NETKIT_CMSIS_NN),1)
+  ifeq ($(NETKIT_TARGET),mcu)
+    ifeq ($(NETKIT_ARCH_IS_M_PROFILE),1)
+      NETKIT_CMSIS_NN_EFFECTIVE := 1
+    else
+      $(warning NETKIT_CMSIS_NN=1 ignored — set NETKIT_ARCH=CM4|M33|... (Cortex-M); using reference kernels)
+    endif
+  else
+    $(warning NETKIT_CMSIS_NN=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-NN is MCU + Cortex-M only; using reference kernels)
+  endif
+endif
+ifeq ($(NETKIT_CMSIS_NN_EFFECTIVE),1)
   CMSIS_NN_DIR ?= third_party/CMSIS-NN
   ifeq ($(wildcard $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h),)
     $(error NETKIT_CMSIS_NN=1 requires CMSIS-NN at $(CMSIS_NN_DIR) — run ./tools/fetch_cmsis_nn.sh)

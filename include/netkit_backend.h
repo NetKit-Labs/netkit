@@ -1,8 +1,8 @@
 /*
  * netkit_backend.h — optional kernel backends (reference vs CMSIS-NN / CMSIS-DSP).
  *
- * Enable with Makefile:
- *   NETKIT_CMSIS_NN=1  -> NETKIT_USE_CMSIS_NN
+ * Enable with Makefile (MCU firmware + Cortex-M NETKIT_ARCH only for NN):
+ *   NETKIT_CMSIS_NN=1  -> NETKIT_USE_CMSIS_NN  (NETKIT_TARGET=mcu, NETKIT_ARCH=CM4|...)
  *   NETKIT_CMSIS_DSP=1 -> NETKIT_USE_CMSIS_DSP
  */
 #ifndef NETKIT_BACKEND_H
@@ -34,16 +34,14 @@ static inline int netkit_activation_is_fused(NetkitBackendActivation activation)
 
 /*
  * CMSIS-DSP fallback for ops that CMSIS-NN also provides (FC, add, clip activations, batch norm).
- * - Desktop (NETKIT_DESKTOP): use DSP when NN is unavailable or returns 0 (host smoke).
- * - MCU/MPU with NETKIT_USE_CMSIS_NN: NN then generic only — do not substitute DSP.
- * - MCU/MPU with DSP only: use DSP fallbacks normally.
+ * - Desktop / MPU: CMSIS-DSP when enabled (CMSIS-NN is not used on those targets).
+ * - MCU with CMSIS-NN: NN then generic only — do not substitute DSP.
+ * - MCU with DSP only: use DSP fallbacks normally.
  */
 static inline int netkit_cmsis_dsp_nn_overlap_fallback(void)
 {
 #if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
-#if defined(NETKIT_DESKTOP)
-    return 1;
-#elif defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
+#if NETKIT_CMSIS_NN_ALLOWED && defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
     return 0;
 #else
     return 1;
@@ -53,7 +51,7 @@ static inline int netkit_cmsis_dsp_nn_overlap_fallback(void)
 #endif
 }
 
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
 
 /* Returns 1 on success, 0 to fall back to the reference implementation. */
 int netkit_cmsis_conv2d_forward(const Tensor* input,

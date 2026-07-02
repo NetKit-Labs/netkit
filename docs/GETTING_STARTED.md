@@ -129,7 +129,8 @@ Fetch once, then enable at compile time (no runtime switching):
 
 ```bash
 make cmsis-init
-make NETKIT_CMSIS_NN=1 test-cpp   # conv, pool, FC, activations, softmax
+make NETKIT_CMSIS_DSP=1 test-cpp   # desktop / MPU vector ops
+make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib   # MCU CMSIS-NN (firmware)
 make NETKIT_CMSIS_DSP=1 test-cpp  # Ops add/mul/scale/clip/matmul
 ```
 
@@ -159,7 +160,7 @@ cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_CMSIS_NN=ON`, etc. Desktop CMake builds enable CMSIS-DSP by default with reference NN kernels.
+Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu`, `-DNETKIT_CMSIS_NN=ON` for MCU firmware. Desktop CMake builds enable CMSIS-DSP by default; CMSIS-NN requires MCU + Cortex-M arch.
 
 ### Size a buffer for your model
 

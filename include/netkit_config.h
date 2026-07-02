@@ -16,10 +16,10 @@
  *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup; never freed.
  *
  * Optional kernel backends (Makefile / CMake):
- *   NETKIT_USE_CMSIS_NN  — ARM CMSIS-NN float32 conv/pool/FC/activations/softmax/add
+ *   NETKIT_USE_CMSIS_NN  — ARM CMSIS-NN when NETKIT_TARGET_MCU + Cortex-M NETKIT_ARCH (flag ignored elsewhere)
  *   NETKIT_USE_CMSIS_DSP — ARM CMSIS-DSP float32 vector/matrix ops + clip
- *   On MCU/MPU with both enabled, NN owns overlapping layer ops; DSP is not a fallback.
- *   On desktop (NETKIT_DESKTOP), DSP substitutes when NN host path is unavailable.
+ *   On MCU with both enabled, NN owns overlapping layer ops; DSP is not a fallback.
+ *   On desktop and MPU, NETKIT_CMSIS_NN=1 is ignored (warning) — reference kernels and optional CMSIS-DSP apply.
  *
  * Target architecture (Makefile NETKIT_ARCH=... / CMake -DNETKIT_ARCH=...):
  *   Maps to CMSIS ARM_MATH_* flags (CM0–M85, A32, NEON). Unset = desktop host.
@@ -56,6 +56,16 @@
 #define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U)
 #else
 #define NK_ARENA_DEFAULT_CAPACITY (4U * 1024U * 1024U)
+#endif
+
+/* CMSIS-NN: Cortex-M MCU firmware only (not desktop CPU or Cortex-A MPU). */
+#if defined(NETKIT_TARGET_MCU) &&                                                                 \
+    (defined(ARM_MATH_CM0) || defined(ARM_MATH_CM0PLUS) || defined(ARM_MATH_CM3) ||               \
+     defined(ARM_MATH_CM4) || defined(ARM_MATH_CM7) || defined(ARM_MATH_ARMV8MBL) ||               \
+     defined(ARM_MATH_ARMV8MML) || defined(ARM_MATH_M55) || defined(ARM_MATH_M85))
+#define NETKIT_CMSIS_NN_ALLOWED 1
+#else
+#define NETKIT_CMSIS_NN_ALLOWED 0
 #endif
 
 #endif /* NETKIT_CONFIG_H */

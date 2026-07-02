@@ -210,38 +210,35 @@ Optional compile-time kernel backends (Apache-2.0). Fetch once with `make cmsis-
 
 ### CMSIS-NN
 
-[ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) accelerates **conv2d** (with symmetric padding), **max-pool**, **avg-pool**, **batch norm**, **fully-connected**, **activations** (ReLU, sigmoid, tanh, leaky ReLU, ReLU6, softmax), and **elementwise add** when enabled.
+[ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) accelerates layer kernels when **`NETKIT_CMSIS_NN=1`**, **`NETKIT_TARGET=mcu`**, and **`NETKIT_ARCH`** is Cortex-M (CM4, M33, …). On **cpu** or **mpu**, the flag is **ignored** (Make warning) and reference kernels run.
 
 ### CMSIS-DSP
 
-[ARM CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) accelerates **Ops** primitives: elementwise add/mul, scale, clip (ReLU/ReLU6 fallback), matrix multiply, and fully-connected / batch-norm **desktop fallbacks** when CMSIS-NN is unavailable.
+[ARM CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) accelerates **Ops** primitives: elementwise add/mul, scale, clip (ReLU/ReLU6 fallback), matrix multiply, and fully-connected / batch-norm fallbacks on **desktop and MPU** (and on MCU when CMSIS-NN is off).
 
-Both backends are **compile-time only** — one binary, one backend set; no runtime switching. Desktop builds use CMSIS portable scalar paths for regression; embedded builds use core-specific `ARM_MATH_*` flags from `NETKIT_ARCH`.
+Both backends are **compile-time only** — one binary, one backend set; no runtime switching.
 
-**NN vs DSP on overlapping ops:** On **MCU/MPU with both flags**, CMSIS-NN owns layer kernels (conv, pool, FC, batch norm, activations, add) — CMSIS-DSP does not substitute when NN is enabled. On **desktop** (`NETKIT_DESKTOP`), CMSIS-DSP backs NN when the host NN path returns 0 (typical without CMSIS-Core).
+**NN vs DSP:** On **MCU with both flags**, CMSIS-NN owns layer kernels — CMSIS-DSP does not substitute. On **desktop and MPU**, use CMSIS-DSP (CMSIS-NN is not linked).
 
 ### Make flags
 
 ```bash
 make cmsis-init
 
-# CMSIS-NN only
-make NETKIT_CMSIS_NN=1 test-cpp
+# CMSIS-NN — MCU + Cortex-M arch only
+make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 lib
 
-# CMSIS-DSP only (loop unroll enabled automatically)
+# CMSIS-DSP — desktop, MCU, or MPU
 make NETKIT_CMSIS_DSP=1 test-cpp
 
-# Both backends
-make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp
-
-# Firmware library
+# MCU firmware with both
 make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 ```
 
 | Makefile flag | Macro | Effect |
 |---------------|-------|--------|
-| `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | Conv2d, max/avg pool, batch norm, FC, activations, softmax, NN elementwise add |
-| `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Ops add/mul/scale/clip/matmul; FC/batch-norm fallback on desktop; `ARM_MATH_LOOPUNROLL` |
+| `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | MCU + Cortex-M `NETKIT_ARCH` only (ignored with warning on cpu/mpu) |
+| `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Ops add/mul/scale/clip/matmul; FC/batch-norm on desktop/MPU; `ARM_MATH_LOOPUNROLL` |
 | `NETKIT_ARCH=<core>` | `ARM_MATH_*` (see table above) | Core-specific CMSIS-DSP/NN tuning |
 
 Dense weights use CMSIS-NN `[out, in]` layout via `FullyConnected` (same as PyTorch `nn.Linear`).
@@ -251,24 +248,23 @@ Float32 CMSIS-NN support is **experimental** upstream. Helium (MVE) and Neon tar
 ### Dispatch priority (typical forward pass)
 
 ```
-Conv / pool / batch norm / FC  → CMSIS-NN when NETKIT_USE_CMSIS_NN (embedded default)
-FC / batch norm / add / clip   → CMSIS-DSP fallback on desktop only (netkit_cmsis_dsp_nn_overlap_fallback)
-Other activations              → CMSIS-NN arm_nn_activation_f32 / arm_softmax_f32
-ReLU/ReLU6 (ref path)          → CMSIS-NN activation → CMSIS-DSP clip (desktop) → reference
-Ops mul / matmul / scale       → CMSIS-DSP when enabled (all targets)
+Conv / pool / batch norm / FC  → CMSIS-NN when MCU + Cortex-M NETKIT_ARCH + NETKIT_USE_CMSIS_NN
+FC / batch norm / add / clip   → CMSIS-DSP on desktop and MPU (and MCU when NN off)
+Other activations              → CMSIS-NN on MCU when enabled; else reference
+ReLU/ReLU6 (ref path)          → CMSIS-DSP clip on desktop/MPU → reference
+Ops mul / matmul / scale       → CMSIS-DSP when enabled
 ```
 
 ## Testing
 
-Full regression (`make test` — 69 embedded C++ cases + 69 Python ONNX parity + ONNX convert ops) requires **`NETKIT_TARGET=cpu`**. Validate on desktop first, then run **`make test-embedded-smoke-matrix`** for MCU/MPU + `NETKIT_ARCH` + CMSIS linking smoke before on-device bring-up. CI also runs **`./tools/compile_cm4_cross.sh`** (compile-only `arm-none-eabi-gcc` + `NETKIT_ARCH=CM4`).
+Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS-NN is validated via **`make test-embedded-smoke-matrix`** (MCU + `NETKIT_ARCH`) and **`./tools/compile_cm4_cross.sh`**.
 
 ```bash
 make cmsis-init
-make NETKIT_CMSIS_NN=1 test-cpp
 make NETKIT_CMSIS_DSP=1 test-cpp
-make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp
 make test-embedded-smoke-matrix
 ./tools/compile_cm4_cross.sh   # requires gcc-arm-none-eabi
+make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib
 ```
 
 See [TESTING.md](TESTING.md) and [ARENA.md](ARENA.md).
