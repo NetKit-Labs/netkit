@@ -1,13 +1,12 @@
-#include "vectors_loader.hpp"
-#include "test_mnist.hpp"
+#include "nk_regression.hpp"
 #include "test_onnx.hpp"
 #include <iostream>
 
-VectorsLoader::RunSummary run_all_tests()
+NkRegression::RunSummary run_all_tests()
 {
-    VectorsLoader::RunSummary total{};
+    NkRegression::RunSummary total{};
 
-    auto merge = [&](const VectorsLoader::RunSummary& part) {
+    auto merge = [&](const NkRegression::RunSummary& part) {
         total.passed += part.passed;
         total.failed += part.failed;
     };
@@ -19,25 +18,25 @@ VectorsLoader::RunSummary run_all_tests()
     std::cout << "\n============================\n";
     std::cout << " MLP TESTS\n";
     std::cout << "============================\n";
-    merge(VectorsLoader::RunVectorsFile("models/test_mlp.vectors.json"));
-    merge(VectorsLoader::RunVectorsFile("models/mlp_hand.vectors.json"));
+    merge(NkRegression::RunModelTests("models/test_mlp.nk"));
+    merge(NkRegression::RunModelTests("models/mlp_hand.nk"));
 
     std::cout << "\n============================\n";
     std::cout << " CNN TESTS\n";
     std::cout << "============================\n";
-    merge(VectorsLoader::RunVectorsFile("models/test_cnn.vectors.json"));
-    merge(VectorsLoader::RunVectorsFile("models/cnn_4x4_single.vectors.json"));
-    merge(VectorsLoader::RunVectorsFile("models/cnn_hand.vectors.json"));
+    merge(NkRegression::RunModelTests("models/test_cnn.nk"));
+    merge(NkRegression::RunModelTests("models/cnn_4x4_single.nk"));
+    merge(NkRegression::RunModelTests("models/cnn_hand.nk"));
 
     std::cout << "\n============================\n";
     std::cout << " MNIST MLP TESTS\n";
     std::cout << "============================\n";
-    merge(run_mnist_tests());
+    merge(NkRegression::RunModelTests("models/mnist_mlp.nk"));
 
     std::cout << "\n============================\n";
     std::cout << " MNIST CNN TESTS\n";
     std::cout << "============================\n";
-    merge(run_mnist_cnn_tests());
+    merge(NkRegression::RunModelTests("models/mnist_cnn.nk"));
 
     merge(run_onnx_import_tests());
 

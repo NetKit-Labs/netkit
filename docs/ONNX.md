@@ -1,29 +1,31 @@
 # ONNX Import
 
-netkit includes a **dependency-free ONNX importer** written in C++26. It parses ONNX `ModelProto` protobuf wire format directly (no libprotobuf, no ONNX Runtime) and converts supported graphs into netkit `model.json` + `model.bin` bundles or loads them directly into `MLPNetwork` / `CNNNetwork`.
+netkit includes a **dependency-free ONNX importer** written in C++26. It parses ONNX `ModelProto` protobuf wire format directly (no libprotobuf, no ONNX Runtime) and loads supported graphs into `MLPNetwork` / `CNNNetwork` for inference and parity testing.
 
-## CLI
+For deployment, convert ONNX to **`.nk`** with the Python packager — the C++ runtime loads `.nk` only.
+
+## Python packager (recommended)
 
 ```bash
-./netkit import models/my_model.onnx --out models/my_model
-# writes models/my_model.json and models/my_model.bin
+pip install -e python
+python -m netkit convert models/my_model.onnx -o models/my_model.nk
+make export-nk    # all bundled regression models
 
-./netkit run models/my_model.json --input 1,2,3
+./netkit run models/my_model.nk --input 1,2,3
 ```
 
-## C++ API
+See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
+
+## C++ runtime importer (parity tests)
+
+The C++ importer loads ONNX directly into arena-backed networks — used by ONNX parity tests in `src/test_onnx.cpp` to compare against committed `.nk` files.
 
 ```cpp
 #include "onnx_importer.hpp"
 
-// Convert to netkit files on disk
-OnnxImporter::ImportResult result =
-    OnnxImporter::ImportToNetkitFiles("model.onnx", "model.json", "model.bin");
-
-// Or load directly into the arena-backed engine
 MLPNetwork* mlp = nullptr;
 CNNNetwork* cnn = nullptr;
-ModelLoader::NetworkKind kind{};
+NkLoader::NetworkKind kind{};
 std::array<uint32_t, kMaxTensorRank> input_shape{};
 uint32_t input_rank = 0;
 
@@ -34,7 +36,7 @@ Headers:
 
 | Header | Purpose |
 |--------|---------|
-| `onnx_importer.hpp` | Import / load API |
+| `onnx_importer.hpp` | Load-from-ONNX API |
 | `onnx_model.hpp` | Parsed ONNX graph (internal/debug) |
 | `protobuf_wire.hpp` | Minimal protobuf wire decoder |
 
@@ -51,10 +53,10 @@ Headers:
 
 ## Input layouts
 
-| netkit `network` | ONNX graph input | Exported JSON `input` |
-|------------------|------------------|------------------------|
-| `mlp` | `[batch, features]` | same |
-| `cnn` | `[N, C, H, W]` (NCHW) | `[H, W, C]` NHWC |
+| netkit network | ONNX graph input | `.nk` input shape |
+|----------------|------------------|-------------------|
+| MLP | `[batch, features]` | same |
+| CNN | `[N, C, H, W]` (NCHW) | `[H, W, C]` NHWC |
 
 At inference time, feed CNN inputs in **NHWC flatten order** (same as existing netkit CNN models). The importer reorders conv weights; it does **not** transpose runtime inputs.
 
@@ -74,13 +76,14 @@ PyTorch/TensorFlow exports often include `MatMul`, `Add`, `BatchNormalization`, 
 ```bash
 pip install onnx numpy
 python3 tools/export_onnx_test_models.py
+make export-nk
 make test-cpp
 ```
 
-Committed assets: `models/*.onnx` for all regression models (`test_mlp`, `mlp_hand`, `test_cnn`, `cnn_4x4_single`, `cnn_hand`, `mnist_mlp`, `mnist_cnn`). Parity tests in `src/test_onnx.cpp` run the same inputs through JSON + `.bin` and ONNX import and compare outputs.
+Committed assets: `models/*.onnx` for all regression models (`test_mlp`, `mlp_hand`, `test_cnn`, `cnn_4x4_single`, `cnn_hand`, `mnist_mlp`, `mnist_cnn`). Parity tests in `src/test_onnx.cpp` run the same inputs through `.nk` and ONNX import and compare outputs.
 
 ## Related docs
 
-- [MODEL_FORMAT.md](MODEL_FORMAT.md) — netkit JSON + `.bin` layout after import
-- [ARENA.md](ARENA.md) — size the arena for imported models
+- [NK_FORMAT.md](NK_FORMAT.md) — binary model layout
+- [ARENA.md](ARENA.md) — size the arena for loaded models
 - [CLI.md](CLI.md) — full CLI reference

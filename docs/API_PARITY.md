@@ -15,11 +15,11 @@ C source in this repository is limited to `tests/test_c_api.c` and `examples/inf
 2. **Naming:** C functions use the `nk_` prefix and snake_case (`nk_model_load`, `nk_ops_relu`).
 3. **Errors:** C functions return `nk_status_t`; details are available via `nk_last_error()`.
 4. **Memory:** C handles (`nk_arena_t`, `nk_model_t`, `nk_mlp_t`, `nk_cnn_t`) use fixed-size opaque storage for stack allocation — no heap in the handle itself.
-5. **Internal C++ only:** `Json::` parser helpers are building blocks for the model loader. C callers use `nk_parse_architecture()` and the loader functions instead of raw JSON access.
+5. **Regression tests:** embedded in `.nk` files (`TCAS` section). C callers use `nk_run_model_tests()` / `nk_run_all_tests()`.
 
 When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-api.md](cpp-api.md).
 
-Related docs: [MODEL_FORMAT.md](MODEL_FORMAT.md), [VECTORS_TESTS.md](VECTORS_TESTS.md), [CLI.md](CLI.md).
+Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md).
 
 ## Test suites
 
@@ -29,7 +29,7 @@ Related docs: [MODEL_FORMAT.md](MODEL_FORMAT.md), [VECTORS_TESTS.md](VECTORS_TES
 | C API | C23 | `make test-c` | `tests/test_c_api.c` |
 | Both | — | `make test` | runs C++ then C |
 
-Both suites exercise the same **36 inference regression cases** (16 hand vector + 10 MNIST MLP + 10 MNIST CNN); the C suite adds direct API smoke tests (arena, tensor, ops, load/run).
+Both suites exercise the same **72 inference regression cases** (16 hand-checked + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity); the C suite adds direct API smoke tests (arena, tensor, ops, load/run).
 
 ## Symbol map
 
@@ -38,7 +38,7 @@ Both suites exercise the same **36 inference regression cases** (16 hand vector 
 | C++ | C |
 |-----|---|
 | (constants in headers) | `NK_VERSION_*`, `nk_version_string()` |
-| `ModelLoader::LoadStatus` | `nk_status_t`, `nk_status_string()` |
+| `NkLoader::LoadStatus` | `nk_status_t`, `nk_status_string()` |
 | `LoadResult::message` | `nk_last_error()` |
 
 ### Arena (`arena.hpp`)
@@ -132,23 +132,20 @@ Both suites exercise the same **36 inference regression cases** (16 hand vector 
 | `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |
 | `forward` | `nk_cnn_forward` |
-| `LoadCNN` (mixed conv/pool/flatten/dense JSON) | `nk_cnn_load` |
+| `LoadCNN` (mixed conv/pool/flatten/dense `.nk`) | `nk_cnn_load` |
 
-### ModelLoader (`model_loader.hpp`)
+### NkLoader (`nk_loader.hpp`)
 
 | C++ | C |
 |-----|---|
-| `ParseArchitecture` | `nk_parse_architecture` |
-| `ComputeMlpOutputElements` / `ComputeCnnOutputElements` | `nk_arch_info_t.output_elements` via `nk_parse_architecture` / `nk_model_get_arch` |
-| `PrintArchitecture` | — (CLI `--full` only) |
+| `ParseFile` + `FillArchInfo` | `nk_parse_architecture` |
+| `InputElements` / `OutputElements` | `nk_arch_info_t` via `nk_parse_architecture` / `nk_model_get_arch` |
+| `PrintHeader` | — (detailed binary dump only) |
 | `PrintNetworkSummary` | `nk_arch_print` |
-| `PrintWeightsSummary` | — (CLI `--full` only) |
-| `JsonPathToBinPath` | `nk_json_path_to_bin_path` |
-| `LoadWeightsBin` | `nk_load_weights_bin` |
 | `LoadMLP` | `nk_mlp_load` |
 | `LoadCNN` | `nk_cnn_load` |
 | `Load` | `nk_model_load_auto` |
-| `ArchitectureSpec` | `nk_arch_info_t` |
+| `ArchInfo` | `nk_arch_info_t` |
 
 High-level combined handle (C convenience):
 
@@ -161,16 +158,14 @@ High-level combined handle (C convenience):
 
 | C++ | Reason |
 |-----|--------|
-| `PrintArchitecture`, `PrintWeightsSummary` | CLI `./netkit inspect --full` diagnostics |
-| `Json::` parser helpers | Internal; use `nk_parse_architecture` / loaders |
-| `run_mnist_tests`, `run_mnist_cnn_tests` | Internal; C calls `nk_run_all_tests()` |
+| `PrintHeader` | Detailed `.nk` header dump |
 
-### Vectors / tests
+### Regression tests
 
 | C++ | C |
 |-----|---|
-| `VectorsLoader::RunSummary` | `nk_test_summary_t` |
-| `VectorsLoader::RunVectorsFile` | `nk_run_vectors_file` |
+| `NkRegression::RunSummary` | `nk_test_summary_t` |
+| `NkRegression::RunModelTests` | `nk_run_model_tests` |
 | `run_all_tests` | `nk_run_all_tests` |
 
 ### CLI
@@ -178,12 +173,6 @@ High-level combined handle (C convenience):
 | C++ | C |
 |-----|---|
 | `Cli::Run` | `nk_cli_run` |
-
-### JSON parser (`json_parser.hpp`)
-
-Internal to the engine. No direct C bindings — use model loader and `nk_parse_architecture()` instead.
-
-## Linking
 
 `libnetkit.a` contains C++ object code. Link C programs with a C++-aware linker:
 

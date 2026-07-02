@@ -51,23 +51,43 @@
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/json_parser.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/json_parser.cpp"
-  },
-  {
-    "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/model_loader.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/model_loader.cpp"
-  },
-  {
-    "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/vectors_loader.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/vectors_loader.cpp"
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/nk_regression.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/nk_regression.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
     "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/netkit_api.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/netkit_api.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/protobuf_wire.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/protobuf_wire.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/onnx_model.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/onnx_model.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/onnx_importer.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/onnx_importer.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/test_onnx.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/test_onnx.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/nk_format.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/nk_format.cpp"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/nk_loader.cpp",
+    "file": "/Users/jimlavrenz/workspace/netkit/src/nk_loader.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",

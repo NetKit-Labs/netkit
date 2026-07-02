@@ -7,12 +7,12 @@
 | Component | Type |
 |-----------|------|
 | Tensor payload (inference) | `float` / `DataType::Float32` |
-| Weight files (`.bin`) | little-endian float32, no header |
+| `.nk` weight/bias payloads | little-endian float32 |
 | Activations, matmul, conv | float32 math (`expf`, `tanhf`, etc.) |
 | CLI / C API inputs and outputs | float32 |
 | Regression expected values | float32 |
 
-There is **no float64 (double) inference path**. JSON and CLI values are parsed with `strtof` / `ParseFloat` and stored as float32.
+There is **no float64 (double) inference path**. CLI values are parsed with `strtof` / `ParseFloat` and stored as float32.
 
 The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future tensor metadata — **these are not used for inference yet**.
 
@@ -29,11 +29,11 @@ Quantized and reduced-precision paths are planned but not implemented:
 
 When added, expect:
 
-- New or extended `.bin` formats (or per-layer type tags in JSON v2)
+- Extended `.nk` format versions with per-tensor dtype tags
 - Separate load/run paths or automatic dequant stubs in the arena
 - Updated regression suites with tolerance policies per type
 
-Until then, **export scripts and hand models must emit float32** — see [MODEL_FORMAT.md](MODEL_FORMAT.md).
+Until then, **export scripts and models must emit float32** — see [NK_FORMAT.md](NK_FORMAT.md).
 
 ## API surface
 
@@ -49,6 +49,6 @@ Do not assume `double` or integer tensor payloads work for forward passes.
 
 ## Related docs
 
-- [MODEL_FORMAT.md](MODEL_FORMAT.md) — `.bin` weight layout (float32)
+- [NK_FORMAT.md](NK_FORMAT.md) — `.nk` weight layout (float32)
 - [ARENA.md](ARENA.md) — weight loading into arena (`alignof(float)`)
 - [API.md](API.md) — overview

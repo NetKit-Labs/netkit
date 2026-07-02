@@ -1,9 +1,0 @@
-{
-  "test_accuracy": 0.9806,
-  "train_images": 60000,
-  "epochs": 40,
-  "batch_size": 128,
-  "learning_rate": 0.001,
-  "architecture": "784 -> 128 (ReLU) -> 10 (softmax)",
-  "reference": "Standard MNIST MLP baseline (~98% test acc with Adam + cross-entropy)"
-}

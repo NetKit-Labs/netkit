@@ -1,6 +1,6 @@
 # Arena Memory (Bump Allocator)
 
-netkit uses a **single bump-pointer arena** for all inference-time allocation: network structs, weight blobs loaded from `.bin` files, and **two pre-sized ping-pong activation buffers** allocated at model load. Hidden layer outputs reuse those buffers during forward passes instead of allocating one tensor per layer. There is no per-object `free()` — memory is reclaimed in bulk with `reset()`.
+netkit uses a **single bump-pointer arena** for all inference-time allocation: network structs, weight blobs loaded from `.nk` files, and **two pre-sized ping-pong activation buffers** allocated at model load. Hidden layer outputs reuse those buffers during forward passes instead of allocating one tensor per layer. There is no per-object `free()` — memory is reclaimed in bulk with `reset()`.
 
 ## Why an arena?
 
@@ -33,7 +33,7 @@ Weights and ping buffers are allocated together during load, so a forward pass d
 
 ### Alignment
 
-Weight `.bin` files can have an odd float count, leaving the offset at 4 mod 8 on 64-bit platforms. Without padding, a following `MLPNetwork` or `CNNNetwork` struct would be misaligned for placement-new.
+Weight blobs can have an odd float count, leaving the offset at 4 mod 8 on 64-bit platforms. Without padding, a following `MLPNetwork` or `CNNNetwork` struct would be misaligned for placement-new.
 
 | Allocation | Typical alignment |
 |------------|-------------------|
@@ -72,13 +72,13 @@ Default capacity constant: `Arena::kDefaultCapacity` (64 KiB) is a **convenience
 
 ## Choosing arena size
 
-The arena size is **not** stored in model JSON. The `.json` file describes architecture only; **you** (or your test harness) provide a byte buffer large enough for that model.
+The arena size is **not** stored in the model file. **You** (or your test harness) provide a byte buffer large enough for that model.
 
 ### What consumes arena memory
 
 | Allocation | When | Notes |
 |------------|------|-------|
-| Weight `.bin` blob | Load | Size fixed by layer dimensions |
+| Weight blob (from `.nk`) | Load | Size fixed by layer dimensions |
 | Network structs | Load | `MLPNetwork` / `CNNNetwork`, layer metadata |
 | Ping-pong buffers | Load | **2 ×** largest intermediate activation (float32) |
 | Input / output tensors | Caller | Optional — CLI and `nk_model_run` allocate these per run |
@@ -87,7 +87,7 @@ Ping-pong buffers are reserved at **load time**, so a forward pass does not grow
 
 ### How to pick a size
 
-1. **Measure** — `./netkit inspect models/your_model.json --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors).
+1. **Measure** — `./netkit inspect models/your_model.nk --full` or `nk_inspect_model()`. Use **arena bytes after forward** (includes load + ping buffers + a zero-input forward with caller I/O tensors).
 2. **Add headroom** — typically **1.5–2×** measured high-water for batch or future changes.
 3. **Declare static storage** — firmware usually uses a fixed `unsigned char memory[N]` sized from step 1–2.
 
@@ -104,15 +104,15 @@ There is no automatic growth — if `alloc` fails, loaders return an arena overf
 
 | Caller | Buffer size | Models |
 |--------|-------------|--------|
-| CLI `run` / `inspect`, hand vector tests, examples, C API smoke tests | **64 KiB** (`Arena::kDefaultCapacity`) | Hand MLP/CNN only |
-| MNIST MLP tests (`src/test_mnist.cpp`) | **2 MiB** | `mnist_mlp.json` |
-| MNIST CNN tests (`src/test_mnist.cpp`) | **4 MiB** | `mnist_cnn.json` |
+| CLI `run` / `inspect`, hand-checked tests, examples, C API smoke tests | **64 KiB** (`Arena::kDefaultCapacity`) | Hand MLP/CNN only |
+| MNIST MLP tests (`src/nk_regression.cpp`) | **2 MiB** | `mnist_mlp.nk` |
+| MNIST CNN tests (`src/nk_regression.cpp`) | **4 MiB** | `mnist_cnn.nk` |
 
 MNIST weights alone are ~400 KiB (MLP) or ~900 KiB (CNN); the test harness uses larger buffers than the default so load + ping buffers always fit. The CLI still uses 64 KiB — `./netkit inspect --full` on MNIST may report arena overflow unless you integrate with a larger buffer in your own app.
 
 ### `reset()` and reload
 
-`reset()` sets the arena offset to zero and **invalidates all pointers** (weights, network, ping buffers). To run again on the same buffer you must **reload the model**. The MNIST test suite calls `arena.reset()` then `LoadMLP` / `LoadCNN` per case for isolation.
+`reset()` sets the arena offset to zero and **invalidates all pointers** (weights, network, ping buffers). To run again on the same buffer you must **reload the model**. The MNIST test suite calls `arena.reset()` then `NkLoader::LoadMLP` / `LoadCNN` per case for isolation.
 
 ## C API
 
@@ -140,7 +140,7 @@ High-level loaders (`nk_model_load`, `nk_mlp_load`, `nk_cnn_load`) allocate from
 
 ## Sizing for deployment
 
-1. Run `./netkit inspect models/your_model.json --full` (or `nk_inspect_model`).
+1. Run `./netkit inspect models/your_model.nk --full` (or `nk_inspect_model`).
 2. Note **arena bytes after forward** — add headroom (typically 1.5–2× for batch variance).
 3. Use one arena per model context, or `reset()` between runs on the same buffer.
 

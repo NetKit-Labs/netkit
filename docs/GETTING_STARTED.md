@@ -2,7 +2,7 @@
 
 This guide gets you from clone to running inference on the desktop in a few minutes.
 
-**Related docs:** [CLI](CLI.md) · [Arena](ARENA.md) · [Data types](DATATYPES.md) · [Model format](MODEL_FORMAT.md) · [Testing](TESTING.md) · [Vectors tests](VECTORS_TESTS.md) · [MNIST](MNIST.md) · [MNIST CNN](MNIST_CNN.md) · [C API](c-api.md) · [C++ API](cpp-api.md)
+**Related docs:** [CLI](CLI.md) · [Arena](ARENA.md) · [Data types](DATATYPES.md) · [.nk format](NK_FORMAT.md) · [Testing](TESTING.md) · [MNIST](MNIST.md) · [MNIST CNN](MNIST_CNN.md) · [C API](c-api.md) · [C++ API](cpp-api.md)
 
 ## Requirements
 
@@ -12,9 +12,9 @@ This guide gets you from clone to running inference on the desktop in a few minu
 | C API (`netkit.h`) | **C23** | clang 17+ or gcc 14+ with `-std=c23` |
 | Build | Make | Any Unix-like environment |
 
-No external dependencies beyond the standard library.
+No external dependencies beyond the standard library for the C++ runtime. The Python packager (`python/`) needs numpy and onnx.
 
-All inference tensors, weights (`.bin`), and math use **float32** (`float`) today. There is no float64 path. Planned types: float16, int16, int8, int4 — see [DATATYPES.md](DATATYPES.md).
+All inference tensors, weights, and math use **float32** (`float`) today. There is no float64 path. Planned types: float16, int16, int8, int4 — see [DATATYPES.md](DATATYPES.md).
 
 Arena allocations use **explicit alignment** (`alignof(float)` for weights/tensors, `alignof(T)` for network structs). See [ARENA.md](ARENA.md) and [API.md — Memory model](API.md#memory-model).
 
@@ -46,7 +46,7 @@ make test-cpp    # C++26 only: ./netkit test
 make test-c      # C23 only:  ./tests/test_c_api
 ```
 
-Each suite runs **36 inference regression cases** (16 hand-written vector models + 10 MNIST MLP + 10 MNIST CNN digits) plus C API smoke tests. See [TESTING.md](TESTING.md).
+Each suite runs **72 inference regression cases** (16 hand-checked + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity) plus C API smoke tests. See [TESTING.md](TESTING.md).
 
 ## Run inference from the CLI
 
@@ -56,26 +56,26 @@ See [CLI.md](CLI.md) for full command reference.
 ./netkit help    # or: ./netkit -h  /  ./netkit --help
 
 # MLP: 2 inputs -> 2 outputs
-./netkit run models/test_mlp.json --input 1,2
+./netkit run models/test_mlp.nk --input 1,2
 
 # CNN: 16 inputs (4x4x1)
-./netkit run models/cnn_4x4_single.json --input=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+./netkit run models/cnn_4x4_single.nk --input=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 ```
 
 ## Inspect a model
 
 ```bash
-./netkit inspect models/test_mlp.json
-./netkit inspect models/test_mlp.json --full
+./netkit inspect models/test_mlp.nk
+./netkit inspect models/test_mlp.nk --full
 ```
 
-Default mode prints a boxed network summary. `--full` adds weight file info and arena memory usage after load and forward pass.
+Default mode prints a boxed network summary. `--full` adds arena memory usage after load and a zero-input forward pass.
 
 ## Size the arena buffer
 
-Every inference path uses an arena — there is no heap fallback for weights or activations. The buffer size is **your choice**, not a field in `model.json`.
+Every inference path uses an arena — there is no heap fallback for weights or activations. The buffer size is **your choice**, not stored in the `.nk` file.
 
-1. Run `./netkit inspect models/your_model.json --full` (or `nk_inspect_model()` from C).
+1. Run `./netkit inspect models/your_model.nk --full` (or `nk_inspect_model()` from C).
 2. Note **arena bytes after forward**.
 3. Declare a static buffer with headroom (often 1.5–2×), then `arena.init(buffer, sizeof(buffer))`.
 
@@ -89,7 +89,7 @@ Build and run the full example:
 
 ```bash
 make example-c
-./examples/infer_c models/test_mlp.json 1 2
+./examples/infer_c models/test_mlp.nk 1 2
 ```
 
 Source: [`examples/infer_c.c`](../examples/infer_c.c). Minimal integration pattern:
@@ -102,7 +102,7 @@ nk_arena_t arena;
 nk_model_t model;
 
 nk_arena_init(&arena, memory, sizeof(memory));
-nk_model_load("models/test_mlp.json", &arena, &model);
+nk_model_load("models/test_mlp.nk", &arena, &model);
 
 float input[] = {1.0f, 2.0f};
 float output[2];
@@ -126,14 +126,14 @@ Build and run the full example:
 
 ```bash
 make example-cpp
-./examples/infer_cpp models/test_mlp.json 1 2
+./examples/infer_cpp models/test_mlp.nk 1 2
 ```
 
 Source: [`examples/infer_cpp.cpp`](../examples/infer_cpp.cpp). Minimal integration pattern:
 
 ```cpp
 #include "arena.hpp"
-#include "model_loader.hpp"
+#include "nk_loader.hpp"
 #include "tensor_factory.hpp"
 
 alignas(std::max_align_t) unsigned char buffer[Arena::kDefaultCapacity];
@@ -144,7 +144,7 @@ MLPNetwork* network = nullptr;
 std::array<uint32_t, kMaxTensorRank> input_shape{};
 uint32_t input_rank = 0;
 
-ModelLoader::LoadMLP("models/test_mlp.json", arena, network, input_shape, input_rank);
+NkLoader::LoadMLP("models/test_mlp.nk", arena, network, input_shape, input_rank);
 
 Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
 TensorFactory::Fill(input, {1.0f, 2.0f});
@@ -155,25 +155,33 @@ network->forward(input, output, arena);
 
 See [cpp-api.md](cpp-api.md) for the full C++ reference.
 
-## Model file bundles
+## Model files
 
-Each model is three files sharing a base name. See [MODEL_FORMAT.md](MODEL_FORMAT.md) for the full JSON schema, weight byte layout, and supported activations.
+Runtime models are single **`.nk`** files (architecture + float32 weights). Convert from ONNX with the Python packager:
+
+```bash
+pip install -e python
+python -m netkit convert models/test_mlp.onnx -o models/test_mlp.nk
+make export-nk    # regenerate all bundled regression models
+```
 
 | File | Purpose |
 |------|---------|
-| `model.json` | Architecture (layers, activations, input shape) |
-| `model.bin` | Raw float32 weights (row-major, layer order) |
-| `model.vectors.json` | Regression test cases (optional) |
+| `model.nk` | Single-file model for inference |
+| `model.onnx` | Source graph for conversion |
+| Embedded tests (optional) | Regression cases in `.nk` — see [NK_FORMAT.md](NK_FORMAT.md) |
 
-Example workflow:
+Format spec: [NK_FORMAT.md](NK_FORMAT.md).
 
-1. Edit `model.json`
-2. Export or generate `model.bin` (see `tools/write_hand_models.py` for hand models)
-3. Add cases to `model.vectors.json` — see [VECTORS_TESTS.md](VECTORS_TESTS.md)
-4. Register the vectors file in `src/test.cpp` if it is a new bundle
+Example workflow for a new hand-tested model:
+
+1. Export or train an ONNX graph (or use an existing `models/*.onnx`)
+2. `python -m netkit convert model.onnx -o model.nk`
+3. Add embedded cases when writing the `.nk` file — see [NK_FORMAT.md](NK_FORMAT.md) and `python/netkit/regression_data.py`
+4. Register the model in `src/test.cpp` if it is a new bundle
 5. Run `make test`
 
-For MNIST or other large binary-driven tests, see [TESTING.md](TESTING.md) and [MNIST.md](MNIST.md).
+For MNIST or other large embedded regression suites, see [TESTING.md](TESTING.md) and [MNIST.md](MNIST.md).
 
 ## Project layout
 
@@ -181,13 +189,14 @@ For MNIST or other large binary-driven tests, see [TESTING.md](TESTING.md) and [
 netkit/
 ├── include/          Headers (C++ + netkit.h)
 ├── src/              C++26 implementation
+├── python/netkit/    ONNX → .nk packager
 ├── examples/
 │   ├── infer_cpp.cpp # C++26 usage demo
 │   └── infer_c.c     # C23 usage demo
 ├── tests/
 │   └── test_c_api.c  # C23 API regression tests
-├── models/           JSON + bin + vectors test bundles
-├── tools/            Python helpers for weight generation
+├── models/           .nk bundles, *.onnx, test fixtures
+├── tools/            Python helpers for MNIST export
 └── docs/             Guides and API reference
 ```
 
@@ -196,5 +205,5 @@ netkit/
 - Read [API.md](API.md) for an overview of both APIs
 - Read [TESTING.md](TESTING.md) for regression suite layout
 - Read [CLI.md](CLI.md) for `test`, `run`, and `inspect`
-- Add a regression case — [VECTORS_TESTS.md](VECTORS_TESTS.md)
+- Add a regression case — [NK_FORMAT.md](NK_FORMAT.md)
 - Use `./netkit inspect --full` to size your arena before deploying to embedded targets

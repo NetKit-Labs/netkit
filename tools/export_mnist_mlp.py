@@ -10,26 +10,24 @@ Run from repo root:
 Requires: numpy
 
 Outputs:
-    models/mnist_mlp.json
-    models/mnist_mlp.bin
-    models/mnist/manifest.json
-    models/mnist/case_NNN.input.bin
-    models/mnist/case_NNN.expected.bin
+    models/mnist_mlp.nk (weights + 10 embedded regression cases)
 """
 
 from __future__ import annotations
 
 import gzip
-import json
 import struct
 import urllib.request
 from pathlib import Path
 
+import sys
+
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "python"))
+from netkit import RegressionCase, RegressionSuite, write_nk_from_arch
 MODELS = ROOT / "models"
-MNIST_DIR = MODELS / "mnist"
 DATA_DIR = ROOT / "data" / "mnist"
 
 INPUT_DIM = 784
@@ -224,12 +222,8 @@ def pack_netkit_weights(params: dict[str, np.ndarray]) -> bytes:
     return struct.pack(f"<{len(values)}f", *values)
 
 
-def write_floats(path: Path, arr: np.ndarray) -> None:
-    path.write_bytes(struct.pack(f"<{arr.size}f", *arr.astype(np.float32).reshape(-1)))
-
-
 def append_case(
-    cases: list[dict],
+    cases: list[RegressionCase],
     x_test: np.ndarray,
     y_test: np.ndarray,
     i: int,
@@ -237,17 +231,13 @@ def append_case(
 ) -> None:
     digit = int(y_test[i])
     out = forward_netkit(x_test[i : i + 1], params["w1"], params["b1"], params["w2"], params["b2"])[0]
-    case_id = len(cases)
-    prefix = MNIST_DIR / f"case_{case_id:03d}"
-    write_floats(prefix.with_suffix(".input.bin"), x_test[i])
-    write_floats(prefix.with_suffix(".expected.bin"), out)
     cases.append(
-        {
-            "name": f"MNIST digit {digit} (test idx {i})",
-            "label": digit,
-            "input": f"case_{case_id:03d}.input.bin",
-            "expected": f"case_{case_id:03d}.expected.bin",
-        }
+        RegressionCase(
+            name=f"MNIST digit {digit} (test idx {i})",
+            input=x_test[i],
+            expected=out,
+            label=digit,
+        )
     )
 
 
@@ -267,30 +257,20 @@ def main() -> None:
     print(f"Test accuracy: {test_acc * 100:.2f}%")
 
     MODELS.mkdir(parents=True, exist_ok=True)
-    MNIST_DIR.mkdir(parents=True, exist_ok=True)
-
-    (MODELS / "mnist_mlp.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "network": "mlp",
-                "input": [1, INPUT_DIM],
-                "layers": [
-                    {"type": "dense", "units": HIDDEN_DIM, "activation": "relu"},
-                    {"type": "dense", "units": OUTPUT_DIM, "activation": "softmax"},
-                ],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
     bin_bytes = pack_netkit_weights(params)
-    (MODELS / "mnist_mlp.bin").write_bytes(bin_bytes)
-    print(f"Wrote mnist_mlp.bin ({len(bin_bytes)} bytes, {len(bin_bytes) // 4} floats)")
+    arch = {
+        "version": 1,
+        "network": "mlp",
+        "input": [1, INPUT_DIM],
+        "layers": [
+            {"type": "dense", "units": HIDDEN_DIM, "activation": "relu"},
+            {"type": "dense", "units": OUTPUT_DIM, "activation": "softmax"},
+        ],
+    }
+    weights = np.frombuffer(bin_bytes, dtype=np.float32)
 
-    cases: list[dict] = []
+    cases: list[RegressionCase] = []
     used_digits: set[int] = set()
     for i in range(x_test.shape[0]):
         if test_pred[i] != y_test[i]:
@@ -307,7 +287,7 @@ def main() -> None:
         for i in range(x_test.shape[0]):
             if test_pred[i] != y_test[i]:
                 continue
-            if any(c["label"] == int(y_test[i]) for c in cases):
+            if any(c.label == int(y_test[i]) for c in cases):
                 continue
             append_case(cases, x_test, y_test, i, params)
             if len(cases) >= NUM_CASES:
@@ -316,26 +296,13 @@ def main() -> None:
     if len(cases) < NUM_CASES:
         raise RuntimeError(f"only found {len(cases)} test cases; train longer or relax selection")
 
-    manifest = {
-        "model": "../mnist_mlp.json",
-        "input_dim": INPUT_DIM,
-        "output_dim": OUTPUT_DIM,
-        "output_tolerance": 0.0001,
-        "cases": cases,
-    }
-    (MNIST_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"Wrote {len(cases)} test cases to {MNIST_DIR}")
-
-    meta = {
-        "test_accuracy": round(float(test_acc), 6),
-        "train_images": int(x_train.shape[0]),
-        "epochs": EPOCHS,
-        "batch_size": BATCH_SIZE,
-        "learning_rate": LEARNING_RATE,
-        "architecture": f"{INPUT_DIM} -> {HIDDEN_DIM} (ReLU) -> {OUTPUT_DIM} (softmax)",
-        "reference": "Standard MNIST MLP baseline (~98% test acc with Adam + cross-entropy)",
-    }
-    (MNIST_DIR / "training_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    nk_path = write_nk_from_arch(
+        arch,
+        weights,
+        MODELS / "mnist_mlp.nk",
+        RegressionSuite(tolerance=0.0001, cases=cases),
+    )
+    print(f"Wrote {nk_path} ({len(bin_bytes)} bytes, {len(cases)} embedded test cases)")
 
 
 if __name__ == "__main__":

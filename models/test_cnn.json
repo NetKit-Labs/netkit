@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "network": "cnn",
-  "input": [2, 2, 2],
-  "layers": [
-    { "type": "conv2d", "kernel_size": 1, "stride": 1, "filters": 1, "activation": "relu" },
-    { "type": "conv2d", "kernel_size": 1, "stride": 1, "filters": 2, "activation": "none" }
-  ]
-}

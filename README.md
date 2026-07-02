@@ -2,7 +2,7 @@
 
 netkit is a C++26 neural network kit for on-device inference on MCUs and MPUs. It is developed and validated on the desktop, then deployed to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-Models are loaded from JSON architecture files and companion float32 `.bin` weight files. **Inference is float32-only today**; float16, int16, int8, and int4 are on the roadmap — see [docs/DATATYPES.md](docs/DATATYPES.md).
+Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`. **Inference is float32-only today**; float16, int16, int8, and int4 are on the roadmap — see [docs/DATATYPES.md](docs/DATATYPES.md).
 
 ## Documentation
 
@@ -12,12 +12,11 @@ Models are loaded from JSON architecture files and companion float32 `.bin` weig
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
 | **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int8 roadmap |
-| **[ONNX Import](docs/ONNX.md)** | Import `.onnx` models into netkit JSON + `.bin` |
-| **[CLI Reference](docs/CLI.md)** | `test`, `run`, `inspect`, and `import` commands |
-| **[Model File Format](docs/MODEL_FORMAT.md)** | JSON architecture + float32 `.bin` weights |
+| **[ONNX Import](docs/ONNX.md)** | C++ ONNX loader for parity tests; packager converts ONNX → `.nk` |
+| **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` commands |
+| **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — Python packager + C++ loader |
+| **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI |
-| **[Vectors Tests](docs/VECTORS_TESTS.md)** | Hand-written `*.vectors.json` format |
-| **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
 | **[MNIST MLP Test](docs/MNIST.md)** | Trained 784→128→10 MLP on handwritten digits |
@@ -37,9 +36,9 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 - **Dual API** — C23 (`netkit.h`) and C++26 (native headers)
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
-- **MLP & CNN** — High-level network abstractions with JSON + `.bin` loading
+- **MLP & CNN** — High-level network abstractions with `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — hand vector suites plus MNIST MLP and CNN (72 cases via `make test`)
+- **Regression tests** — hand-checked plus MNIST MLP and CNN (72 cases via `make test`)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 
 ## Quick start
@@ -47,7 +46,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 ```bash
 make              # build netkit CLI + libnetkit.a
 make test         # C++ API tests + C API tests
-./netkit run models/test_mlp.json --input 1,2
+./netkit run models/test_mlp.nk --input 1,2
 make example-cpp    # C++26 usage demo
 make example-c      # C23 usage demo
 ```
@@ -61,19 +60,19 @@ Full reference: [docs/CLI.md](docs/CLI.md)
 ```bash
 ./netkit help                              # print usage (-h / --help also work)
 ./netkit test                              # C++ API regression suite
-./netkit run models/test_mlp.json --input 1,2
-./netkit inspect models/test_mlp.json      # boxed network summary
-./netkit inspect models/test_mlp.json --full   # + weights and arena sizing
+./netkit run models/test_mlp.nk --input 1,2
+./netkit inspect models/test_mlp.nk      # boxed network summary
+./netkit inspect models/test_mlp.nk --full   # + arena sizing after forward
 ```
 
 ## Examples
 
 | Demo | Language | Build | Run |
 |------|----------|-------|-----|
-| `examples/infer_cpp.cpp` | C++26 | `make example-cpp` | `./examples/infer_cpp models/test_mlp.json 1 2` |
-| `examples/infer_c.c` | C23 | `make example-c` | `./examples/infer_c models/test_mlp.json 1 2` |
+| `examples/infer_cpp.cpp` | C++26 | `make example-cpp` | `./examples/infer_cpp models/test_mlp.nk 1 2` |
+| `examples/infer_c.c` | C23 | `make example-c` | `./examples/infer_c models/test_mlp.nk 1 2` |
 
-Both load a model from JSON + `.bin` and print input/output tensors. See [Getting Started](docs/GETTING_STARTED.md) for minimal code snippets and linking.
+Both load a `.nk` model and print input/output tensors. See [Getting Started](docs/GETTING_STARTED.md) for minimal code snippets and linking.
 
 ## Project structure
 
@@ -84,42 +83,38 @@ netkit/
 │   ├── arena.hpp           # Memory management
 │   ├── tensor.hpp          # Tensor definitions
 │   ├── mlp.hpp / cnn.hpp   # Network abstractions
-│   ├── model_loader.hpp    # JSON + .bin loader
+│   ├── nk_loader.hpp       # .nk model loader
 │   └── ...
 ├── src/                    # C++26 implementation
+├── python/netkit/          # ONNX → .nk packager
 ├── examples/
 │   ├── infer_cpp.cpp       # C++26 usage example
 │   └── infer_c.c           # C23 usage example
 ├── tests/
 │   └── test_c_api.c        # C23 API regression tests
-├── models/                 # Hand test bundles, mnist_mlp, models/mnist/ cases
+├── models/                 # bundled .nk models + matching .onnx sources
 ├── tools/
-│   ├── write_hand_models.py
 │   ├── export_mnist_mlp.py
 │   └── export_mnist_cnn.py
 └── docs/                   # Guides and API reference
     ├── TESTING.md
     ├── GETTING_STARTED.md
-    ├── API.md
-    ├── CLI.md
-    ├── MODEL_FORMAT.md
-    ├── VECTORS_TESTS.md
+    ├── NK_FORMAT.md
     ├── c-api.md / cpp-api.md
     └── API_PARITY.md
 ```
 
-## Model file bundles
+## Model files
 
 | File | Purpose |
 |------|---------|
-| `model.json` | Architecture (layers, activations, input shape) |
-| `model.bin` | Raw float32 weights in layer order |
-| `model.vectors.json` | Regression test cases (optional) |
+| `model.nk` | Single-file model (architecture + float32 weights) |
+| `model.onnx` | Source graph for `python -m netkit convert` |
+| Embedded tests (optional) | Regression cases in `.nk` `TCAS` section — see [NK_FORMAT.md](docs/NK_FORMAT.md) |
 
-Arena buffer size is **not** in JSON — you provide a caller-owned buffer sized for weights + ping-pong activations. See [docs/ARENA.md](docs/ARENA.md).
+Regenerate `.nk` from ONNX: `make export-nk`. Arena buffer size is **not** in the model file — you provide a caller-owned buffer sized for weights + ping-pong activations. See [docs/ARENA.md](docs/ARENA.md).
 
-Full schema, weight layout, and activations: [docs/MODEL_FORMAT.md](docs/MODEL_FORMAT.md).  
-Regression tests: [docs/TESTING.md](docs/TESTING.md) (hand vectors + MNIST).
+Format spec: [docs/NK_FORMAT.md](docs/NK_FORMAT.md). Regression tests: [docs/TESTING.md](docs/TESTING.md).
 
 ## Building
 
@@ -159,10 +154,10 @@ make test-c     # ./tests/test_c_api
 
 | Suite | Language | Entry point | Inference cases |
 |-------|----------|-------------|-----------------|
-| C++ API | C++26 | `./netkit test` → `src/test.cpp` | 36 (16 hand + 10 MNIST MLP + 10 MNIST CNN) |
-| C API | C23 | `tests/test_c_api.c` | Same 36 + API smoke tests |
+| C++ API | C++26 | `./netkit test` → `src/test.cpp` | 72 (16 hand + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity) |
+| C API | C23 | `tests/test_c_api.c` | Same 72 + API smoke tests |
 
-Hand cases use `models/*.vectors.json` ([VECTORS_TESTS.md](docs/VECTORS_TESTS.md)).  
+Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
 MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.md).
 
 ## Design principles
@@ -178,7 +173,6 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 - Conv padding
 - Batch normalization
 - Quantization (int8, uint8)
-- Python model exporter
 
 ## License
 

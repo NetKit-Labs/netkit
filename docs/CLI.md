@@ -10,6 +10,8 @@ make              # builds ./netkit
 
 A C API equivalent exists as `nk_cli_run(argc, argv)` for embedding the same command dispatch.
 
+Convert ONNX to `.nk` with the Python packager — see [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
+
 ## Global options
 
 | Option | Description |
@@ -32,14 +34,14 @@ Running `./netkit` with no arguments prints the same help text and exits with co
 | Command | Options | Required arguments |
 |---------|---------|-------------------|
 | `test` | — | — |
-| `run` | `--input <values>` | `<model.json>` |
-| `inspect` | `--full` | `<model.json>` |
+| `run` | `--input <values>` | `<model.nk>` |
+| `inspect` | `--full` | `<model.nk>` |
 
 ## Commands
 
 ### `test`
 
-Run the full C++ API vectors regression suite (same cases as `make test-cpp`).
+Run the full C++ API regression suite (same cases as `make test-cpp`).
 
 ```bash
 ./netkit test
@@ -50,7 +52,7 @@ Exit code `0` if all cases pass, `1` if any fail.
 Prints per-case PASS/FAIL lines and a summary:
 
 ```
-Passed: 8
+Passed: 72
 Failed: 0
 ```
 
@@ -59,7 +61,7 @@ Failed: 0
 Load a model and run one forward pass.
 
 ```bash
-./netkit run <model.json> --input <values>
+./netkit run <model.nk> --input <values>
 ```
 
 **Options:**
@@ -72,17 +74,17 @@ Load a model and run one forward pass.
 
 ```bash
 # MLP: input shape [1, 2]
-./netkit run models/test_mlp.json --input 1,2
+./netkit run models/test_mlp.nk --input 1,2
 
 # CNN: input shape [4, 4, 1] — sixteen values
-./netkit run models/cnn_4x4_single.json --input=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+./netkit run models/cnn_4x4_single.nk --input=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 ```
 
 **Behavior:**
 
-1. Parses architecture from `<model.json>` and prints a boxed network summary
-2. Loads companion `.bin` weights
-3. Validates input element count against the model's `input` shape
+1. Parses the `.nk` header and prints a boxed network summary
+2. Loads weights from the same file
+3. Validates input element count against the model input shape
 4. Runs forward pass using the internal 64 KiB arena
 5. Prints labeled input and output tensors
 
@@ -90,7 +92,7 @@ Load a model and run one forward pass.
 
 | Network | Required values |
 |---------|----------------|
-| MLP | `batch × features` (product of `input` array in JSON) |
+| MLP | `batch × features` (product of input shape) |
 | CNN | `H × W × C` (NHWC flatten order) |
 
 Maximum 4096 input floats per invocation.
@@ -102,13 +104,13 @@ Maximum 4096 input floats per invocation.
 Pretty-print the model architecture as a boxed network summary.
 
 ```bash
-./netkit inspect <model.json>
-./netkit inspect <model.json> --full
+./netkit inspect <model.nk>
+./netkit inspect <model.nk> --full
 ```
 
 **Default output:** Network Summary block with name, type, version, input shape, and a numbered layer list.
 
-Example (`./netkit inspect models/mnist_cnn.json`):
+Example (`./netkit inspect models/mnist_cnn.nk`):
 
 ```
 =====================================================
@@ -119,40 +121,23 @@ Name        : mnist_cnn
 Type        : CNN
 Version     : 1
 
-Input Shape : 28 x 28 x 1
+Input Shape : [28, 28, 1]
 
 Layers (7)
 -----------------------------------------------------
- 0  Conv2D      32 filters   3x3  stride=1  ReLU
- 1  MaxPool2D   2x2           stride=2
- 2  Conv2D      64 filters   3x3  stride=1  ReLU
- 3  MaxPool2D   2x2           stride=2
- 4  Flatten
- 5  Dense       128 units  ReLU
- 6  Dense       10 units  Softmax
-
-=====================================================
+  [0] Conv2D kernel=3 stride=1 filters=32 activation=relu
+  ...
 ```
 
 The C API equivalent is `nk_arch_print()`.
 
-**`--full`:** Legacy diagnostic mode — compact architecture dump, weight file summary, and arena memory usage after load and a zero-input forward pass. Use this to size embedded arena buffers before deployment. The C API equivalent for arena sizing is `nk_inspect_model()`.
+**`--full`:** Load weights, run a zero-input forward pass, and report arena memory usage after load and forward. Use this to size embedded arena buffers before deployment. The C API equivalent is `nk_inspect_model()`.
 
-The CLI uses a **64 KiB** internal arena (`Arena::kDefaultCapacity`). That is enough for hand test models. **MNIST models** need multi-MiB buffers — `inspect --full` on `mnist_mlp.json` / `mnist_cnn.json` may fail with arena overflow on the CLI even though `make test` passes (tests use 2 MiB / 4 MiB). Size your own firmware buffer from `nk_inspect_model()` with a large enough arena, or see [ARENA.md](ARENA.md).
-
-## `import`
-
-Convert a supported ONNX model into netkit JSON + `.bin` files.
-
-```bash
-./netkit import models/my_model.onnx --out models/my_model
-```
-
-Writes `models/my_model.json` and `models/my_model.bin`. See [ONNX.md](ONNX.md) for supported operators and layout notes.
+The CLI uses a **64 KiB** internal arena (`Arena::kDefaultCapacity`). That is enough for hand test models. **MNIST models** need multi-MiB buffers — `inspect --full` on `mnist_mlp.nk` / `mnist_cnn.nk` may fail with arena overflow on the CLI even though `make test` passes (tests use 2 MiB / 4 MiB). Size your own firmware buffer from `nk_inspect_model()` with a large enough arena, or see [ARENA.md](ARENA.md).
 
 ## Path resolution
 
-If `<model.json>` is not found in the current directory, the CLI tries `../<model.json>`. Run from the repo root or ensure model paths are reachable.
+If `<model.nk>` is not found in the current directory, the CLI tries `../<model.nk>`. Run from the repo root or ensure model paths are reachable.
 
 ## Relationship to examples
 
@@ -165,8 +150,8 @@ If `<model.json>` is not found in the current directory, the CLI tries `../<mode
 The examples take input as separate argv floats instead of `--input`:
 
 ```bash
-./examples/infer_cpp models/test_mlp.json 1 2
-./examples/infer_c models/test_mlp.json 1 2
+./examples/infer_cpp models/test_mlp.nk 1 2
+./examples/infer_c models/test_mlp.nk 1 2
 ```
 
 See [GETTING_STARTED.md](GETTING_STARTED.md) for build and link instructions.

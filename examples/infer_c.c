@@ -1,8 +1,8 @@
 /*
- * infer_c.c — C23 example: load a model and run inference via netkit.h
+ * infer_c.c — C23 example: load a .nk model and run inference via netkit.h
  *
  * Build: make example-c
- * Run:   ./examples/infer_c models/test_mlp.json 1 2
+ * Run:   ./examples/infer_c models/test_mlp.nk 1 2
  */
 #include "netkit.h"
 
@@ -14,16 +14,16 @@ int main(int argc, char** argv)
 {
     if (argc < 4)
     {
-        fprintf(stderr, "Usage: %s <model.json> <input floats...>\n", argv[0]);
-        fprintf(stderr, "Example: %s models/test_mlp.json 1 2\n", argv[0]);
+        fprintf(stderr, "Usage: %s <model.nk> <input floats...>\n", argv[0]);
+        fprintf(stderr, "Example: %s models/test_mlp.nk 1 2\n", argv[0]);
         return 1;
     }
 
-    const char* json_path = argv[1];
+    const char* nk_path = argv[1];
     const int input_arg_count = argc - 2;
 
     nk_arch_info_t arch = {0};
-    const nk_status_t arch_status = nk_parse_architecture(json_path, &arch);
+    const nk_status_t arch_status = nk_parse_architecture(nk_path, &arch);
     if (arch_status != NK_OK)
     {
         fprintf(stderr, "parse failed: %s (%s)\n", nk_status_string(arch_status), nk_last_error());
@@ -45,7 +45,7 @@ int main(int argc, char** argv)
     nk_arena_init(&arena, arena_memory, sizeof(arena_memory));
 
     nk_model_t model;
-    const nk_status_t load_status = nk_model_load(json_path, &arena, &model);
+    const nk_status_t load_status = nk_model_load(nk_path, &arena, &model);
     if (load_status != NK_OK)
     {
         fprintf(stderr, "load failed: %s (%s)\n", nk_status_string(load_status), nk_last_error());
@@ -67,7 +67,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    printf("Model: %s\n", json_path);
+    printf("Model: %s\n", nk_path);
     printf("Input (%u): ", arch.input_elements);
     for (uint32_t i = 0; i < arch.input_elements; ++i)
         printf("%s%.4f", i ? ", " : "", input[i]);

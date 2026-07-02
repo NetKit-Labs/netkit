@@ -84,7 +84,7 @@ static void TestArenaAlignment(void)
     nk_arena_t arena;
     nk_arena_init(&arena, memory, sizeof(memory));
 
-    /* Simulate odd float-count weight blob (test_cnn.bin is 28 bytes). */
+    /* Simulate odd float-count weight payload (28 bytes). */
     void* weights = nk_arena_alloc(&arena, 28, 4);
     ExpectTrue(weights != NULL, "arena alloc weights");
 
@@ -130,12 +130,12 @@ static void TestParseArchitecture(void)
     printf("\n--- parse architecture ---\n");
 
     nk_arch_info_t info = {0};
-    ExpectStatus(nk_parse_architecture("models/test_mlp.json", &info), NK_OK, "parse test_mlp.json");
+    ExpectStatus(nk_parse_architecture("models/test_mlp.nk", &info), NK_OK, "parse test_mlp.nk");
     ExpectTrue(info.kind == NK_NETWORK_MLP, "mlp kind");
     ExpectTrue(info.input_elements == 2, "mlp input elements");
     ExpectTrue(info.output_elements == 2, "mlp output elements");
 
-    ExpectStatus(nk_parse_architecture("models/mnist_cnn.json", &info), NK_OK, "parse mnist_cnn.json");
+    ExpectStatus(nk_parse_architecture("models/mnist_cnn.nk", &info), NK_OK, "parse mnist_cnn.nk");
     ExpectTrue(info.kind == NK_NETWORK_CNN, "mnist cnn kind");
     ExpectTrue(info.input_elements == 784, "mnist cnn input elements");
     ExpectTrue(info.output_elements == 10, "mnist cnn output elements");
@@ -151,7 +151,7 @@ static void TestMnistCnnLoad(void)
 
     nk_cnn_t cnn;
     nk_arch_info_t info = {0};
-    ExpectStatus(nk_cnn_load("models/mnist_cnn.json", &arena, &cnn, &info), NK_OK, "nk_cnn_load mnist_cnn");
+    ExpectStatus(nk_cnn_load("models/mnist_cnn.nk", &arena, &cnn, &info), NK_OK, "nk_cnn_load mnist_cnn");
     ExpectTrue(nk_cnn_is_valid(&cnn), "mnist cnn valid");
     ExpectTrue(info.output_elements == 10, "loaded mnist cnn output count");
 }
@@ -165,7 +165,7 @@ static void TestModelLoadRun(void)
     nk_arena_init(&arena, memory, sizeof(memory));
 
     nk_model_t model;
-    ExpectStatus(nk_model_load("models/test_mlp.json", &arena, &model), NK_OK, "model load mlp");
+    ExpectStatus(nk_model_load("models/test_mlp.nk", &arena, &model), NK_OK, "model load mlp");
 
     const float input[] = {1.0f, 2.0f};
     float output[2] = {0.0f, 0.0f};
@@ -187,7 +187,7 @@ static void TestModelLoadRun(void)
     nk_arena_reset(&arena);
 
     nk_model_t cnn_model;
-    ExpectStatus(nk_model_load("models/cnn_4x4_single.json", &arena, &cnn_model), NK_OK, "model load cnn");
+    ExpectStatus(nk_model_load("models/cnn_4x4_single.nk", &arena, &cnn_model), NK_OK, "model load cnn");
 
     const float cnn_input[16] = {
         1, 1, 1, 1,
@@ -216,19 +216,14 @@ static void TestModelLoadRun(void)
     }
 }
 
-static void TestModelLoaderHelpers(void)
+static void TestArchPrint(void)
 {
-    printf("\n--- model loader helpers ---\n");
+    printf("\n--- arch print ---\n");
 
-    char bin_path[NK_MAX_PATH_LEN] = {};
-    ExpectTrue(nk_json_path_to_bin_path("models/test_mlp.json", bin_path, sizeof(bin_path)),
-               "json path to bin path");
-    ExpectTrue(strcmp(bin_path, "models/test_mlp.bin") == 0, "bin path suffix");
-
-    nk_arch_print("models/test_mlp.json");
+    nk_arch_print("models/test_mlp.nk");
     printf("PASS nk_arch_print smoke (output above)\n");
 
-    ExpectStatus(nk_arch_print("models/test_mlp.json"), NK_OK, "nk_arch_print status");
+    ExpectStatus(nk_arch_print("models/test_mlp.nk"), NK_OK, "nk_arch_print status");
     ExpectStatus(nk_arch_print(NULL), NK_ERR_INVALID_ARGUMENT, "nk_arch_print null path");
 }
 
@@ -241,7 +236,7 @@ static void TestModelMetadata(void)
     nk_arena_init(&arena, memory, sizeof(memory));
 
     nk_model_t model;
-    ExpectStatus(nk_model_load("models/test_mlp.json", &arena, &model), NK_OK, "model load for metadata");
+    ExpectStatus(nk_model_load("models/test_mlp.nk", &arena, &model), NK_OK, "model load for metadata");
 
     ExpectTrue(nk_model_kind(&model) == NK_NETWORK_MLP, "model kind mlp");
     ExpectTrue(nk_model_input_count(&model) == 2, "model input count");
@@ -262,7 +257,7 @@ static void TestInspectModel(void)
     nk_arena_init(&arena, memory, sizeof(memory));
 
     nk_inspect_info_t info = {0};
-    ExpectStatus(nk_inspect_model("models/test_mlp.json", &arena, &info), NK_OK, "inspect test_mlp");
+    ExpectStatus(nk_inspect_model("models/test_mlp.nk", &arena, &info), NK_OK, "inspect test_mlp");
     ExpectTrue(info.arch.input_elements == 2, "inspect input elements");
     ExpectTrue(info.weight_floats > 0, "inspect weight floats");
     ExpectTrue(info.arena_bytes_after_load > 0, "inspect arena after load");
@@ -270,15 +265,16 @@ static void TestInspectModel(void)
                "inspect arena after forward");
 }
 
-static void TestVectorsRegression(void)
+static void TestRegression(void)
 {
     printf("\n============================\n");
-    printf(" C API VECTORS TESTS\n");
+    printf(" C API REGRESSION TESTS\n");
     printf("============================\n");
 
     const nk_test_summary_t summary = nk_run_all_tests();
     ExpectTrue(summary.failed == 0, "regression failed count");
-    ExpectTrue(summary.passed == 72, "regression passed count (16 vector + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity)");
+    ExpectTrue(summary.passed == 72,
+               "regression passed count (16 hand + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity)");
 }
 
 int main(void)
@@ -291,12 +287,12 @@ int main(void)
     TestArenaAlignment();
     TestTensorOps();
     TestParseArchitecture();
-    TestModelLoaderHelpers();
+    TestArchPrint();
     TestModelMetadata();
     TestInspectModel();
     TestMnistCnnLoad();
     TestModelLoadRun();
-    TestVectorsRegression();
+    TestRegression();
 
     printf("\n============================\n");
     printf(" C API SUMMARY\n");

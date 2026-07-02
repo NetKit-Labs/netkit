@@ -16,9 +16,8 @@ Headers live in [`include/`](../include/). All implementation files use `-std=c+
 | `conv2d.hpp` | Low-level 2D convolution |
 | `mlp.hpp` | `MLPNetwork`, `MLPLayer`, `ActivationType` |
 | `cnn.hpp` | `CNNNetwork`, `Conv2DLayer`, `ConvActivationType` |
-| `json_parser.hpp` | Minimal JSON parser (`Json::` namespace) |
-| `model_loader.hpp` | JSON + `.bin` model loading |
-| `vectors_loader.hpp` | Vectors-driven test runner |
+| `nk_loader.hpp` / `nk_format.hpp` | `.nk` model loading |
+| `nk_regression.hpp` | Embedded `.nk` regression test runner |
 | `cli.hpp` | CLI dispatch (`Cli::Run`) |
 | `test.hpp` | Test suite entry (`run_all_tests`) |
 
@@ -43,7 +42,7 @@ struct Arena {
 
 `alloc` inserts padding when the current offset is not a multiple of `alignment`. Use `alignof(float)` for tensor payloads and weight blobs; use `alignof(T)` for struct arrays and placement-new targets.
 
-**Why alignment matters:** weight `.bin` files can have an odd float count, leaving the arena offset at 4 mod 8 on 64-bit platforms. Without padding, a following `MLPNetwork` or `CNNNetwork` allocation would be misaligned for `placement new`. The engine passes the correct `alignof` at every internal call site.
+**Why alignment matters:** weight blobs can have an odd float count, leaving the arena offset at 4 mod 8 on 64-bit platforms. Without padding, a following `MLPNetwork` or `CNNNetwork` allocation would be misaligned for `placement new`. The engine passes the correct `alignof` at every internal call site.
 
 All network and tensor allocations during load/inference draw from the arena. No `free()` — call `reset()` to reuse the buffer.
 
@@ -165,7 +164,7 @@ Weight matrix shape per layer: `[in_features, out_features]` row-major.
 
 ## CNNNetwork (`cnn.hpp`)
 
-CNN pipelines support mixed blocks: conv2d, max_pool2d, flatten, and dense (classification head). See [MODEL_FORMAT.md](MODEL_FORMAT.md).
+CNN pipelines support mixed blocks: conv2d, max_pool2d, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md).
 
 ```cpp
 enum class CnnBlockType { Conv2D, MaxPool2D, Flatten, Dense };
@@ -195,21 +194,20 @@ public:
 
 Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow.
 
-`ModelLoader::LoadCNN` builds full pipelines from JSON (including `models/mnist_cnn.json`).
+`NkLoader::LoadCNN` builds full pipelines from `.nk` files (including `models/mnist_cnn.nk`).
 
 ---
 
-## ModelLoader (`model_loader.hpp`)
+## NkLoader (`nk_loader.hpp`)
 
 ```cpp
-namespace ModelLoader {
+namespace NkLoader {
 
-enum class NetworkKind { Unknown, MLP, CNN };
+enum class NetworkKind { Unknown, Mlp, Cnn };
 
 enum class LoadStatus {
-    Ok, JsonOpenFailed, BinOpenFailed, JsonParseFailed,
-    UnsupportedNetwork, VersionMismatch, LayerConfigError,
-    BinSizeMismatch, ArenaOverflow
+    Ok, FileOpenFailed, ReadFailed, InvalidMagic, UnsupportedVersion,
+    TruncatedFile, UnsupportedLayer, SizeMismatch, ArenaOverflow
 };
 
 struct LoadResult {
@@ -218,56 +216,34 @@ struct LoadResult {
     const char* message;
 };
 
-struct ArchitectureSpec { /* version, kind, input_shape, layers, expected_weight_floats */ };
+struct ParsedModel { /* header, layers, tensor catalog */ };
+struct ArchInfo { /* version, kind, input/output counts, weight_floats */ };
 
-LoadResult ParseArchitecture(const char* json_path, ArchitectureSpec& spec);
-uint32_t ComputeMlpOutputElements(const ArchitectureSpec& spec);
-uint32_t ComputeCnnOutputElements(const ArchitectureSpec& spec);
-void PrintArchitecture(const ArchitectureSpec& spec);  // CLI inspect --full
-void PrintNetworkSummary(const char* json_path, const ArchitectureSpec& spec);
-void PrintWeightsSummary(const char* json_path, float* weights,
-                         std::size_t float_count, std::size_t expected_float_count);
+LoadResult ParseFile(const char* nk_path, ParsedModel& out);
+void FillArchInfo(const ParsedModel& model, ArchInfo& info);
+uint32_t InputElements(const ParsedModel& model);
+uint32_t OutputElements(const ParsedModel& model);
 
-bool JsonPathToBinPath(const char* json_path, char* bin_path, std::size_t capacity);
+void PrintHeader(const char* nk_path, const ParsedModel& model);
+void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
 
-LoadStatus LoadWeightsBin(const char* json_path, Arena& arena,
-                          float*& weights, std::size_t& float_count,
-                          const char** error_message = nullptr);
-
-LoadResult LoadMLP(const char* json_path, Arena& arena, MLPNetwork*& network,
+LoadResult LoadMLP(const char* nk_path, Arena& arena, MLPNetwork*& network,
                    std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
 
-LoadResult LoadCNN(const char* json_path, Arena& arena, CNNNetwork*& network,
+LoadResult LoadCNN(const char* nk_path, Arena& arena, CNNNetwork*& network,
                    std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
 
-LoadResult Load(const char* json_path, Arena& arena, NetworkKind& kind,
+LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
                 MLPNetwork*& mlp, CNNNetwork*& cnn,
                 std::array<uint32_t, kMaxTensorRank>& input_shape, uint32_t& input_rank);
 }
 ```
 
-**C equivalents:** `nk_parse_architecture` fills `nk_arch_info_t` with `input_elements` and `output_elements` (same as `ComputeMlpOutputElements` / `ComputeCnnOutputElements`). `PrintNetworkSummary` → `nk_arch_print`. `PrintArchitecture` and `PrintWeightsSummary` are CLI `--full` diagnostics only (no C binding).
+**C equivalents:** `nk_parse_architecture` fills `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. `PrintHeader` is a detailed binary dump (no C binding).
 
 **High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` and calls `forward` directly. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper — see [c-api.md](c-api.md).
 
-**JSON format** — full schema in [MODEL_FORMAT.md](MODEL_FORMAT.md).
-
-```json
-{
-  "version": 1,
-  "network": "mlp",
-  "input": [1, 2],
-  "layers": [
-    { "type": "dense", "units": 2, "activation": "relu" },
-    { "type": "dense", "units": 2, "activation": "none" }
-  ]
-}
-```
-
-**Weight layout (`.bin`)** — see [MODEL_FORMAT.md](MODEL_FORMAT.md) for byte order and CNN layout.
-
-- Dense: `W[in×out]` row-major, then `b[out]`
-- Conv2D: `W[out×k×k×in]`, then `b[out]`
+**Format** — full binary layout in [NK_FORMAT.md](NK_FORMAT.md). Convert ONNX with `python -m netkit convert`.
 
 ---
 
@@ -280,16 +256,17 @@ LoadResult Load(const char* json_path, Arena& arena, NetworkKind& kind,
 
 ---
 
-## VectorsLoader (`vectors_loader.hpp`)
+## NkRegression (`nk_regression.hpp`)
 
 ```cpp
-namespace VectorsLoader {
+namespace NkRegression {
     struct RunSummary { uint32_t passed; uint32_t failed; };
-    RunSummary RunVectorsFile(const char* vectors_path);
+    RunSummary RunModelTests(const char* nk_path);
+    RunSummary RunNkOnnxParity(const char* nk_path, const char* onnx_path);
 }
 ```
 
-Drives regression tests from `*.vectors.json` files. Format and tolerance: [VECTORS_TESTS.md](VECTORS_TESTS.md).
+Drives regression tests from embedded cases in `.nk` files. Format: [NK_FORMAT.md](NK_FORMAT.md).
 
 ---
 
@@ -301,14 +278,14 @@ namespace Cli {
 }
 ```
 
-Commands: `test`, `run <model.json> --input ...`, `inspect <model.json> [--full]`, `help` / `-h` / `--help`. Full reference: [CLI.md](CLI.md).
+Commands: `test`, `run <model.nk> --input ...`, `inspect <model.nk> [--full]`, `help` / `-h` / `--help`. Full reference: [CLI.md](CLI.md).
 
 ---
 
 ## Test suite (`test.hpp`)
 
 ```cpp
-VectorsLoader::RunSummary run_all_tests();
+NkRegression::RunSummary run_all_tests();
 ```
 
 ---

@@ -1,4 +1,4 @@
 #pragma once
-#include "vectors_loader.hpp"
+#include "nk_regression.hpp"
 
-VectorsLoader::RunSummary run_all_tests();
+NkRegression::RunSummary run_all_tests();

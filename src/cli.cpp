@@ -1,7 +1,6 @@
 #include "cli.hpp"
 #include "test.hpp"
-#include "model_loader.hpp"
-#include "onnx_importer.hpp"
+#include "nk_loader.hpp"
 #include "tensor_factory.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
@@ -23,9 +22,8 @@ namespace Cli
             std::cout << "netkit — neural network inference CLI\n\n";
             std::cout << "Usage:\n";
             std::cout << "  " << program << " test\n";
-            std::cout << "  " << program << " run <model.json> --input <values>\n";
-            std::cout << "  " << program << " inspect <model.json> [--full]\n";
-            std::cout << "  " << program << " import <model.onnx> --out <base_path>\n";
+            std::cout << "  " << program << " run <model.nk> --input <values>\n";
+            std::cout << "  " << program << " inspect <model.nk> [--full]\n";
             std::cout << "  " << program << " help\n";
             std::cout << "  " << program << " -h | --help\n\n";
 
@@ -35,36 +33,29 @@ namespace Cli
 
             std::cout << "Commands:\n";
             std::cout << "  test\n";
-            std::cout << "      Run the full vectors regression suite (same as make test-cpp).\n";
+            std::cout << "      Run the full regression suite (same as make test-cpp).\n";
             std::cout << "      Exit 0 if all cases pass, 1 otherwise.\n\n";
 
-            std::cout << "  run <model.json> --input <values>\n";
+            std::cout << "  run <model.nk> --input <values>\n";
             std::cout << "      Load a model, print its network summary, and run one forward pass.\n";
             std::cout << "      Options:\n";
             std::cout << "        --input <values>   Required. Comma-separated float32 input values.\n";
             std::cout << "                           Forms: --input 1,2,3  or  --input=1,2,3\n";
             std::cout << "      Input count must match the model input shape:\n";
-            std::cout << "        MLP: batch × features (product of JSON \"input\" array)\n";
+            std::cout << "        MLP: batch × features\n";
             std::cout << "        CNN: H × W × C in NHWC flatten order\n";
             std::cout << "      Maximum 4096 input floats per invocation.\n\n";
 
-            std::cout << "  inspect <model.json> [--full]\n";
+            std::cout << "  inspect <model.nk> [--full]\n";
             std::cout << "      Print a boxed network summary (architecture at a glance).\n";
             std::cout << "      Options:\n";
-            std::cout << "        --full   Also load weights, print weight summary, and report\n";
-            std::cout << "                 arena memory usage after load and a zero-input forward pass.\n";
-            std::cout << "                 Use --full to size embedded arena buffers.\n\n";
-
-            std::cout << "  import <model.onnx> --out <base_path>\n";
-            std::cout << "      Convert a supported ONNX model to netkit JSON + float32 .bin files.\n";
-            std::cout << "      Writes <base_path>.json and <base_path>.bin (extension optional on --out).\n";
-            std::cout << "      Supported ops: Gemm, Conv, MaxPool, Flatten, Relu, Softmax.\n";
-            std::cout << "      CNN inputs may be NCHW [N,C,H,W]; netkit uses NHWC in the exported JSON.\n\n";
+            std::cout << "        --full   Load weights and report arena usage after a zero-input forward pass.\n\n";
 
             std::cout << "Path resolution:\n";
-            std::cout << "  If <model.json> is not found in the current directory, netkit tries\n";
-            std::cout << "  ../<model.json> relative to the working directory.\n\n";
+            std::cout << "  If <model.nk> is not found in the current directory, netkit tries\n";
+            std::cout << "  ../<model.nk> relative to the working directory.\n\n";
 
+            std::cout << "Convert ONNX to .nk with: python -m netkit convert <model.onnx> -o <out.nk>\n";
             std::cout << "See docs/CLI.md for full reference.\n";
         }
 
@@ -99,14 +90,6 @@ namespace Cli
                 return buffer;
 
             return rel_path;
-        }
-
-        uint32_t InputElementCount(const ModelLoader::ArchitectureSpec& spec)
-        {
-            uint32_t count = 1;
-            for (uint32_t i = 0; i < spec.input_rank; ++i)
-                count *= spec.input_shape[i];
-            return count;
         }
 
         Tensor MakeNhwcInput(float* data, uint32_t h, uint32_t w, uint32_t c)
@@ -187,7 +170,7 @@ namespace Cli
 
         int CmdTest()
         {
-            const VectorsLoader::RunSummary summary = run_all_tests();
+            const NkRegression::RunSummary summary = run_all_tests();
 
             std::cout << "\n============================\n";
             std::cout << " C++ API SUMMARY\n";
@@ -198,134 +181,106 @@ namespace Cli
             return summary.failed == 0 ? 0 : 1;
         }
 
-        int CmdInspectFull(const char* resolved, const ModelLoader::ArchitectureSpec& spec)
+        bool ParseNkModel(const char* nk_path, char* resolved_buffer, NkLoader::ParsedModel& parsed)
         {
-            std::cout << "Model: " << resolved << "\n\n";
-            std::cout << "Architecture:\n";
-            ModelLoader::PrintArchitecture(spec);
-
-            Arena arena;
-            arena.init(g_arena_buffer, sizeof(g_arena_buffer));
-
-            float* weights = nullptr;
-            std::size_t float_count = 0;
-            const char* weight_error = nullptr;
-            const ModelLoader::LoadStatus weight_status =
-                ModelLoader::LoadWeightsBin(resolved, arena, weights, float_count, &weight_error);
-
-            std::cout << "\nWeights:\n";
-            if (weight_status != ModelLoader::LoadStatus::Ok)
-            {
-                std::cerr << "  load failed: "
-                          << (weight_error ? weight_error : "unknown error") << "\n";
-                return 1;
-            }
-
-            ModelLoader::PrintWeightsSummary(resolved, weights, float_count, spec.expected_weight_floats);
-
-            arena.reset();
-
-            const uint32_t input_elements = InputElementCount(spec);
-            float input_values[kMaxInputFloats] = {};
-            if (input_elements > kMaxInputFloats)
-            {
-                std::cerr << "Model input too large for inspect (" << input_elements << " floats)\n";
-                return 1;
-            }
-
-            std::array<uint32_t, kMaxTensorRank> input_shape{};
-            uint32_t input_rank = 0;
-
-            if (spec.kind == ModelLoader::NetworkKind::MLP)
-            {
-                MLPNetwork* network = nullptr;
-                const ModelLoader::LoadResult load_result =
-                    ModelLoader::LoadMLP(resolved, arena, network, input_shape, input_rank);
-
-                if (load_result.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
-                {
-                    std::cerr << "Failed to load MLP: "
-                              << (load_result.message ? load_result.message : "unknown error") << "\n";
-                    return 1;
-                }
-
-                const std::size_t bytes_after_load = arena.offset;
-
-                Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
-                const uint32_t output_cols = spec.dense_layers[spec.num_layers - 1].units;
-                Tensor output = TensorFactory::Create2D(arena, input_shape[0], output_cols);
-                if (!input.data || !output.data)
-                {
-                    std::cerr << "Arena overflow while allocating tensors for inspect forward pass\n";
-                    return 1;
-                }
-
-                network->forward(input, output, arena);
-
-                std::cout << "\nArena (" << arena.capacity << " bytes capacity):\n";
-                std::cout << "  after load:           " << bytes_after_load << " bytes\n";
-                std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
-                std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
-            }
-            else if (spec.kind == ModelLoader::NetworkKind::CNN)
-            {
-                CNNNetwork* network = nullptr;
-                const ModelLoader::LoadResult load_result =
-                    ModelLoader::LoadCNN(resolved, arena, network, input_shape, input_rank);
-
-                if (load_result.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
-                {
-                    std::cerr << "Failed to load CNN: "
-                              << (load_result.message ? load_result.message : "unknown error") << "\n";
-                    return 1;
-                }
-
-                const std::size_t bytes_after_load = arena.offset;
-
-                Tensor input = MakeNhwcInput(input_values, input_shape[0], input_shape[1], input_shape[2]);
-                Tensor& output = network->forward(input, arena);
-                if (!output.data)
-                {
-                    std::cerr << "Arena overflow during CNN forward pass\n";
-                    return 1;
-                }
-
-                std::cout << "\nArena (" << arena.capacity << " bytes capacity):\n";
-                std::cout << "  after load:           " << bytes_after_load << " bytes\n";
-                std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
-                std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
-            }
-            else
-            {
-                std::cerr << "Unsupported network kind\n";
-                return 1;
-            }
-
-            return 0;
-        }
-
-        int CmdInspect(const char* model_path, bool full)
-        {
-            char path_buffer[ModelLoader::kMaxPathLen] = {};
-            const char* resolved = ResolveModelPath(model_path, path_buffer, sizeof(path_buffer));
-
-            ModelLoader::ArchitectureSpec spec{};
-            const ModelLoader::LoadResult arch_result = ModelLoader::ParseArchitecture(resolved, spec);
-            if (arch_result.status != ModelLoader::LoadStatus::Ok)
+            const char* resolved = ResolveModelPath(nk_path, resolved_buffer, NkLoader::kMaxPathLen);
+            const NkLoader::LoadResult result = NkLoader::ParseFile(resolved, parsed);
+            if (result.status != NkLoader::LoadStatus::Ok)
             {
                 std::cerr << "Failed to parse " << resolved << ": "
-                          << (arch_result.message ? arch_result.message : "unknown error") << "\n";
-                return 1;
+                          << (result.message ? result.message : NkLoader::StatusMessage(result.status))
+                          << "\n";
+                return false;
             }
+            return true;
+        }
+
+        int CmdInspect(const char* nk_path, bool full)
+        {
+            char path_buffer[NkLoader::kMaxPathLen] = {};
+            const char* resolved = ResolveModelPath(nk_path, path_buffer, sizeof(path_buffer));
+
+            NkLoader::ParsedModel parsed{};
+            if (!ParseNkModel(nk_path, path_buffer, parsed))
+                return 1;
 
             if (full)
-                return CmdInspectFull(resolved, spec);
+            {
+                NkLoader::PrintNetworkSummary(resolved, parsed);
 
-            ModelLoader::PrintNetworkSummary(resolved, spec);
+                Arena arena;
+                arena.init(g_arena_buffer, sizeof(g_arena_buffer));
+
+                const uint32_t input_elements = NkLoader::InputElements(parsed);
+                float input_values[kMaxInputFloats] = {};
+                if (input_elements > kMaxInputFloats)
+                {
+                    std::cerr << "Model input too large for inspect (" << input_elements << " floats)\n";
+                    return 1;
+                }
+
+                std::array<uint32_t, kMaxTensorRank> input_shape{};
+                uint32_t input_rank = 0;
+
+                if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
+                {
+                    MLPNetwork* network = nullptr;
+                    const NkLoader::LoadResult load_result =
+                        NkLoader::LoadMLP(resolved, arena, network, input_shape, input_rank);
+
+                    if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
+                    {
+                        std::cerr << "Failed to load MLP\n";
+                        return 1;
+                    }
+
+                    const std::size_t bytes_after_load = arena.offset;
+                    Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
+                    const uint32_t output_cols =
+                        NkLoader::OutputElements(parsed) / input_shape[0];
+                    Tensor output = TensorFactory::Create2D(arena, input_shape[0], output_cols);
+                    network->forward(input, output, arena);
+
+                    std::cout << "\nArena (" << arena.capacity << " bytes capacity):\n";
+                    std::cout << "  after load:           " << bytes_after_load << " bytes\n";
+                    std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
+                    std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
+                }
+                else
+                {
+                    CNNNetwork* network = nullptr;
+                    const NkLoader::LoadResult load_result =
+                        NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank);
+
+                    if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
+                    {
+                        std::cerr << "Failed to load CNN\n";
+                        return 1;
+                    }
+
+                    const std::size_t bytes_after_load = arena.offset;
+                    Tensor input = MakeNhwcInput(input_values, input_shape[0], input_shape[1], input_shape[2]);
+                    Tensor& output = network->forward(input, arena);
+                    if (!output.data)
+                    {
+                        std::cerr << "Arena overflow during CNN forward pass\n";
+                        return 1;
+                    }
+
+                    std::cout << "\nArena (" << arena.capacity << " bytes capacity):\n";
+                    std::cout << "  after load:           " << bytes_after_load << " bytes\n";
+                    std::cout << "  after forward (zero): " << arena.offset << " bytes\n";
+                    std::cout << "  remaining:            " << arena.remaining() << " bytes\n";
+                }
+
+                return 0;
+            }
+
+            NkLoader::PrintNetworkSummary(resolved, parsed);
             return 0;
         }
 
-        int CmdRun(const char* model_path, const char* input_text)
+        int CmdRun(const char* nk_path, const char* input_text)
         {
             if (!input_text)
             {
@@ -333,17 +288,12 @@ namespace Cli
                 return 1;
             }
 
-            char path_buffer[ModelLoader::kMaxPathLen] = {};
-            const char* resolved = ResolveModelPath(model_path, path_buffer, sizeof(path_buffer));
+            char path_buffer[NkLoader::kMaxPathLen] = {};
+            const char* resolved = ResolveModelPath(nk_path, path_buffer, sizeof(path_buffer));
 
-            ModelLoader::ArchitectureSpec spec{};
-            const ModelLoader::LoadResult arch_result = ModelLoader::ParseArchitecture(resolved, spec);
-            if (arch_result.status != ModelLoader::LoadStatus::Ok)
-            {
-                std::cerr << "Failed to parse " << resolved << ": "
-                          << (arch_result.message ? arch_result.message : "unknown error") << "\n";
+            NkLoader::ParsedModel parsed{};
+            if (!ParseNkModel(nk_path, path_buffer, parsed))
                 return 1;
-            }
 
             float input_values[kMaxInputFloats] = {};
             uint32_t input_count = 0;
@@ -353,7 +303,7 @@ namespace Cli
                 return 1;
             }
 
-            const uint32_t required = InputElementCount(spec);
+            const uint32_t required = NkLoader::InputElements(parsed);
             if (input_count != required)
             {
                 std::cerr << "Input has " << input_count << " values but model expects "
@@ -364,125 +314,54 @@ namespace Cli
             Arena arena;
             arena.init(g_arena_buffer, sizeof(g_arena_buffer));
 
-            ModelLoader::PrintNetworkSummary(resolved, spec);
+            NkLoader::PrintNetworkSummary(resolved, parsed);
             std::cout << "\n";
 
             std::array<uint32_t, kMaxTensorRank> input_shape{};
             uint32_t input_rank = 0;
 
-            if (spec.kind == ModelLoader::NetworkKind::MLP)
+            if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
             {
                 MLPNetwork* network = nullptr;
-                const ModelLoader::LoadResult load_result =
-                    ModelLoader::LoadMLP(resolved, arena, network, input_shape, input_rank);
+                const NkLoader::LoadResult load_result =
+                    NkLoader::LoadMLP(resolved, arena, network, input_shape, input_rank);
 
-                if (load_result.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
+                if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                 {
-                    std::cerr << "Failed to load MLP: "
-                              << (load_result.message ? load_result.message : "unknown error") << "\n";
+                    std::cerr << "Failed to load MLP\n";
                     return 1;
                 }
 
                 Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
-                if (!input.data)
-                {
-                    std::cerr << "Arena overflow while allocating input tensor\n";
-                    return 1;
-                }
-
                 float* input_data = static_cast<float*>(input.data);
                 for (uint32_t i = 0; i < input_count; ++i)
                     input_data[i] = input_values[i];
 
-                const uint32_t output_cols = spec.dense_layers[spec.num_layers - 1].units;
+                const uint32_t output_cols =
+                    NkLoader::OutputElements(parsed) / input_shape[0];
                 Tensor output = TensorFactory::Create2D(arena, input_shape[0], output_cols);
-                if (!output.data)
-                {
-                    std::cerr << "Arena overflow while allocating output tensor\n";
-                    return 1;
-                }
-
                 TensorFactory::PrintLabeled("Input", input);
                 network->forward(input, output, arena);
                 TensorFactory::PrintLabeled("Output", output);
             }
-            else if (spec.kind == ModelLoader::NetworkKind::CNN)
+            else
             {
                 CNNNetwork* network = nullptr;
-                const ModelLoader::LoadResult load_result =
-                    ModelLoader::LoadCNN(resolved, arena, network, input_shape, input_rank);
+                const NkLoader::LoadResult load_result =
+                    NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank);
 
-                if (load_result.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
+                if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                 {
-                    std::cerr << "Failed to load CNN: "
-                              << (load_result.message ? load_result.message : "unknown error") << "\n";
+                    std::cerr << "Failed to load CNN\n";
                     return 1;
                 }
 
                 Tensor input = MakeNhwcInput(input_values, input_shape[0], input_shape[1], input_shape[2]);
                 TensorFactory::PrintLabeled("Input", input);
-
                 Tensor& output = network->forward(input, arena);
-                if (!output.data)
-                {
-                    std::cerr << "Arena overflow during CNN forward pass\n";
-                    return 1;
-                }
-
                 TensorFactory::PrintLabeled("Output", output);
             }
-            else
-            {
-                std::cerr << "Unsupported network kind\n";
-                return 1;
-            }
 
-            return 0;
-        }
-
-        int CmdImport(const char* onnx_path, const char* out_base)
-        {
-            if (!out_base || out_base[0] == '\0')
-            {
-                std::cerr << "Missing --out base path\n";
-                return 1;
-            }
-
-            char resolved_onnx[ModelLoader::kMaxPathLen] = {};
-            const char* resolved = ResolveModelPath(onnx_path, resolved_onnx, sizeof(resolved_onnx));
-
-            char json_path[ModelLoader::kMaxPathLen] = {};
-            char bin_path[ModelLoader::kMaxPathLen] = {};
-
-            const std::size_t out_len = std::strlen(out_base);
-            if (out_len >= 5 && std::strcmp(out_base + out_len - 5, ".json") == 0)
-            {
-                std::snprintf(json_path, sizeof(json_path), "%s", out_base);
-                std::snprintf(bin_path, sizeof(bin_path), "%s", out_base);
-                char* dot = std::strrchr(bin_path, '.');
-                if (dot)
-                    std::strcpy(dot, ".bin");
-            }
-            else
-            {
-                std::snprintf(json_path, sizeof(json_path), "%s.json", out_base);
-                std::snprintf(bin_path, sizeof(bin_path), "%s.bin", out_base);
-            }
-
-            const OnnxImporter::ImportResult result =
-                OnnxImporter::ImportToNetkitFiles(resolved, json_path, bin_path);
-            if (result.status != OnnxImporter::ImportStatus::Ok)
-            {
-                std::cerr << "ONNX import failed: "
-                          << (result.message ? result.message : OnnxImporter::StatusMessage(result.status))
-                          << "\n";
-                return 1;
-            }
-
-            std::cout << "Imported ONNX model\n";
-            std::cout << "  network: " << (result.kind == ModelLoader::NetworkKind::MLP ? "mlp" : "cnn") << "\n";
-            std::cout << "  json:    " << json_path << "\n";
-            std::cout << "  weights: " << bin_path << "\n";
             return 0;
         }
     }
@@ -529,19 +408,6 @@ namespace Cli
 
             const char* input_text = FindOptionValue(argc, argv, 3, "--input");
             return CmdRun(argv[2], input_text);
-        }
-
-        if (std::strcmp(command, "import") == 0)
-        {
-            if (argc < 3)
-            {
-                std::cerr << "Missing ONNX model path\n";
-                PrintHelp(argv[0]);
-                return 1;
-            }
-
-            const char* out_base = FindOptionValue(argc, argv, 3, "--out");
-            return CmdImport(argv[2], out_base);
         }
 
         std::cerr << "Unknown command: " << command << "\n";

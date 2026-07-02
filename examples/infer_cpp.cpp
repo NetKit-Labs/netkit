@@ -1,12 +1,12 @@
 /*
- * infer_cpp.cpp — C++26 example: load a model and run inference via the native API
+ * infer_cpp.cpp — C++26 example: load a .nk model and run inference
  *
  * Build: make example-cpp
- * Run:   ./examples/infer_cpp models/test_mlp.json 1 2
+ * Run:   ./examples/infer_cpp models/test_mlp.nk 1 2
  */
 #include "arena.hpp"
 #include "cnn.hpp"
-#include "model_loader.hpp"
+#include "nk_loader.hpp"
 #include "mlp.hpp"
 #include "tensor_factory.hpp"
 #include <array>
@@ -15,14 +15,6 @@
 
 namespace
 {
-    uint32_t InputElementCount(const ModelLoader::ArchitectureSpec& spec)
-    {
-        uint32_t count = 1;
-        for (uint32_t i = 0; i < spec.input_rank; ++i)
-            count *= spec.input_shape[i];
-        return count;
-    }
-
     Tensor MakeNhwcView(float* data, uint32_t h, uint32_t w, uint32_t c)
     {
         Tensor input{};
@@ -47,23 +39,24 @@ int main(int argc, char** argv)
 
     if (argc < 4)
     {
-        std::cerr << "Usage: " << argv[0] << " <model.json> <input floats...>\n";
-        std::cerr << "Example: " << argv[0] << " models/test_mlp.json 1 2\n";
+        std::cerr << "Usage: " << argv[0] << " <model.nk> <input floats...>\n";
+        std::cerr << "Example: " << argv[0] << " models/test_mlp.nk 1 2\n";
         return 1;
     }
 
-    const char* json_path = argv[1];
+    const char* nk_path = argv[1];
 
-    ModelLoader::ArchitectureSpec spec{};
-    const ModelLoader::LoadResult arch_result = ModelLoader::ParseArchitecture(json_path, spec);
-    if (arch_result.status != ModelLoader::LoadStatus::Ok)
+    NkLoader::ParsedModel parsed{};
+    const NkLoader::LoadResult arch_result = NkLoader::ParseFile(nk_path, parsed);
+    if (arch_result.status != NkLoader::LoadStatus::Ok)
     {
         std::cerr << "parse failed: "
-                  << (arch_result.message ? arch_result.message : "unknown error") << "\n";
+                  << (arch_result.message ? arch_result.message : NkLoader::StatusMessage(arch_result.status))
+                  << "\n";
         return 1;
     }
 
-    const uint32_t input_elements = InputElementCount(spec);
+    const uint32_t input_elements = NkLoader::InputElements(parsed);
     const int input_arg_count = argc - 2;
     if (static_cast<uint32_t>(input_arg_count) != input_elements)
     {
@@ -85,21 +78,22 @@ int main(int argc, char** argv)
     Arena arena;
     arena.init(arena_memory, sizeof(arena_memory));
 
-    std::cout << "Model: " << json_path << "\n";
+    std::cout << "Model: " << nk_path << "\n";
 
-    if (spec.kind == ModelLoader::NetworkKind::MLP)
+    if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
     {
         MLPNetwork* network = nullptr;
         std::array<uint32_t, kMaxTensorRank> input_shape{};
         uint32_t input_rank = 0;
 
-        const ModelLoader::LoadResult load_result =
-            ModelLoader::LoadMLP(json_path, arena, network, input_shape, input_rank);
+        const NkLoader::LoadResult load_result =
+            NkLoader::LoadMLP(nk_path, arena, network, input_shape, input_rank);
 
-        if (load_result.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
+        if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
         {
             std::cerr << "load failed: "
-                      << (load_result.message ? load_result.message : "unknown error") << "\n";
+                      << (load_result.message ? load_result.message : NkLoader::StatusMessage(load_result.status))
+                      << "\n";
             return 1;
         }
 
@@ -108,26 +102,27 @@ int main(int argc, char** argv)
         for (uint32_t i = 0; i < input_elements; ++i)
             input_data[i] = input_buffer[i];
 
-        const uint32_t output_cols = spec.dense_layers[spec.num_layers - 1].units;
+        const uint32_t output_cols = NkLoader::OutputElements(parsed) / input_shape[0];
         Tensor output = TensorFactory::Create2D(arena, input_shape[0], output_cols);
 
         TensorFactory::PrintLabeled("Input", input);
         network->forward(input, output, arena);
         TensorFactory::PrintLabeled("Output", output);
     }
-    else if (spec.kind == ModelLoader::NetworkKind::CNN)
+    else if (parsed.header.network_kind == NkFormat::NetworkKind::Cnn)
     {
         CNNNetwork* network = nullptr;
         std::array<uint32_t, kMaxTensorRank> input_shape{};
         uint32_t input_rank = 0;
 
-        const ModelLoader::LoadResult load_result =
-            ModelLoader::LoadCNN(json_path, arena, network, input_shape, input_rank);
+        const NkLoader::LoadResult load_result =
+            NkLoader::LoadCNN(nk_path, arena, network, input_shape, input_rank);
 
-        if (load_result.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
+        if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
         {
             std::cerr << "load failed: "
-                      << (load_result.message ? load_result.message : "unknown error") << "\n";
+                      << (load_result.message ? load_result.message : NkLoader::StatusMessage(load_result.status))
+                      << "\n";
             return 1;
         }
 

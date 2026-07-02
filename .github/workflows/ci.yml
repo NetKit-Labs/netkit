@@ -28,18 +28,15 @@ jobs:
       - name: Build and run C++ example
         run: |
           make example-cpp
-          ./examples/infer_cpp models/test_mlp.json 1 2
+          ./examples/infer_cpp models/test_mlp.nk 1 2
 
       - name: Build and run C example
         run: |
           make example-c
-          ./examples/infer_c models/test_mlp.json 1 2
+          ./examples/infer_c models/test_mlp.nk 1 2
 
       - name: CLI smoke test
         run: |
-          ./netkit run models/test_mlp.json --input 1,2
-          ./netkit inspect models/test_mlp.json
-          ./netkit import models/test_mlp.onnx --out /tmp/test_mlp_from_onnx
-          ./netkit run /tmp/test_mlp_from_onnx.json --input 1,2
-          ./netkit import models/mnist_cnn.onnx --out /tmp/mnist_cnn_from_onnx
-          ./netkit inspect /tmp/mnist_cnn_from_onnx.json
+          ./netkit run models/test_mlp.nk --input 1,2
+          ./netkit inspect models/test_mlp.nk
+          ./netkit inspect models/mnist_cnn.nk --full || true

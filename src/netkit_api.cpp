@@ -1,12 +1,12 @@
 #include "netkit.h"
-#include "model_loader.hpp"
+#include "nk_loader.hpp"
 #include "tensor_factory.hpp"
 #include "tensor_access.hpp"
 #include "ops.hpp"
 #include "conv2d.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
-#include "vectors_loader.hpp"
+#include "nk_regression.hpp"
 #include "cli.hpp"
 #include "test.hpp"
 #include <cstdio>
@@ -30,29 +30,29 @@ namespace
         g_last_error[sizeof(g_last_error) - 1] = '\0';
     }
 
-    nk_status_t FromLoadStatus(ModelLoader::LoadStatus status)
+    nk_status_t FromLoadStatus(NkLoader::LoadStatus status)
     {
         switch (status)
         {
-            case ModelLoader::LoadStatus::Ok: return NK_OK;
-            case ModelLoader::LoadStatus::JsonOpenFailed: return NK_ERR_JSON_OPEN;
-            case ModelLoader::LoadStatus::BinOpenFailed: return NK_ERR_BIN_OPEN;
-            case ModelLoader::LoadStatus::JsonParseFailed: return NK_ERR_JSON_PARSE;
-            case ModelLoader::LoadStatus::UnsupportedNetwork: return NK_ERR_UNSUPPORTED_NETWORK;
-            case ModelLoader::LoadStatus::VersionMismatch: return NK_ERR_VERSION_MISMATCH;
-            case ModelLoader::LoadStatus::LayerConfigError: return NK_ERR_LAYER_CONFIG;
-            case ModelLoader::LoadStatus::BinSizeMismatch: return NK_ERR_BIN_SIZE_MISMATCH;
-            case ModelLoader::LoadStatus::ArenaOverflow: return NK_ERR_ARENA_OVERFLOW;
+            case NkLoader::LoadStatus::Ok: return NK_OK;
+            case NkLoader::LoadStatus::FileOpenFailed: return NK_ERR_MODEL_OPEN;
+            case NkLoader::LoadStatus::ReadFailed: return NK_ERR_MODEL_READ;
+            case NkLoader::LoadStatus::InvalidMagic:
+            case NkLoader::LoadStatus::UnsupportedVersion:
+            case NkLoader::LoadStatus::TruncatedFile: return NK_ERR_MODEL_PARSE;
+            case NkLoader::LoadStatus::UnsupportedLayer: return NK_ERR_LAYER_CONFIG;
+            case NkLoader::LoadStatus::SizeMismatch: return NK_ERR_WEIGHT_MISMATCH;
+            case NkLoader::LoadStatus::ArenaOverflow: return NK_ERR_ARENA_OVERFLOW;
         }
         return NK_ERR_INVALID_ARGUMENT;
     }
 
-    nk_network_kind_t FromNetworkKind(ModelLoader::NetworkKind kind)
+    nk_network_kind_t FromNetworkKind(NkLoader::NetworkKind kind)
     {
         switch (kind)
         {
-            case ModelLoader::NetworkKind::MLP: return NK_NETWORK_MLP;
-            case ModelLoader::NetworkKind::CNN: return NK_NETWORK_CNN;
+            case NkLoader::NetworkKind::Mlp: return NK_NETWORK_MLP;
+            case NkLoader::NetworkKind::Cnn: return NK_NETWORK_CNN;
             default: return NK_NETWORK_UNKNOWN;
         }
     }
@@ -162,40 +162,32 @@ namespace
         return rel_path;
     }
 
-    uint32_t InputElementCount(const ModelLoader::ArchitectureSpec& spec)
+    void FillArchInfo(const NkLoader::ArchInfo& arch, nk_arch_info_t* info)
     {
-        uint32_t count = 1;
-        for (uint32_t i = 0; i < spec.input_rank; ++i)
-            count *= spec.input_shape[i];
-        return count;
-    }
-
-    uint32_t MlpOutputElements(const ModelLoader::ArchitectureSpec& spec)
-    {
-        return ModelLoader::ComputeMlpOutputElements(spec);
-    }
-
-    uint32_t CnnOutputElements(const ModelLoader::ArchitectureSpec& spec)
-    {
-        return ModelLoader::ComputeCnnOutputElements(spec);
-    }
-
-    void FillArchInfo(const ModelLoader::ArchitectureSpec& spec, nk_arch_info_t* info)
-    {
-        info->version = spec.version;
-        info->kind = FromNetworkKind(spec.kind);
-        info->input_rank = spec.input_rank;
-        info->num_layers = spec.num_layers;
-        info->expected_weight_floats = spec.expected_weight_floats;
-        info->input_elements = InputElementCount(spec);
+        info->version = arch.version;
+        info->kind = FromNetworkKind(arch.kind);
+        info->input_rank = arch.input_rank;
+        info->num_layers = arch.num_layers;
+        info->expected_weight_floats = arch.weight_floats;
+        info->input_elements = arch.input_elements;
+        info->output_elements = arch.output_elements;
         for (uint32_t i = 0; i < NK_MAX_TENSOR_RANK; ++i)
-            info->input_shape[i] = i < spec.input_rank ? spec.input_shape[i] : 0;
-        if (spec.kind == ModelLoader::NetworkKind::MLP)
-            info->output_elements = MlpOutputElements(spec);
-        else if (spec.kind == ModelLoader::NetworkKind::CNN)
-            info->output_elements = CnnOutputElements(spec);
-        else
-            info->output_elements = 0;
+            info->input_shape[i] = i < arch.input_rank ? arch.input_shape[i] : 0;
+    }
+
+    nk_status_t ParseNkModel(const char* nk_path, NkLoader::ParsedModel& parsed, const char** resolved_out)
+    {
+        static thread_local char path_buffer[NkLoader::kMaxPathLen];
+        const char* resolved = ResolveModelPath(nk_path, path_buffer, sizeof(path_buffer));
+        const NkLoader::LoadResult result = NkLoader::ParseFile(resolved, parsed);
+        if (result.status != NkLoader::LoadStatus::Ok)
+        {
+            SetLastError(result.message ? result.message : NkLoader::StatusMessage(result.status));
+            return FromLoadStatus(result.status);
+        }
+        if (resolved_out)
+            *resolved_out = resolved;
+        return NK_OK;
     }
 
     Tensor MakeNhwcInput(float* data, uint32_t h, uint32_t w, uint32_t c)
@@ -214,21 +206,6 @@ namespace
         input.bytes = input.num_elements * sizeof(float);
         return input;
     }
-
-    nk_status_t ParseSpec(const char* json_path, ModelLoader::ArchitectureSpec& spec, const char** resolved_out)
-    {
-        static thread_local char path_buffer[ModelLoader::kMaxPathLen];
-        const char* resolved = ResolveModelPath(json_path, path_buffer, sizeof(path_buffer));
-        const ModelLoader::LoadResult result = ModelLoader::ParseArchitecture(resolved, spec);
-        if (result.status != ModelLoader::LoadStatus::Ok)
-        {
-            SetLastError(result.message ? result.message : "architecture parse failed");
-            return FromLoadStatus(result.status);
-        }
-        if (resolved_out)
-            *resolved_out = resolved;
-        return NK_OK;
-    }
 }
 
 extern "C" {
@@ -240,13 +217,13 @@ const char* nk_status_string(nk_status_t status)
     switch (status)
     {
         case NK_OK: return "ok";
-        case NK_ERR_JSON_OPEN: return "json open failed";
-        case NK_ERR_BIN_OPEN: return "bin open failed";
-        case NK_ERR_JSON_PARSE: return "json parse failed";
+        case NK_ERR_MODEL_OPEN: return "model file open failed";
+        case NK_ERR_MODEL_READ: return "model read failed";
+        case NK_ERR_MODEL_PARSE: return "model parse failed";
         case NK_ERR_UNSUPPORTED_NETWORK: return "unsupported network";
         case NK_ERR_VERSION_MISMATCH: return "version mismatch";
         case NK_ERR_LAYER_CONFIG: return "layer config error";
-        case NK_ERR_BIN_SIZE_MISMATCH: return "bin size mismatch";
+        case NK_ERR_WEIGHT_MISMATCH: return "weight payload size mismatch";
         case NK_ERR_ARENA_OVERFLOW: return "arena overflow";
         case NK_ERR_INVALID_ARGUMENT: return "invalid argument";
         case NK_ERR_BUFFER_TOO_SMALL: return "buffer too small";
@@ -641,135 +618,116 @@ nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
     return NK_OK;
 }
 
-nk_status_t nk_parse_architecture(const char* json_path, nk_arch_info_t* info)
+nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info)
 {
-    if (!json_path || !info)
+    if (!nk_path || !info)
         return NK_ERR_INVALID_ARGUMENT;
-    ModelLoader::ArchitectureSpec spec{};
-    const nk_status_t status = ParseSpec(json_path, spec, nullptr);
+    NkLoader::ParsedModel parsed{};
+    const nk_status_t status = ParseNkModel(nk_path, parsed, nullptr);
     if (status != NK_OK)
         return status;
+    NkLoader::ArchInfo arch{};
+    NkLoader::FillArchInfo(parsed, arch);
     std::memset(info, 0, sizeof(*info));
-    FillArchInfo(spec, info);
+    FillArchInfo(arch, info);
     SetLastError(nullptr);
     return NK_OK;
 }
 
-nk_status_t nk_arch_print(const char* json_path)
+nk_status_t nk_arch_print(const char* nk_path)
 {
-    if (!json_path)
+    if (!nk_path)
         return NK_ERR_INVALID_ARGUMENT;
-    ModelLoader::ArchitectureSpec spec{};
+    NkLoader::ParsedModel parsed{};
     const char* resolved = nullptr;
-    const nk_status_t status = ParseSpec(json_path, spec, &resolved);
+    const nk_status_t status = ParseNkModel(nk_path, parsed, &resolved);
     if (status != NK_OK)
         return status;
-    ModelLoader::PrintNetworkSummary(resolved, spec);
+    NkLoader::PrintNetworkSummary(resolved, parsed);
     SetLastError(nullptr);
     return NK_OK;
 }
 
-bool nk_json_path_to_bin_path(const char* json_path, char* bin_path, size_t bin_path_capacity)
+nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info)
 {
-    return ModelLoader::JsonPathToBinPath(json_path, bin_path, bin_path_capacity);
-}
-
-nk_status_t nk_load_weights_bin(const char* json_path,
-                                nk_arena_t* arena,
-                                float** weights,
-                                size_t* float_count)
-{
-    if (!json_path || !arena || !weights || !float_count)
-        return NK_ERR_INVALID_ARGUMENT;
-    char path_buffer[ModelLoader::kMaxPathLen] = {};
-    const char* resolved = ResolveModelPath(json_path, path_buffer, sizeof(path_buffer));
-    float* loaded = nullptr;
-    std::size_t count = 0;
-    const char* err = nullptr;
-    const ModelLoader::LoadStatus status =
-        ModelLoader::LoadWeightsBin(resolved, *ArenaPtr(arena), loaded, count, &err);
-    *weights = loaded;
-    *float_count = count;
-    if (status != ModelLoader::LoadStatus::Ok)
-    {
-        SetLastError(err ? err : "weight load failed");
-        return FromLoadStatus(status);
-    }
-    return NK_OK;
-}
-
-nk_status_t nk_mlp_load(const char* json_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info)
-{
-    if (!json_path || !arena || !mlp)
+    if (!nk_path || !arena || !mlp)
         return NK_ERR_INVALID_ARGUMENT;
     std::memset(mlp->storage, 0, sizeof(mlp->storage));
-    ModelLoader::ArchitectureSpec spec{};
+    NkLoader::ParsedModel parsed{};
     const char* resolved = nullptr;
-    const nk_status_t ps = ParseSpec(json_path, spec, &resolved);
+    const nk_status_t ps = ParseNkModel(nk_path, parsed, &resolved);
     if (ps != NK_OK)
         return ps;
-    if (spec.kind != ModelLoader::NetworkKind::MLP)
+    if (parsed.header.network_kind != NkFormat::NetworkKind::Mlp)
         return NK_ERR_UNSUPPORTED_NETWORK;
 
     std::array<uint32_t, kMaxTensorRank> input_shape{};
     uint32_t input_rank = 0;
     MLPNetwork* network = nullptr;
-    const ModelLoader::LoadResult lr =
-        ModelLoader::LoadMLP(resolved, *ArenaPtr(arena), network, input_shape, input_rank);
-    if (lr.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
+    const NkLoader::LoadResult lr =
+        NkLoader::LoadMLP(resolved, *ArenaPtr(arena), network, input_shape, input_rank);
+    if (lr.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
     {
         SetLastError(lr.message ? lr.message : "MLP load failed");
         return FromLoadStatus(lr.status);
     }
     MlpPtr(mlp)->net = network;
     if (info)
-        FillArchInfo(spec, info);
+    {
+        NkLoader::ArchInfo arch{};
+        NkLoader::FillArchInfo(parsed, arch);
+        FillArchInfo(arch, info);
+    }
     SetLastError(nullptr);
     return NK_OK;
 }
 
-nk_status_t nk_cnn_load(const char* json_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info)
+nk_status_t nk_cnn_load(const char* nk_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info)
 {
-    if (!json_path || !arena || !cnn)
+    if (!nk_path || !arena || !cnn)
         return NK_ERR_INVALID_ARGUMENT;
     std::memset(cnn->storage, 0, sizeof(cnn->storage));
-    ModelLoader::ArchitectureSpec spec{};
+    NkLoader::ParsedModel parsed{};
     const char* resolved = nullptr;
-    const nk_status_t ps = ParseSpec(json_path, spec, &resolved);
+    const nk_status_t ps = ParseNkModel(nk_path, parsed, &resolved);
     if (ps != NK_OK)
         return ps;
-    if (spec.kind != ModelLoader::NetworkKind::CNN)
+    if (parsed.header.network_kind != NkFormat::NetworkKind::Cnn)
         return NK_ERR_UNSUPPORTED_NETWORK;
 
     std::array<uint32_t, kMaxTensorRank> input_shape{};
     uint32_t input_rank = 0;
     CNNNetwork* network = nullptr;
-    const ModelLoader::LoadResult lr =
-        ModelLoader::LoadCNN(resolved, *ArenaPtr(arena), network, input_shape, input_rank);
-    if (lr.status != ModelLoader::LoadStatus::Ok || !network || !network->IsValid())
+    const NkLoader::LoadResult lr =
+        NkLoader::LoadCNN(resolved, *ArenaPtr(arena), network, input_shape, input_rank);
+    if (lr.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
     {
         SetLastError(lr.message ? lr.message : "CNN load failed");
         return FromLoadStatus(lr.status);
     }
     CnnPtr(cnn)->net = network;
     if (info)
-        FillArchInfo(spec, info);
+    {
+        NkLoader::ArchInfo arch{};
+        NkLoader::FillArchInfo(parsed, arch);
+        FillArchInfo(arch, info);
+    }
     SetLastError(nullptr);
     return NK_OK;
 }
 
-nk_status_t nk_model_load_auto(const char* json_path,
+nk_status_t nk_model_load_auto(const char* nk_path,
                                nk_arena_t* arena,
                                nk_network_kind_t* kind,
                                nk_mlp_t* mlp,
                                nk_cnn_t* cnn,
                                nk_arch_info_t* info)
 {
-    if (!json_path || !arena || !kind)
+    if (!nk_path || !arena || !kind)
         return NK_ERR_INVALID_ARGUMENT;
-    ModelLoader::ArchitectureSpec spec{};
+    NkLoader::ParsedModel parsed{};
     const char* resolved = nullptr;
-    const nk_status_t ps = ParseSpec(json_path, spec, &resolved);
+    const nk_status_t ps = ParseNkModel(nk_path, parsed, &resolved);
     if (ps != NK_OK)
         return ps;
 
@@ -777,84 +735,87 @@ nk_status_t nk_model_load_auto(const char* json_path,
     uint32_t input_rank = 0;
     MLPNetwork* mlp_net = nullptr;
     CNNNetwork* cnn_net = nullptr;
-    ModelLoader::NetworkKind detected = ModelLoader::NetworkKind::Unknown;
+    NkLoader::NetworkKind detected = NkLoader::NetworkKind::Unknown;
 
-    const ModelLoader::LoadResult lr = ModelLoader::Load(resolved,
-                                                         *ArenaPtr(arena),
-                                                         detected,
-                                                         mlp_net,
-                                                         cnn_net,
-                                                         input_shape,
-                                                         input_rank);
-    if (lr.status != ModelLoader::LoadStatus::Ok)
+    const NkLoader::LoadResult lr = NkLoader::Load(resolved,
+                                                   *ArenaPtr(arena),
+                                                   detected,
+                                                   mlp_net,
+                                                   cnn_net,
+                                                   input_shape,
+                                                   input_rank);
+    if (lr.status != NkLoader::LoadStatus::Ok)
     {
         SetLastError(lr.message ? lr.message : "model load failed");
         return FromLoadStatus(lr.status);
     }
 
     *kind = FromNetworkKind(detected);
-    if (detected == ModelLoader::NetworkKind::MLP && mlp)
+    if (detected == NkLoader::NetworkKind::Mlp && mlp)
     {
         std::memset(mlp->storage, 0, sizeof(mlp->storage));
         MlpPtr(mlp)->net = mlp_net;
     }
-    if (detected == ModelLoader::NetworkKind::CNN && cnn)
+    if (detected == NkLoader::NetworkKind::Cnn && cnn)
     {
         std::memset(cnn->storage, 0, sizeof(cnn->storage));
         CnnPtr(cnn)->net = cnn_net;
     }
     if (info)
-        FillArchInfo(spec, info);
+    {
+        NkLoader::ArchInfo arch{};
+        NkLoader::FillArchInfo(parsed, arch);
+        FillArchInfo(arch, info);
+    }
     SetLastError(nullptr);
     return NK_OK;
 }
 
-nk_status_t nk_model_load(const char* json_path, nk_arena_t* arena, nk_model_t* model)
+nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model)
 {
-    if (!json_path || !arena || !model)
+    if (!nk_path || !arena || !model)
         return NK_ERR_INVALID_ARGUMENT;
 
-    char path_buffer[ModelLoader::kMaxPathLen] = {};
-    const char* resolved = ResolveModelPath(json_path, path_buffer, sizeof(path_buffer));
-    ModelLoader::ArchitectureSpec spec{};
-    const ModelLoader::LoadResult arch_result = ModelLoader::ParseArchitecture(resolved, spec);
-    if (arch_result.status != ModelLoader::LoadStatus::Ok)
+    char path_buffer[NkLoader::kMaxPathLen] = {};
+    const char* resolved = ResolveModelPath(nk_path, path_buffer, sizeof(path_buffer));
+    NkLoader::ParsedModel parsed{};
+    const NkLoader::LoadResult arch_result = NkLoader::ParseFile(resolved, parsed);
+    if (arch_result.status != NkLoader::LoadStatus::Ok)
     {
-        SetLastError(arch_result.message ? arch_result.message : "architecture parse failed");
+        SetLastError(arch_result.message ? arch_result.message : "model parse failed");
         return FromLoadStatus(arch_result.status);
     }
 
     std::memset(model->storage, 0, sizeof(model->storage));
     ModelState* state = ModelPtr(model);
-    state->input_rank = spec.input_rank;
-    state->input_elements = InputElementCount(spec);
-    for (uint32_t i = 0; i < spec.input_rank; ++i)
-        state->input_shape[i] = spec.input_shape[i];
+    state->input_rank = parsed.header.input_rank;
+    state->input_elements = NkLoader::InputElements(parsed);
+    state->output_elements = NkLoader::OutputElements(parsed);
+    for (uint32_t i = 0; i < parsed.header.input_rank; ++i)
+        state->input_shape[i] = parsed.header.input_shape[i];
 
-    if (spec.kind == ModelLoader::NetworkKind::MLP)
+    if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
     {
-        const ModelLoader::LoadResult load_result =
-            ModelLoader::LoadMLP(resolved, *ArenaPtr(arena), state->mlp, state->input_shape, state->input_rank);
-        if (load_result.status != ModelLoader::LoadStatus::Ok || !state->mlp || !state->mlp->IsValid())
+        const NkLoader::LoadResult load_result =
+            NkLoader::LoadMLP(resolved, *ArenaPtr(arena), state->mlp, state->input_shape, state->input_rank);
+        if (load_result.status != NkLoader::LoadStatus::Ok || !state->mlp || !state->mlp->IsValid())
         {
             SetLastError(load_result.message ? load_result.message : "MLP load failed");
             return FromLoadStatus(load_result.status);
         }
         state->kind = NK_NETWORK_MLP;
-        state->output_elements = MlpOutputElements(spec);
         state->loaded = true;
     }
-    else if (spec.kind == ModelLoader::NetworkKind::CNN)
+    else if (parsed.header.network_kind == NkFormat::NetworkKind::Cnn)
     {
-        const ModelLoader::LoadResult load_result =
-            ModelLoader::LoadCNN(resolved, *ArenaPtr(arena), state->cnn, state->input_shape, state->input_rank);
-        if (load_result.status != ModelLoader::LoadStatus::Ok || !state->cnn || !state->cnn->IsValid())
+        const NkLoader::LoadResult load_result =
+            NkLoader::LoadCNN(resolved, *ArenaPtr(arena), state->cnn, state->input_shape, state->input_rank);
+        if (load_result.status != NkLoader::LoadStatus::Ok || !state->cnn || !state->cnn->IsValid())
         {
             SetLastError(load_result.message ? load_result.message : "CNN load failed");
             return FromLoadStatus(load_result.status);
         }
         state->kind = NK_NETWORK_CNN;
-        state->output_elements = CnnOutputElements(spec);
         state->loaded = true;
     }
     else
@@ -963,21 +924,22 @@ nk_status_t nk_model_run(const nk_model_t* model,
     return NK_OK;
 }
 
-nk_status_t nk_inspect_model(const char* json_path, nk_arena_t* arena, nk_inspect_info_t* info)
+nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info)
 {
-    if (!json_path || !arena || !info)
+    if (!nk_path || !arena || !info)
         return NK_ERR_INVALID_ARGUMENT;
     std::memset(info, 0, sizeof(*info));
-    const nk_status_t arch_status = nk_parse_architecture(json_path, &info->arch);
+    const nk_status_t arch_status = nk_parse_architecture(nk_path, &info->arch);
     if (arch_status != NK_OK)
         return arch_status;
 
     nk_model_t model{};
-    const nk_status_t load_status = nk_model_load(json_path, arena, &model);
+    const nk_status_t load_status = nk_model_load(nk_path, arena, &model);
     if (load_status != NK_OK)
         return load_status;
 
     info->arena_bytes_after_load = nk_arena_used(arena);
+    info->weight_floats = info->arch.expected_weight_floats;
 
     float zero_input[4096] = {};
     if (info->arch.input_elements > 4096)
@@ -995,27 +957,15 @@ nk_status_t nk_inspect_model(const char* json_path, nk_arena_t* arena, nk_inspec
     if (run_status != NK_OK)
         return run_status;
 
-    char path_buffer[ModelLoader::kMaxPathLen] = {};
-    const char* resolved = ResolveModelPath(json_path, path_buffer, sizeof(path_buffer));
-    float* weights = nullptr;
-    std::size_t float_count = 0;
-    const char* weight_error = nullptr;
-    Arena scratch{};
-    alignas(std::max_align_t) unsigned char scratch_buffer[512];
-    scratch.init(scratch_buffer, sizeof(scratch_buffer));
-    if (ModelLoader::LoadWeightsBin(resolved, scratch, weights, float_count, &weight_error) ==
-        ModelLoader::LoadStatus::Ok)
-        info->weight_floats = float_count;
-
     info->arena_bytes_after_forward = nk_arena_used(arena);
     info->arena_remaining = nk_arena_remaining(arena);
     return NK_OK;
 }
 
-nk_test_summary_t nk_run_vectors_file(const char* vectors_path)
+nk_test_summary_t nk_run_model_tests(const char* nk_path)
 {
     nk_test_summary_t summary{};
-    const VectorsLoader::RunSummary result = VectorsLoader::RunVectorsFile(vectors_path);
+    const NkRegression::RunSummary result = NkRegression::RunModelTests(nk_path);
     summary.passed = result.passed;
     summary.failed = result.failed;
     return summary;
@@ -1024,7 +974,7 @@ nk_test_summary_t nk_run_vectors_file(const char* vectors_path)
 nk_test_summary_t nk_run_all_tests(void)
 {
     nk_test_summary_t summary{};
-    const VectorsLoader::RunSummary result = run_all_tests();
+    const NkRegression::RunSummary result = run_all_tests();
     summary.passed = result.passed;
     summary.failed = result.failed;
     return summary;

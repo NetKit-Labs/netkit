@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "network": "mlp",
-  "input": [1, 2],
-  "layers": [
-    { "type": "dense", "units": 2, "activation": "relu" },
-    { "type": "dense", "units": 2, "activation": "none" }
-  ]
-}

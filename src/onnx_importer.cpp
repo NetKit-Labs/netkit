@@ -1,4 +1,5 @@
 #include "onnx_importer.hpp"
+#include "onnx_graph.hpp"
 #include "onnx_model.hpp"
 #include "tensor_factory.hpp"
 
@@ -13,7 +14,7 @@ namespace OnnxImporter
     {
         struct ConvertedModel
         {
-            ModelLoader::ArchitectureSpec spec{};
+            OnnxGraph::ArchitectureSpec spec{};
             std::vector<float> weights;
             char error[256]{};
         };
@@ -152,7 +153,7 @@ namespace OnnxImporter
             const Onnx::ValueInfo& input = graph.inputs[0];
             if (input.dim_count == 2)
             {
-                out.spec.kind = ModelLoader::NetworkKind::MLP;
+                out.spec.kind = OnnxGraph::NetworkKind::MLP;
                 out.spec.input_rank = 2;
                 out.spec.input_shape[0] = static_cast<uint32_t>(input.dims[0] > 0 ? input.dims[0] : 1);
                 out.spec.input_shape[1] = static_cast<uint32_t>(input.dims[1]);
@@ -161,7 +162,7 @@ namespace OnnxImporter
 
             if (input.dim_count == 4)
             {
-                out.spec.kind = ModelLoader::NetworkKind::CNN;
+                out.spec.kind = OnnxGraph::NetworkKind::CNN;
                 out.spec.input_rank = 3;
                 const uint32_t height = static_cast<uint32_t>(input.dims[2]);
                 const uint32_t width = static_cast<uint32_t>(input.dims[3]);
@@ -174,7 +175,7 @@ namespace OnnxImporter
 
             if (input.dim_count == 3)
             {
-                out.spec.kind = ModelLoader::NetworkKind::CNN;
+                out.spec.kind = OnnxGraph::NetworkKind::CNN;
                 out.spec.input_rank = 3;
                 out.spec.input_shape[0] = static_cast<uint32_t>(input.dims[0]);
                 out.spec.input_shape[1] = static_cast<uint32_t>(input.dims[1]);
@@ -194,7 +195,7 @@ namespace OnnxImporter
                          const Onnx::Tensor* bias,
                          bool trans_b)
         {
-            if (out.spec.num_layers >= ModelLoader::kMaxLayers)
+            if (out.spec.num_layers >= OnnxGraph::kMaxLayers)
             {
                 SetError(out, "Too many ONNX layers for netkit");
                 return false;
@@ -213,16 +214,16 @@ namespace OnnxImporter
             }
 
             const uint32_t idx = out.spec.num_layers;
-            if (out.spec.kind == ModelLoader::NetworkKind::MLP)
+            if (out.spec.kind == OnnxGraph::NetworkKind::MLP)
             {
                 out.spec.dense_layers[idx].units = out_features;
-                std::strncpy(out.spec.dense_layers[idx].activation, activation, Json::kMaxStringLen - 1);
+                std::strncpy(out.spec.dense_layers[idx].activation, activation, OnnxGraph::kMaxStringLen - 1);
             }
             else
             {
-                out.spec.cnn_layer_kinds[idx] = ModelLoader::CnnLayerKind::Dense;
+                out.spec.cnn_layer_kinds[idx] = OnnxGraph::CnnLayerKind::Dense;
                 out.spec.cnn_dense_layers[idx].units = out_features;
-                std::strncpy(out.spec.cnn_dense_layers[idx].activation, activation, Json::kMaxStringLen - 1);
+                std::strncpy(out.spec.cnn_dense_layers[idx].activation, activation, OnnxGraph::kMaxStringLen - 1);
             }
 
             CopyGemmWeight(weight, trans_b, in_features, out_features, out.weights);
@@ -289,7 +290,7 @@ namespace OnnxImporter
                     const bool trans_b = Onnx::AttributeInt(node, "transB", 0) != 0;
                     const uint32_t out_features = static_cast<uint32_t>(trans_b ? weight->dims[0] : weight->dims[1]);
 
-                    if (out.spec.kind == ModelLoader::NetworkKind::MLP)
+                    if (out.spec.kind == OnnxGraph::NetworkKind::MLP)
                     {
                         if (!AppendDense(out, out_features, next_activation, in_features, *weight, bias, trans_b))
                             return false;
@@ -308,7 +309,7 @@ namespace OnnxImporter
                     continue;
                 }
 
-                if (IsOp(node, "Conv") && out.spec.kind == ModelLoader::NetworkKind::CNN)
+                if (IsOp(node, "Conv") && out.spec.kind == OnnxGraph::NetworkKind::CNN)
                 {
                     if (node.input_count < 2)
                     {
@@ -345,11 +346,11 @@ namespace OnnxImporter
                     }
 
                     const uint32_t idx = out.spec.num_layers;
-                    out.spec.cnn_layer_kinds[idx] = ModelLoader::CnnLayerKind::Conv2D;
+                    out.spec.cnn_layer_kinds[idx] = OnnxGraph::CnnLayerKind::Conv2D;
                     out.spec.conv_layers[idx].kernel_size = kernel;
                     out.spec.conv_layers[idx].stride = stride;
                     out.spec.conv_layers[idx].filters = out_c;
-                    std::strncpy(out.spec.conv_layers[idx].activation, next_activation, Json::kMaxStringLen - 1);
+                    std::strncpy(out.spec.conv_layers[idx].activation, next_activation, OnnxGraph::kMaxStringLen - 1);
 
                     CopyConvWeightNchwToNetkit(*weight, out_c, in_c, kernel, out.weights);
                     if (bias)
@@ -366,7 +367,7 @@ namespace OnnxImporter
                     continue;
                 }
 
-                if (IsOp(node, "MaxPool") && out.spec.kind == ModelLoader::NetworkKind::CNN)
+                if (IsOp(node, "MaxPool") && out.spec.kind == OnnxGraph::NetworkKind::CNN)
                 {
                     std::span<const int64_t> kernel_shape;
                     std::span<const int64_t> strides;
@@ -380,7 +381,7 @@ namespace OnnxImporter
                         stride = FirstStride(strides, pool);
 
                     const uint32_t idx = out.spec.num_layers;
-                    out.spec.cnn_layer_kinds[idx] = ModelLoader::CnnLayerKind::MaxPool2D;
+                    out.spec.cnn_layer_kinds[idx] = OnnxGraph::CnnLayerKind::MaxPool2D;
                     out.spec.pool_layers[idx].pool_size = pool;
                     out.spec.pool_layers[idx].stride = stride;
                     ++out.spec.num_layers;
@@ -391,10 +392,10 @@ namespace OnnxImporter
                     continue;
                 }
 
-                if (IsOp(node, "Flatten") && out.spec.kind == ModelLoader::NetworkKind::CNN)
+                if (IsOp(node, "Flatten") && out.spec.kind == OnnxGraph::NetworkKind::CNN)
                 {
                     const uint32_t idx = out.spec.num_layers;
-                    out.spec.cnn_layer_kinds[idx] = ModelLoader::CnnLayerKind::Flatten;
+                    out.spec.cnn_layer_kinds[idx] = OnnxGraph::CnnLayerKind::Flatten;
                     ++out.spec.num_layers;
                     in_features = spatial_h * spatial_w * channels;
                     dense_in = in_features;
@@ -413,98 +414,26 @@ namespace OnnxImporter
             return out.spec.num_layers > 0;
         }
 
-        bool WriteBinFile(const char* path, const std::vector<float>& weights)
+        NkLoader::NetworkKind ToNkKind(OnnxGraph::NetworkKind kind)
         {
-            std::FILE* file = std::fopen(path, "wb");
-            if (!file)
-                return false;
-            const std::size_t bytes = weights.size() * sizeof(float);
-            const std::size_t written = std::fwrite(weights.data(), 1, bytes, file);
-            std::fclose(file);
-            return written == bytes;
+            switch (kind)
+            {
+                case OnnxGraph::NetworkKind::MLP: return NkLoader::NetworkKind::Mlp;
+                case OnnxGraph::NetworkKind::CNN: return NkLoader::NetworkKind::Cnn;
+                default: return NkLoader::NetworkKind::Unknown;
+            }
         }
 
-        bool WriteJsonFile(const char* path, const ConvertedModel& model)
-        {
-            std::FILE* file = std::fopen(path, "w");
-            if (!file)
-                return false;
-
-            std::fprintf(file, "{\n");
-            std::fprintf(file, "  \"version\": 1,\n");
-            std::fprintf(file, "  \"network\": \"%s\",\n", model.spec.kind == ModelLoader::NetworkKind::MLP ? "mlp" : "cnn");
-            std::fprintf(file, "  \"input\": [");
-            for (uint32_t i = 0; i < model.spec.input_rank; ++i)
-            {
-                std::fprintf(file, "%u%s", model.spec.input_shape[i], i + 1 < model.spec.input_rank ? ", " : "");
-            }
-            std::fprintf(file, "],\n  \"layers\": [\n");
-
-            for (uint32_t i = 0; i < model.spec.num_layers; ++i)
-            {
-                if (model.spec.kind == ModelLoader::NetworkKind::MLP)
-                {
-                    const ModelLoader::DenseLayerConfig& layer = model.spec.dense_layers[i];
-                    std::fprintf(file,
-                                 "    { \"type\": \"dense\", \"units\": %u, \"activation\": \"%s\" }%s\n",
-                                 layer.units,
-                                 layer.activation,
-                                 i + 1 < model.spec.num_layers ? "," : "");
-                }
-                else
-                {
-                    switch (model.spec.cnn_layer_kinds[i])
-                    {
-                        case ModelLoader::CnnLayerKind::Conv2D:
-                        {
-                            const ModelLoader::ConvLayerConfig& layer = model.spec.conv_layers[i];
-                            std::fprintf(file,
-                                         "    { \"type\": \"conv2d\", \"kernel_size\": %u, \"stride\": %u, "
-                                         "\"filters\": %u, \"activation\": \"%s\" }%s\n",
-                                         layer.kernel_size,
-                                         layer.stride,
-                                         layer.filters,
-                                         layer.activation,
-                                         i + 1 < model.spec.num_layers ? "," : "");
-                            break;
-                        }
-                        case ModelLoader::CnnLayerKind::MaxPool2D:
-                        {
-                            const ModelLoader::PoolLayerConfig& layer = model.spec.pool_layers[i];
-                            std::fprintf(file,
-                                         "    { \"type\": \"max_pool2d\", \"pool_size\": %u, \"stride\": %u }%s\n",
-                                         layer.pool_size,
-                                         layer.stride,
-                                         i + 1 < model.spec.num_layers ? "," : "");
-                            break;
-                        }
-                        case ModelLoader::CnnLayerKind::Flatten:
-                            std::fprintf(file,
-                                         "    { \"type\": \"flatten\" }%s\n",
-                                         i + 1 < model.spec.num_layers ? "," : "");
-                            break;
-                        case ModelLoader::CnnLayerKind::Dense:
-                        {
-                            const ModelLoader::DenseLayerConfig& layer = model.spec.cnn_dense_layers[i];
-                            std::fprintf(file,
-                                         "    { \"type\": \"dense\", \"units\": %u, \"activation\": \"%s\" }%s\n",
-                                         layer.units,
-                                         layer.activation,
-                                         i + 1 < model.spec.num_layers ? "," : "");
-                            break;
-                        }
-                    }
-                }
-            }
-
-            std::fprintf(file, "  ]\n}\n");
-            std::fclose(file);
-            return true;
-        }
-
-        ImportResult Fail(ImportStatus status, const char* message, ModelLoader::NetworkKind kind = ModelLoader::NetworkKind::Unknown)
+        ImportResult Fail(ImportStatus status,
+                          const char* message,
+                          NkLoader::NetworkKind kind = NkLoader::NetworkKind::Unknown)
         {
             return ImportResult{status, kind, message};
+        }
+
+        ImportResult FailGraph(ImportStatus status, const char* message, OnnxGraph::NetworkKind kind)
+        {
+            return Fail(status, message, ToNkKind(kind));
         }
 
         ImportResult ConvertOnnxFile(const char* onnx_path, ConvertedModel& converted)
@@ -514,14 +443,14 @@ namespace OnnxImporter
                 return Fail(ImportStatus::ParseFailed, converted.error);
 
             if (!ConvertGraph(model, converted))
-                return Fail(ImportStatus::UnsupportedGraph, converted.error, converted.spec.kind);
+                return FailGraph(ImportStatus::UnsupportedGraph, converted.error, converted.spec.kind);
 
-            return ImportResult{ImportStatus::Ok, converted.spec.kind, nullptr};
+            return ImportResult{ImportStatus::Ok, ToNkKind(converted.spec.kind), nullptr};
         }
 
         ImportResult LoadConverted(const ConvertedModel& converted,
                                    Arena& arena,
-                                   ModelLoader::NetworkKind& kind,
+                                   NkLoader::NetworkKind& kind,
                                    MLPNetwork*& mlp,
                                    CNNNetwork*& cnn,
                                    std::array<uint32_t, kMaxTensorRank>& input_shape,
@@ -529,7 +458,7 @@ namespace OnnxImporter
         {
             mlp = nullptr;
             cnn = nullptr;
-            kind = converted.spec.kind;
+            kind = ToNkKind(converted.spec.kind);
             input_shape = converted.spec.input_shape;
             input_rank = converted.spec.input_rank;
 
@@ -540,7 +469,7 @@ namespace OnnxImporter
 
             std::memcpy(weights, converted.weights.data(), bytes);
 
-            if (kind == ModelLoader::NetworkKind::MLP)
+            if (converted.spec.kind == OnnxGraph::NetworkKind::MLP)
             {
                 void* network_mem = arena.alloc(sizeof(MLPNetwork), alignof(MLPNetwork));
                 if (!network_mem)
@@ -575,7 +504,7 @@ namespace OnnxImporter
                 if (!mlp->InitActivationBuffers(arena, input_shape[0]))
                     return Fail(ImportStatus::ArenaOverflow, "Arena out of memory while allocating MLP activation buffers", kind);
             }
-            else if (kind == ModelLoader::NetworkKind::CNN)
+            else if (converted.spec.kind == OnnxGraph::NetworkKind::CNN)
             {
                 void* network_mem = arena.alloc(sizeof(CNNNetwork), alignof(CNNNetwork));
                 if (!network_mem)
@@ -595,9 +524,9 @@ namespace OnnxImporter
                 {
                     switch (converted.spec.cnn_layer_kinds[i])
                     {
-                        case ModelLoader::CnnLayerKind::Conv2D:
+                        case OnnxGraph::CnnLayerKind::Conv2D:
                         {
-                            const ModelLoader::ConvLayerConfig& layer = converted.spec.conv_layers[i];
+                            const OnnxGraph::ConvLayerConfig& layer = converted.spec.conv_layers[i];
                             const std::size_t kernel_elems = static_cast<std::size_t>(layer.kernel_size) *
                                                              layer.kernel_size * in_channels;
                             const std::size_t weight_elems = kernel_elems * layer.filters;
@@ -624,21 +553,21 @@ namespace OnnxImporter
                             in_channels = layer.filters;
                             break;
                         }
-                        case ModelLoader::CnnLayerKind::MaxPool2D:
+                        case OnnxGraph::CnnLayerKind::MaxPool2D:
                         {
-                            const ModelLoader::PoolLayerConfig& layer = converted.spec.pool_layers[i];
+                            const OnnxGraph::PoolLayerConfig& layer = converted.spec.pool_layers[i];
                             cnn->InitPoolLayer(i, static_cast<int>(layer.pool_size), static_cast<int>(layer.stride));
                             h = (h - layer.pool_size) / layer.stride + 1;
                             w = (w - layer.pool_size) / layer.stride + 1;
                             break;
                         }
-                        case ModelLoader::CnnLayerKind::Flatten:
+                        case OnnxGraph::CnnLayerKind::Flatten:
                             dense_in = h * w * in_channels;
                             cnn->InitFlattenLayer(i);
                             break;
-                        case ModelLoader::CnnLayerKind::Dense:
+                        case OnnxGraph::CnnLayerKind::Dense:
                         {
-                            const ModelLoader::DenseLayerConfig& layer = converted.spec.cnn_dense_layers[i];
+                            const OnnxGraph::DenseLayerConfig& layer = converted.spec.cnn_dense_layers[i];
                             const std::size_t weight_elems = static_cast<std::size_t>(dense_in) * layer.units;
                             Tensor W = TensorFactory::View2D(weights + offset, dense_in, layer.units);
                             offset += weight_elems;
@@ -678,28 +607,14 @@ namespace OnnxImporter
             case ImportStatus::UnsupportedGraph: return "unsupported graph";
             case ImportStatus::UnsupportedOp: return "unsupported op";
             case ImportStatus::ShapeMismatch: return "shape mismatch";
-            case ImportStatus::WriteFailed: return "write failed";
             case ImportStatus::ArenaOverflow: return "arena overflow";
         }
         return "unknown";
     }
 
-    ImportResult ImportToNetkitFiles(const char* onnx_path, const char* json_out_path, const char* bin_out_path)
-    {
-        ConvertedModel converted{};
-        ImportResult result = ConvertOnnxFile(onnx_path, converted);
-        if (result.status != ImportStatus::Ok)
-            return result;
-
-        if (!WriteJsonFile(json_out_path, converted) || !WriteBinFile(bin_out_path, converted.weights))
-            return Fail(ImportStatus::WriteFailed, "Failed to write netkit JSON or .bin output", converted.spec.kind);
-
-        return ImportResult{ImportStatus::Ok, converted.spec.kind, nullptr};
-    }
-
     ImportResult LoadFromOnnx(const char* onnx_path,
                               Arena& arena,
-                              ModelLoader::NetworkKind& kind,
+                              NkLoader::NetworkKind& kind,
                               MLPNetwork*& mlp,
                               CNNNetwork*& cnn,
                               std::array<uint32_t, kMaxTensorRank>& input_shape,

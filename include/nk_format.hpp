@@ -1,0 +1,120 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+// Binary netkit model container (.nk) — little-endian, float32 weights/biases.
+// Spec: docs/NK_FORMAT.md. Python writer: python/netkit/
+
+namespace NkFormat
+{
+    constexpr char kMagic[4] = {'N', 'K', 'I', 'T'};
+    constexpr char kTestMagic[4] = {'T', 'C', 'A', 'S'};
+    constexpr uint32_t kVersion = 1;
+
+    constexpr uint16_t kFlagHasTests = 0x0001;
+    constexpr uint32_t kMaxTestCases = 16;
+    constexpr uint32_t kMaxCaseNameLen = 127;
+    constexpr uint32_t kMaxCaseFloats = 1024;
+    constexpr int32_t kNoLabel = -1;
+
+    constexpr std::size_t kHeaderBytes = 48;
+    constexpr std::size_t kTensorDescBytes = 24;
+    constexpr std::size_t kLayerDenseBytes = 16;
+    constexpr std::size_t kLayerConvBytes = 24;
+    constexpr std::size_t kLayerPoolBytes = 12;
+    constexpr std::size_t kLayerFlattenBytes = 4;
+
+    constexpr uint32_t kMaxLayers = 16;
+    constexpr uint32_t kMaxTensorCatalog = 64;
+    constexpr uint32_t kMaxInputRank = 4;
+    constexpr uint32_t kMaxTensorRank = 4;
+
+    enum class NetworkKind : uint8_t
+    {
+        Mlp = 1,
+        Cnn = 2
+    };
+
+    enum class LayerKind : uint8_t
+    {
+        Dense = 1,
+        Conv2D = 2,
+        MaxPool2D = 3,
+        Flatten = 4
+    };
+
+    enum class DType : uint8_t
+    {
+        Float32 = 1
+    };
+
+    enum class Activation : uint8_t
+    {
+        None = 0,
+        ReLU = 1,
+        Sigmoid = 2,
+        Tanh = 3,
+        LeakyReLU = 4,
+        ReLU6 = 5,
+        Softmax = 6
+    };
+
+    struct FileHeader
+    {
+        uint32_t version = 0;
+        NetworkKind network_kind = NetworkKind::Mlp;
+        uint8_t input_rank = 0;
+        uint16_t flags = 0;
+        uint32_t input_shape[kMaxInputRank]{};
+        uint32_t num_layers = 0;
+        uint32_t num_weight_tensors = 0;
+        uint32_t num_bias_tensors = 0;
+        uint32_t weights_bytes = 0;
+        uint32_t biases_bytes = 0;
+    };
+
+    struct TensorDesc
+    {
+        uint8_t rank = 0;
+        DType dtype = DType::Float32;
+        uint32_t dims[kMaxTensorRank]{};
+        uint32_t num_elements = 0;
+    };
+
+    struct DenseLayerDesc
+    {
+        uint32_t units = 0;
+        Activation activation = Activation::None;
+        float alpha = 0.01f;
+    };
+
+    struct ConvLayerDesc
+    {
+        uint32_t kernel_size = 0;
+        uint32_t stride = 1;
+        uint32_t filters = 0;
+        Activation activation = Activation::None;
+        float alpha = 0.01f;
+    };
+
+    struct PoolLayerDesc
+    {
+        uint32_t pool_size = 2;
+        uint32_t stride = 2;
+    };
+
+    struct LayerDesc
+    {
+        LayerKind kind = LayerKind::Dense;
+        DenseLayerDesc dense{};
+        ConvLayerDesc conv{};
+        PoolLayerDesc pool{};
+    };
+
+    const char* NetworkKindName(NetworkKind kind);
+    const char* LayerKindName(LayerKind kind);
+    const char* DTypeName(DType dtype);
+    const char* ActivationName(Activation activation);
+    Activation ParseActivationName(const char* name);
+}

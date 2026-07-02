@@ -1,0 +1,114 @@
+#pragma once
+
+#include "arena.hpp"
+#include "cnn.hpp"
+#include "mlp.hpp"
+#include "nk_format.hpp"
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+namespace NkLoader
+{
+    constexpr std::size_t kMaxPathLen = 256;
+
+    enum class NetworkKind : uint8_t
+    {
+        Unknown = 0,
+        Mlp = 1,
+        Cnn = 2
+    };
+
+    enum class LoadStatus
+    {
+        Ok,
+        FileOpenFailed,
+        ReadFailed,
+        InvalidMagic,
+        UnsupportedVersion,
+        TruncatedFile,
+        UnsupportedLayer,
+        SizeMismatch,
+        ArenaOverflow
+    };
+
+    struct ArchInfo
+    {
+        uint32_t version = 0;
+        NetworkKind kind = NetworkKind::Unknown;
+        std::array<uint32_t, kMaxTensorRank> input_shape{};
+        uint32_t input_rank = 0;
+        uint32_t num_layers = 0;
+        uint32_t input_elements = 0;
+        uint32_t output_elements = 0;
+        std::size_t weight_floats = 0;
+    };
+
+    struct ParsedModel
+    {
+        NkFormat::FileHeader header{};
+        NkFormat::LayerDesc layers[NkFormat::kMaxLayers]{};
+        NkFormat::TensorDesc weight_tensors[NkFormat::kMaxTensorCatalog]{};
+        NkFormat::TensorDesc bias_tensors[NkFormat::kMaxTensorCatalog]{};
+        std::size_t payload_offset = 0;
+    };
+
+    struct TestCase
+    {
+        char name[NkFormat::kMaxCaseNameLen + 1]{};
+        int32_t label = NkFormat::kNoLabel;
+        uint32_t input_count = 0;
+        uint32_t output_count = 0;
+        float input[NkFormat::kMaxCaseFloats]{};
+        float expected[NkFormat::kMaxCaseFloats]{};
+    };
+
+    struct TestSuite
+    {
+        float tolerance = 1e-5f;
+        uint32_t num_cases = 0;
+        TestCase cases[NkFormat::kMaxTestCases]{};
+    };
+
+    struct LoadResult
+    {
+        LoadStatus status = LoadStatus::Ok;
+        NetworkKind kind = NetworkKind::Unknown;
+        const char* message = nullptr;
+    };
+
+    bool IsNkPath(const char* path);
+
+    LoadResult ParseFile(const char* nk_path, ParsedModel& out);
+    LoadResult ReadTestSuite(const char* nk_path, TestSuite& out);
+    std::size_t ModelPayloadBytes(const ParsedModel& model);
+    void FillArchInfo(const ParsedModel& model, ArchInfo& info);
+    uint32_t InputElements(const ParsedModel& model);
+    uint32_t OutputElements(const ParsedModel& model);
+
+    void PrintHeader(const char* nk_path, const ParsedModel& model);
+    void PrintNetworkSummary(const char* nk_path, const ParsedModel& model);
+
+    LoadResult LoadMLP(const char* nk_path,
+                       Arena& arena,
+                       MLPNetwork*& network,
+                       std::array<uint32_t, kMaxTensorRank>& input_shape,
+                       uint32_t& input_rank);
+
+    LoadResult LoadCNN(const char* nk_path,
+                       Arena& arena,
+                       CNNNetwork*& network,
+                       std::array<uint32_t, kMaxTensorRank>& input_shape,
+                       uint32_t& input_rank);
+
+    LoadResult Load(const char* nk_path,
+                    Arena& arena,
+                    NetworkKind& kind,
+                    MLPNetwork*& mlp,
+                    CNNNetwork*& cnn,
+                    std::array<uint32_t, kMaxTensorRank>& input_shape,
+                    uint32_t& input_rank);
+
+    const char* StatusMessage(LoadStatus status);
+    const char* NetworkKindName(NetworkKind kind);
+}

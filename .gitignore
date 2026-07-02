@@ -23,5 +23,3 @@ netkit.dSYM/
 # clangd index cache
 .cache/
 /data/
-models/test_mlp_from_onnx.json
-models/test_mlp_from_onnx.bin

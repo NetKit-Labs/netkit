@@ -21,9 +21,9 @@ TARGET = netkit
 LIB = libnetkit.a
 
 CORE_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp \
-               src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/json_parser.cpp \
-               src/model_loader.cpp src/vectors_loader.cpp src/test_mnist.cpp src/netkit_api.cpp \
-               src/protobuf_wire.cpp src/onnx_model.cpp src/onnx_importer.cpp src/test_onnx.cpp \
+               src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/nk_regression.cpp \
+               src/netkit_api.cpp src/protobuf_wire.cpp src/onnx_model.cpp src/onnx_importer.cpp \
+               src/test_onnx.cpp src/nk_format.cpp src/nk_loader.cpp \
                src/cli.cpp src/test.cpp
 CLI_SOURCES = src/main.cpp
 
@@ -42,7 +42,7 @@ TEST_C = tests/test_c_api
 TEST_C_SRC = tests/test_c_api.c
 TEST_C_OBJ = tests/test_c_api.o
 
-.PHONY: all lib clean rebuild test test-cpp test-c run example-c example-cpp examples export-mnist export-mnist-cnn export-mnist-all build-all
+.PHONY: all lib clean rebuild test test-cpp test-c run example-c example-cpp examples export-mnist export-mnist-cnn export-mnist-all export-nk build-all
 
 all: $(TARGET)
 
@@ -100,12 +100,26 @@ example-cpp: $(EXAMPLE_CPP)
 examples: example-cpp example-c
 
 export-mnist:
-	python3 tools/export_mnist_mlp.py
+	PYTHONPATH=python python3 tools/export_mnist_mlp.py
 
 export-mnist-cnn:
-	python3 tools/export_mnist_cnn.py
+	PYTHONPATH=python python3 tools/export_mnist_cnn.py
 
 export-mnist-all: export-mnist export-mnist-cnn
+	PYTHONPATH=python python3 tools/export_onnx_test_models.py
 
 export-onnx-test:
-	python3 tools/export_onnx_test_models.py
+	PYTHONPATH=python python3 tools/export_onnx_test_models.py
+
+export-nk:
+	PYTHONPATH=python python3 -m netkit convert models/test_mlp.onnx -o models/test_mlp.nk
+	PYTHONPATH=python python3 -m netkit convert models/mlp_hand.onnx -o models/mlp_hand.nk
+	PYTHONPATH=python python3 -m netkit convert models/test_cnn.onnx -o models/test_cnn.nk
+	PYTHONPATH=python python3 -m netkit convert models/cnn_4x4_single.onnx -o models/cnn_4x4_single.nk
+	PYTHONPATH=python python3 -m netkit convert models/cnn_hand.onnx -o models/cnn_hand.nk
+	PYTHONPATH=python python3 -m netkit convert models/mnist_mlp.onnx -o models/mnist_mlp.nk
+	PYTHONPATH=python python3 -m netkit convert models/mnist_cnn.onnx -o models/mnist_cnn.nk
+	PYTHONPATH=python python3 tools/embed_nk_tests.py
+
+embed-tests:
+	PYTHONPATH=python python3 tools/embed_nk_tests.py

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export netkit JSON + .bin models to ONNX for importer parity tests.
+"""Export netkit .nk models to ONNX for importer parity tests.
 
 Requires: pip install onnx numpy
 
@@ -10,7 +10,7 @@ Run from repo root:
 
 from __future__ import annotations
 
-import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -22,16 +22,19 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit("Requires onnx: pip install onnx numpy") from exc
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "python"))
+from netkit import read_nk
+
 MODELS = ROOT / "models"
 
-MODEL_JSONS = [
-    "test_mlp.json",
-    "mlp_hand.json",
-    "test_cnn.json",
-    "cnn_4x4_single.json",
-    "cnn_hand.json",
-    "mnist_mlp.json",
-    "mnist_cnn.json",
+MODEL_NKS = [
+    "test_mlp.nk",
+    "mlp_hand.nk",
+    "test_cnn.nk",
+    "cnn_4x4_single.nk",
+    "cnn_hand.nk",
+    "mnist_mlp.nk",
+    "mnist_cnn.nk",
 ]
 
 
@@ -297,17 +300,15 @@ def expected_weight_floats(arch: dict) -> int:
     return total
 
 
-def export_netkit_json(json_path: Path) -> None:
-    arch = json.loads(json_path.read_text())
-    bin_path = json_path.with_suffix(".bin")
-    weights = np.fromfile(bin_path, dtype=np.float32)
+def export_netkit_nk(nk_path: Path) -> None:
+    arch, weights = read_nk(nk_path)
     expected = expected_weight_floats(arch)
     if len(weights) != expected:
         raise ValueError(
-            f"{json_path.name}: expected {expected} floats, got {len(weights)}"
+            f"{nk_path.name}: expected {expected} floats, got {len(weights)}"
         )
 
-    graph_name = json_path.stem
+    graph_name = nk_path.stem
     if arch["network"] == "mlp":
         model = export_mlp(arch, weights, graph_name)
     elif arch["network"] == "cnn":
@@ -315,14 +316,14 @@ def export_netkit_json(json_path: Path) -> None:
     else:
         raise ValueError(f"Unsupported network: {arch['network']}")
 
-    out_path = json_path.with_suffix(".onnx")
+    out_path = nk_path.with_suffix(".onnx")
     onnx.save(model, out_path)
     print(f"Wrote {out_path} ({len(weights)} weights)")
 
 
 def main() -> None:
-    for name in MODEL_JSONS:
-        export_netkit_json(MODELS / name)
+    for name in MODEL_NKS:
+        export_netkit_nk(MODELS / name)
 
 
 if __name__ == "__main__":

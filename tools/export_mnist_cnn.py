@@ -13,26 +13,24 @@ Run from repo root:
 Requires: numpy
 
 Outputs:
-    models/mnist_cnn.json
-    models/mnist_cnn.bin
-    models/mnist_cnn/manifest.json
-    models/mnist_cnn/case_NNN.input.bin
-    models/mnist_cnn/case_NNN.expected.bin
+    models/mnist_cnn.nk (weights + 10 embedded regression cases)
 """
 
 from __future__ import annotations
 
 import gzip
-import json
 import struct
 import urllib.request
 from pathlib import Path
 
+import sys
+
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "python"))
+from netkit import RegressionCase, RegressionSuite, write_nk_from_arch
 MODELS = ROOT / "models"
-CASE_DIR = MODELS / "mnist_cnn"
 DATA_DIR = ROOT / "data" / "mnist"
 
 IMG_H = 28
@@ -390,12 +388,8 @@ def pack_netkit_weights(p: dict[str, np.ndarray]) -> bytes:
     return struct.pack(f"<{len(values)}f", *values)
 
 
-def write_floats(path: Path, arr: np.ndarray) -> None:
-    path.write_bytes(struct.pack(f"<{arr.size}f", *arr.astype(np.float32).reshape(-1)))
-
-
 def append_case(
-    cases: list[dict],
+    cases: list[RegressionCase],
     x_test: np.ndarray,
     y_test: np.ndarray,
     i: int,
@@ -404,17 +398,13 @@ def append_case(
     digit = int(y_test[i])
     img = x_test[i]
     out = forward_netkit(to_nhwc(img[None, :]), p)[0]
-    case_id = len(cases)
-    prefix = CASE_DIR / f"case_{case_id:03d}"
-    write_floats(prefix.with_suffix(".input.bin"), img)
-    write_floats(prefix.with_suffix(".expected.bin"), out)
     cases.append(
-        {
-            "name": f"MNIST CNN digit {digit} (test idx {i})",
-            "label": digit,
-            "input": f"case_{case_id:03d}.input.bin",
-            "expected": f"case_{case_id:03d}.expected.bin",
-        }
+        RegressionCase(
+            name=f"MNIST CNN digit {digit} (test idx {i})",
+            input=img,
+            expected=out,
+            label=digit,
+        )
     )
 
 
@@ -435,46 +425,25 @@ def main() -> None:
     print("Published Keras MNIST CNN tutorials typically report ~98.5–99.3% test accuracy.")
 
     MODELS.mkdir(parents=True, exist_ok=True)
-    CASE_DIR.mkdir(parents=True, exist_ok=True)
-
-    (MODELS / "mnist_cnn.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "network": "cnn",
-                "input": [IMG_H, IMG_W, IMG_C],
-                "layers": [
-                    {"type": "conv2d", "kernel_size": 3, "stride": 1, "filters": 32, "activation": "relu"},
-                    {"type": "max_pool2d", "pool_size": 2, "stride": 2},
-                    {"type": "conv2d", "kernel_size": 3, "stride": 1, "filters": 64, "activation": "relu"},
-                    {"type": "max_pool2d", "pool_size": 2, "stride": 2},
-                    {"type": "flatten"},
-                    {"type": "dense", "units": 128, "activation": "relu"},
-                    {"type": "dense", "units": 10, "activation": "softmax"},
-                ],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
     bin_bytes = pack_netkit_weights(params)
-    (MODELS / "mnist_cnn.bin").write_bytes(bin_bytes)
-    print(f"Wrote mnist_cnn.bin ({len(bin_bytes)} bytes, {len(bin_bytes) // 4} floats)")
-
-    meta = {
-        "test_accuracy": round(float(test_acc), 6),
-        "train_images": int(x_train.shape[0]) if TRAIN_LIMIT <= 0 else TRAIN_LIMIT,
-        "epochs": EPOCHS,
-        "batch_size": BATCH_SIZE,
-        "learning_rate": LEARNING_RATE,
-        "architecture": "Conv32/ReLU/Pool -> Conv64/ReLU/Pool -> Flatten -> Dense128/ReLU -> Dense10/Softmax",
-        "reference": "Keras/TensorFlow MNIST CNN tutorial (~99% test acc with full 60k train)",
+    arch = {
+        "version": 1,
+        "network": "cnn",
+        "input": [IMG_H, IMG_W, IMG_C],
+        "layers": [
+            {"type": "conv2d", "kernel_size": 3, "stride": 1, "filters": 32, "activation": "relu"},
+            {"type": "max_pool2d", "pool_size": 2, "stride": 2},
+            {"type": "conv2d", "kernel_size": 3, "stride": 1, "filters": 64, "activation": "relu"},
+            {"type": "max_pool2d", "pool_size": 2, "stride": 2},
+            {"type": "flatten"},
+            {"type": "dense", "units": 128, "activation": "relu"},
+            {"type": "dense", "units": 10, "activation": "softmax"},
+        ],
     }
-    (CASE_DIR / "training_meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    weights = np.frombuffer(bin_bytes, dtype=np.float32)
 
-    cases: list[dict] = []
+    cases: list[RegressionCase] = []
     used_digits: set[int] = set()
     for i in range(x_test.shape[0]):
         if test_pred[i] != y_test[i]:
@@ -491,7 +460,7 @@ def main() -> None:
         for i in range(x_test.shape[0]):
             if test_pred[i] != y_test[i]:
                 continue
-            if any(c["label"] == int(y_test[i]) for c in cases):
+            if any(c.label == int(y_test[i]) for c in cases):
                 continue
             append_case(cases, x_test, y_test, i, params)
             if len(cases) >= NUM_CASES:
@@ -500,16 +469,13 @@ def main() -> None:
     if len(cases) < NUM_CASES:
         raise RuntimeError(f"only found {len(cases)} test cases; train longer or relax selection")
 
-    manifest = {
-        "model": "../mnist_cnn.json",
-        "input_dim": IMG_H * IMG_W * IMG_C,
-        "input_shape": [IMG_H, IMG_W, IMG_C],
-        "output_dim": NUM_CLASSES,
-        "output_tolerance": 0.0001,
-        "cases": cases,
-    }
-    (CASE_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    print(f"Wrote {len(cases)} test cases to {CASE_DIR}")
+    nk_path = write_nk_from_arch(
+        arch,
+        weights,
+        MODELS / "mnist_cnn.nk",
+        RegressionSuite(tolerance=0.0001, cases=cases),
+    )
+    print(f"Wrote {nk_path} ({len(bin_bytes)} bytes, {len(cases)} embedded test cases)")
 
 
 if __name__ == "__main__":

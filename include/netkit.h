@@ -35,7 +35,7 @@ extern "C" {
 #define NK_MAX_LAYERS      16
 #define NK_MAX_PATH_LEN    256
 #define NK_MAX_MESSAGE_LEN 128
-#define NK_MAX_JSON_STRING 64
+#define NK_MAX_STRING_LEN  64
 #define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U)
 
 #define NK_ARENA_STORAGE_BYTES 32
@@ -50,13 +50,13 @@ extern "C" {
 typedef enum nk_status
 {
     NK_OK = 0,
-    NK_ERR_JSON_OPEN,
-    NK_ERR_BIN_OPEN,
-    NK_ERR_JSON_PARSE,
+    NK_ERR_MODEL_OPEN,
+    NK_ERR_MODEL_READ,
+    NK_ERR_MODEL_PARSE,
     NK_ERR_UNSUPPORTED_NETWORK,
     NK_ERR_VERSION_MISMATCH,
     NK_ERR_LAYER_CONFIG,
-    NK_ERR_BIN_SIZE_MISMATCH,
+    NK_ERR_WEIGHT_MISMATCH,
     NK_ERR_ARENA_OVERFLOW,
     NK_ERR_INVALID_ARGUMENT,
     NK_ERR_BUFFER_TOO_SMALL,
@@ -320,30 +320,23 @@ nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            nk_tensor_t* output);
 
 /* -------------------------------------------------------------------------- */
-/* Model loader (model_loader.hpp)                                            */
+/* Model loader (.nk format)                                                  */
 /* -------------------------------------------------------------------------- */
 
-nk_status_t nk_parse_architecture(const char* json_path, nk_arch_info_t* info);
-nk_status_t nk_arch_print(const char* json_path);
+nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info);
+nk_status_t nk_arch_print(const char* nk_path);
 
-bool nk_json_path_to_bin_path(const char* json_path, char* bin_path, size_t bin_path_capacity);
-
-nk_status_t nk_load_weights_bin(const char* json_path,
-                                nk_arena_t* arena,
-                                float** weights,
-                                size_t* float_count);
-
-nk_status_t nk_mlp_load(const char* json_path,
+nk_status_t nk_mlp_load(const char* nk_path,
                         nk_arena_t* arena,
                         nk_mlp_t* mlp,
                         nk_arch_info_t* info);
 
-nk_status_t nk_cnn_load(const char* json_path,
+nk_status_t nk_cnn_load(const char* nk_path,
                         nk_arena_t* arena,
                         nk_cnn_t* cnn,
                         nk_arch_info_t* info);
 
-nk_status_t nk_model_load_auto(const char* json_path,
+nk_status_t nk_model_load_auto(const char* nk_path,
                                nk_arena_t* arena,
                                nk_network_kind_t* kind,
                                nk_mlp_t* mlp,
@@ -351,7 +344,7 @@ nk_status_t nk_model_load_auto(const char* json_path,
                                nk_arch_info_t* info);
 
 /* High-level loaded model handle (combines MLP or CNN for inference) */
-nk_status_t nk_model_load(const char* json_path, nk_arena_t* arena, nk_model_t* model);
+nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
 nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
@@ -363,13 +356,13 @@ nk_status_t nk_model_run(const nk_model_t* model,
                          float* output,
                          uint32_t output_capacity,
                          uint32_t* output_count);
-nk_status_t nk_inspect_model(const char* json_path, nk_arena_t* arena, nk_inspect_info_t* info);
+nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info);
 
 /* -------------------------------------------------------------------------- */
-/* Vectors / tests (vectors_loader.hpp, test.hpp)                             */
+/* Regression tests (nk_regression.hpp, test.hpp)                             */
 /* -------------------------------------------------------------------------- */
 
-nk_test_summary_t nk_run_vectors_file(const char* vectors_path);
+nk_test_summary_t nk_run_model_tests(const char* nk_path);
 nk_test_summary_t nk_run_all_tests(void);
 
 /* -------------------------------------------------------------------------- */

@@ -1,4 +1,4 @@
 #pragma once
-#include "vectors_loader.hpp"
+#include "nk_regression.hpp"
 
-VectorsLoader::RunSummary run_onnx_import_tests();
+NkRegression::RunSummary run_onnx_import_tests();

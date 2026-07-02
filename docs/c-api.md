@@ -37,13 +37,13 @@ const char* nk_version_string(void);  // "0.1.0"
 | Value | Meaning |
 |-------|---------|
 | `NK_OK` | Success |
-| `NK_ERR_JSON_OPEN` | Could not open `.json` file |
-| `NK_ERR_BIN_OPEN` | Could not open `.bin` file |
-| `NK_ERR_JSON_PARSE` | JSON syntax or schema error |
-| `NK_ERR_UNSUPPORTED_NETWORK` | Unknown `network` field |
-| `NK_ERR_VERSION_MISMATCH` | JSON `version` is not `1` |
-| `NK_ERR_LAYER_CONFIG` | Invalid layer or input shape |
-| `NK_ERR_BIN_SIZE_MISMATCH` | Weight count does not match architecture |
+| `NK_ERR_MODEL_OPEN` | Could not open model file |
+| `NK_ERR_MODEL_READ` | Model read failed |
+| `NK_ERR_MODEL_PARSE` | Invalid or truncated `.nk` file |
+| `NK_ERR_UNSUPPORTED_NETWORK` | Unknown network kind |
+| `NK_ERR_VERSION_MISMATCH` | Unsupported `.nk` version |
+| `NK_ERR_LAYER_CONFIG` | Invalid layer descriptor |
+| `NK_ERR_WEIGHT_MISMATCH` | Weight payload size mismatch |
 | `NK_ERR_ARENA_OVERFLOW` | Arena exhausted |
 | `NK_ERR_INVALID_ARGUMENT` | Null pointer or size mismatch |
 | `NK_ERR_BUFFER_TOO_SMALL` | Output buffer too small |
@@ -68,7 +68,7 @@ Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. **Only `NK_DT
 | `NK_CNN_BLOCK_FLATTEN` | `Flatten` |
 | `NK_CNN_BLOCK_DENSE` | `Dense` |
 
-Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from JSON automatically.
+Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from the `.nk` layer list.
 
 ### `nk_tensor_t`, `nk_conv2d_t`
 
@@ -108,7 +108,7 @@ typedef struct nk_model {
 
 ### `nk_arch_info_t`
 
-Architecture metadata from JSON (no weights required).
+Architecture metadata parsed from a `.nk` file (no full weight load required).
 
 ```c
 typedef struct nk_arch_info {
@@ -161,7 +161,7 @@ Returns `NULL` when the arena is uninitialized, arguments are invalid (`size == 
 
 **Backing memory** passed to `nk_arena_init` should be declared `alignas(max_align_t)`.
 
-**Sizing:** pass whatever `size` your model needs — there is no arena field in model JSON. Default examples use `NK_ARENA_DEFAULT_CAPACITY` (64 KiB). MNIST needs multi-MiB buffers. Use `nk_inspect_model()` and read `arena_bytes_after_forward` in `nk_inspect_info_t`, then allocate static storage with headroom. See [ARENA.md](ARENA.md).
+**Sizing:** pass whatever `size` your model needs. Default examples use `NK_ARENA_DEFAULT_CAPACITY` (64 KiB). MNIST needs multi-MiB buffers. Use `nk_inspect_model()` and read `arena_bytes_after_forward` in `nk_inspect_info_t`, then allocate static storage with headroom. See [ARENA.md](ARENA.md).
 
 Model load / run APIs allocate internally with the correct alignment; you only need `nk_arena_alloc` when building custom integrations on top of the C API.
 
@@ -252,35 +252,31 @@ nk_cnn_init_dense_layer(cnn, idx, &weights, &bias, NK_ACTIVATION_RELU, 0.01f);
 
 `nk_cnn_init_layer` is a backward-compatible alias for `nk_cnn_init_conv_layer`.
 
-For file-based models (including `models/mnist_cnn.json`), use `nk_cnn_load` or `nk_model_load` — all block types are configured from JSON.
+For file-based models (including `models/mnist_cnn.nk`), use `nk_cnn_load` or `nk_model_load` — all block types are configured from the `.nk` layer list.
 
-## Model loader
+## Model loader (`.nk`)
 
 | C function | C++ equivalent | Notes |
 |------------|----------------|-------|
-| `nk_parse_architecture` | `ParseArchitecture` + `FillArchInfo` | Populates `nk_arch_info_t`; `output_elements` uses `ComputeMlpOutputElements` / `ComputeCnnOutputElements` |
-| `nk_arch_print` | `PrintNetworkSummary` | Boxed network summary to stdout; returns `nk_status_t` |
-| `nk_json_path_to_bin_path` | `JsonPathToBinPath` | |
-| `nk_load_weights_bin` | `LoadWeightsBin` | |
-| `nk_mlp_load` | `LoadMLP` | |
-| `nk_cnn_load` | `LoadCNN` | Supports conv / pool / flatten / dense JSON |
-| `nk_model_load_auto` | `Load` | Dispatches by JSON `network` field |
+| `nk_parse_architecture` | `NkLoader::ParseFile` + `FillArchInfo` | Populates `nk_arch_info_t` |
+| `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
+| `nk_mlp_load` | `NkLoader::LoadMLP` | |
+| `nk_cnn_load` | `NkLoader::LoadCNN` | Conv / pool / flatten / dense |
+| `nk_model_load_auto` | `NkLoader::Load` | Dispatches by network kind |
 
 ```c
-nk_status_t nk_parse_architecture(const char* json_path, nk_arch_info_t* info);
-nk_status_t nk_arch_print(const char* json_path);
-bool nk_json_path_to_bin_path(const char* json_path, char* bin_path, size_t bin_path_capacity);
-nk_status_t nk_load_weights_bin(const char* json_path, nk_arena_t* arena, float** weights, size_t* float_count);
-nk_status_t nk_mlp_load(const char* json_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
-nk_status_t nk_cnn_load(const char* json_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info);
-nk_status_t nk_model_load_auto(const char* json_path, nk_arena_t* arena, nk_network_kind_t* kind,
+nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info);
+nk_status_t nk_arch_print(const char* nk_path);
+nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
+nk_status_t nk_cnn_load(const char* nk_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info);
+nk_status_t nk_model_load_auto(const char* nk_path, nk_arena_t* arena, nk_network_kind_t* kind,
                                nk_mlp_t* mlp, nk_cnn_t* cnn, nk_arch_info_t* info);
 ```
 
 High-level combined handle:
 
 ```c
-nk_status_t nk_model_load(const char* json_path, nk_arena_t* arena, nk_model_t* model);
+nk_status_t nk_model_load(const char* nk_path, nk_arena_t* arena, nk_model_t* model);
 nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
@@ -289,17 +285,17 @@ nk_status_t nk_model_run(...);
 nk_status_t nk_inspect_model(...);
 ```
 
-**C++-only diagnostics (no C binding):** `PrintArchitecture`, `PrintWeightsSummary` — used by `./netkit inspect --full`. See [API_PARITY.md](API_PARITY.md).
+**C++-only diagnostics (no C binding):** `NkLoader::PrintHeader` — detailed binary header dump. See [API_PARITY.md](API_PARITY.md).
 
 ## Tests and CLI
 
 ```c
-nk_test_summary_t nk_run_vectors_file(const char* vectors_path);
+nk_test_summary_t nk_run_model_tests(const char* nk_path);
 nk_test_summary_t nk_run_all_tests(void);
 int nk_cli_run(int argc, char** argv);
 ```
 
-Vectors file format: [VECTORS_TESTS.md](VECTORS_TESTS.md). CLI commands: [CLI.md](CLI.md).
+Embedded test format: [NK_FORMAT.md](NK_FORMAT.md). CLI commands: [CLI.md](CLI.md).
 
 ## Model load and inference
 
@@ -318,11 +314,11 @@ nk_status_t nk_model_run(const nk_model_t* model,
                          uint32_t* output_count);
 ```
 
-These mirror querying a loaded C++ network after `ModelLoader::Load` — input/output counts come from the same `ComputeMlpOutputElements` / `ComputeCnnOutputElements` logic used when filling `nk_arch_info_t`.
+These mirror querying a loaded C++ network after `NkLoader::Load` — input/output counts come from the `.nk` header and layer descriptors.
 
 ### `nk_model_load`
 
-Loads architecture and weights from `json_path` (companion `.bin` resolved automatically). Allocates network state from `arena`.
+Loads architecture and weights from `nk_path`. Allocates network state from `arena`.
 
 ### `nk_model_run`
 
@@ -342,10 +338,10 @@ Runs one forward pass.
 ## Inspection
 
 ```c
-nk_status_t nk_inspect_model(const char* json_path, nk_arena_t* arena, nk_inspect_info_t* info);
+nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info);
 ```
 
-Loads the model, runs a zero-input forward pass, and reports arena high-water marks. C++ equivalent: load via `ModelLoader::Load`, run forward, read `arena.offset` — or use `./netkit inspect --full`. Use this to size embedded memory regions.
+Loads the model, runs a zero-input forward pass, and reports arena high-water marks. C++ equivalent: load via `NkLoader::Load`, run forward, read `arena.offset` — or use `./netkit inspect --full`. Use this to size embedded memory regions.
 
 ## Complete examples
 
@@ -354,7 +350,7 @@ Loads the model, runs a zero-input forward pass, and reports arena high-water ma
 | [`examples/infer_c.c`](../examples/infer_c.c) | `make example-c` | High-level `nk_model_load` / `nk_model_run` |
 | [`examples/infer_cpp.cpp`](../examples/infer_cpp.cpp) | `make example-cpp` | Native C++26 API (see [cpp-api.md](cpp-api.md)) |
 
-Model JSON and weight layout: [MODEL_FORMAT.md](MODEL_FORMAT.md).
+Model format: [NK_FORMAT.md](NK_FORMAT.md).
 
 ### Minimal C example
 
@@ -371,7 +367,7 @@ int main(void)
 
     nk_arena_init(&arena, mem, sizeof(mem));
 
-    if (nk_model_load("models/test_mlp.json", &arena, &model) != NK_OK)
+    if (nk_model_load("models/test_mlp.nk", &arena, &model) != NK_OK)
     {
         printf("load error: %s\n", nk_last_error());
         return 1;

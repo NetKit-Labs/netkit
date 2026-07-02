@@ -1,9 +1,0 @@
-{
-  "test_accuracy": 0.9902,
-  "train_images": 60000,
-  "epochs": 20,
-  "batch_size": 128,
-  "learning_rate": 0.001,
-  "architecture": "Conv32/ReLU/Pool -> Conv64/ReLU/Pool -> Flatten -> Dense128/ReLU -> Dense10/Softmax",
-  "reference": "Keras/TensorFlow MNIST CNN tutorial (~99% test acc with full 60k train)"
-}
