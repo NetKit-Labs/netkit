@@ -54,6 +54,11 @@ NETKIT_ARCH ?=
 
 include third_party/netkit_arch.mk
 
+# Host embedded smoke (CI / desktop): portable CMSIS-DSP without CMSIS-Core headers.
+ifeq ($(NETKIT_HOST_SMOKE),1)
+  NETKIT_ARCH_CFLAGS += -D__GNUC_PYTHON__
+endif
+
 CC = clang
 CXX = clang++
 CFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c23 -Wall -Wextra -Iinclude
@@ -66,11 +71,6 @@ RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src
                     src/netkit_api.cpp
 
 TARGET_CPPFLAGS = $(NETKIT_ARCH_CFLAGS)
-
-# Host embedded smoke (CI / desktop): portable CMSIS-DSP without CMSIS-Core headers.
-ifeq ($(NETKIT_HOST_SMOKE),1)
-  TARGET_CPPFLAGS += -D__GNUC_PYTHON__
-endif
 
 CMSIS_NN_OBJECTS =
 ifeq ($(NETKIT_CMSIS_NN),1)
