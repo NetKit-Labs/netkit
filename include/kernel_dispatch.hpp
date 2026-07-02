@@ -10,53 +10,86 @@
 namespace detail
 {
     template<typename T>
-    constexpr bool IsReferenceKernel = std::is_same_v<T, ReferenceKernel>;
+    concept NkAcceleratedKernel = !std::same_as<T, ReferenceKernel>;
 
-    template<typename Fast, typename Reference = ReferenceKernel>
+    constexpr void ApplyReferenceActivation(const Tensor& a,
+                                            Tensor& c,
+                                            NetkitKernelActivation activation,
+                                            float alpha)
+    {
+        switch (activation)
+        {
+            case NetkitKernelActivation::ReLU:
+                ReferenceKernel::ReLUImpl(a, c);
+                break;
+            case NetkitKernelActivation::Sigmoid:
+                ReferenceKernel::SigmoidImpl(a, c);
+                break;
+            case NetkitKernelActivation::Tanh:
+                ReferenceKernel::TanhImpl(a, c);
+                break;
+            case NetkitKernelActivation::LeakyReLU:
+                ReferenceKernel::LeakyReLUImpl(a, c, alpha);
+                break;
+            case NetkitKernelActivation::ReLU6:
+                ReferenceKernel::ReLU6Impl(a, c);
+                break;
+            default:
+                break;
+        }
+    }
+
+    template<NkAcceleratedKernel Fast, typename Reference = ReferenceKernel>
     void TryVectorMul(const Tensor& a, const Tensor& b, Tensor& c)
     {
-        if constexpr (!IsReferenceKernel<Fast>)
-        {
-            if (!Fast::TryMul(a, b, c))
-                Reference::MulImpl(a, b, c);
-        }
-        else
+        if (!Fast::TryMul(a, b, c))
             Reference::MulImpl(a, b, c);
     }
 
-    template<typename Fast, typename Reference = ReferenceKernel>
+    template<typename Reference = ReferenceKernel>
+    void TryVectorMul(const Tensor& a, const Tensor& b, Tensor& c)
+        requires std::same_as<Reference, ReferenceKernel>
+    {
+        Reference::MulImpl(a, b, c);
+    }
+
+    template<NkAcceleratedKernel Fast, typename Reference = ReferenceKernel>
     void TryVectorMulScalar(const Tensor& a, float scalar, Tensor& c)
     {
-        if constexpr (!IsReferenceKernel<Fast>)
-        {
-            if (!Fast::TryMulScalar(a, scalar, c))
-                Reference::MulScalarImpl(a, scalar, c);
-        }
-        else
+        if (!Fast::TryMulScalar(a, scalar, c))
             Reference::MulScalarImpl(a, scalar, c);
     }
 
-    template<typename Fast, typename Reference = ReferenceKernel>
+    template<typename Reference = ReferenceKernel>
+    void TryVectorMulScalar(const Tensor& a, float scalar, Tensor& c)
+        requires std::same_as<Reference, ReferenceKernel>
+    {
+        Reference::MulScalarImpl(a, scalar, c);
+    }
+
+    template<NkAcceleratedKernel Fast, typename Reference = ReferenceKernel>
     void TryVectorMatMul(const Tensor& a, const Tensor& b, Tensor& c)
     {
-        if constexpr (!IsReferenceKernel<Fast>)
-        {
-            if (!Fast::TryMatMul(a, b, c))
-                Reference::MatMulImpl(a, b, c);
-        }
-        else
+        if (!Fast::TryMatMul(a, b, c))
             Reference::MatMulImpl(a, b, c);
+    }
+
+    template<typename Reference = ReferenceKernel>
+    void TryVectorMatMul(const Tensor& a, const Tensor& b, Tensor& c)
+        requires std::same_as<Reference, ReferenceKernel>
+    {
+        Reference::MatMulImpl(a, b, c);
     }
 
     template<typename LayerFast, typename VectorFast>
     void TryMatAdd2D(const Tensor& a, const Tensor& b, Tensor& c)
     {
-        if constexpr (!IsReferenceKernel<LayerFast>)
+        if constexpr (NkAcceleratedKernel<LayerFast>)
         {
             if (!LayerFast::TryMatAdd(a, b, c))
                 ReferenceKernel::MatAddImpl(a, b, c);
         }
-        else if constexpr (!IsReferenceKernel<VectorFast>)
+        else if constexpr (NkAcceleratedKernel<VectorFast>)
         {
             if (!VectorFast::TryMatAdd(a, b, c))
                 ReferenceKernel::MatAddImpl(a, b, c);
@@ -68,12 +101,12 @@ namespace detail
     template<typename LayerFast, typename VectorFast>
     void TryMatAddND(const Tensor& a, const Tensor& b, Tensor& c)
     {
-        if constexpr (!IsReferenceKernel<LayerFast>)
+        if constexpr (NkAcceleratedKernel<LayerFast>)
         {
             if (!LayerFast::TryMatAdd(a, b, c))
                 ReferenceKernel::MatAddNDImpl(a, b, c);
         }
-        else if constexpr (!IsReferenceKernel<VectorFast>)
+        else if constexpr (NkAcceleratedKernel<VectorFast>)
         {
             if (!VectorFast::TryMatAdd(a, b, c))
                 ReferenceKernel::MatAddNDImpl(a, b, c);
@@ -88,33 +121,12 @@ namespace detail
                          NetkitKernelActivation activation,
                          float alpha)
     {
-        if constexpr (!IsReferenceKernel<LayerFast>)
+        if constexpr (NkAcceleratedKernel<LayerFast>)
         {
             if (!LayerFast::TryActivationForward(a, c, activation, alpha))
-            {
-                switch (activation)
-                {
-                    case NetkitKernelActivation::ReLU:
-                        ReferenceKernel::ReLUImpl(a, c);
-                        break;
-                    case NetkitKernelActivation::Sigmoid:
-                        ReferenceKernel::SigmoidImpl(a, c);
-                        break;
-                    case NetkitKernelActivation::Tanh:
-                        ReferenceKernel::TanhImpl(a, c);
-                        break;
-                    case NetkitKernelActivation::LeakyReLU:
-                        ReferenceKernel::LeakyReLUImpl(a, c, alpha);
-                        break;
-                    case NetkitKernelActivation::ReLU6:
-                        ReferenceKernel::ReLU6Impl(a, c);
-                        break;
-                    default:
-                        break;
-                }
-            }
+                ApplyReferenceActivation(a, c, activation, alpha);
         }
-        else if constexpr (!IsReferenceKernel<VectorFast>)
+        else if constexpr (NkAcceleratedKernel<VectorFast>)
         {
             if (activation == NetkitKernelActivation::ReLU)
             {
@@ -126,36 +138,11 @@ namespace detail
                 if (!VectorFast::TryClip(a, c, 0.0f, 6.0f))
                     ReferenceKernel::ReLU6Impl(a, c);
             }
-            else if (activation == NetkitKernelActivation::LeakyReLU)
-                ReferenceKernel::LeakyReLUImpl(a, c, alpha);
-            else if (activation == NetkitKernelActivation::Sigmoid)
-                ReferenceKernel::SigmoidImpl(a, c);
-            else if (activation == NetkitKernelActivation::Tanh)
-                ReferenceKernel::TanhImpl(a, c);
+            else
+                ApplyReferenceActivation(a, c, activation, alpha);
         }
         else
-        {
-            switch (activation)
-            {
-                case NetkitKernelActivation::ReLU:
-                    ReferenceKernel::ReLUImpl(a, c);
-                    break;
-                case NetkitKernelActivation::Sigmoid:
-                    ReferenceKernel::SigmoidImpl(a, c);
-                    break;
-                case NetkitKernelActivation::Tanh:
-                    ReferenceKernel::TanhImpl(a, c);
-                    break;
-                case NetkitKernelActivation::LeakyReLU:
-                    ReferenceKernel::LeakyReLUImpl(a, c, alpha);
-                    break;
-                case NetkitKernelActivation::ReLU6:
-                    ReferenceKernel::ReLU6Impl(a, c);
-                    break;
-                default:
-                    break;
-            }
-        }
+            ApplyReferenceActivation(a, c, activation, alpha);
     }
 
     template<typename LayerFast>
@@ -171,7 +158,7 @@ namespace detail
                       NetkitKernelActivation fuse_activation,
                       Tensor& output)
     {
-        if constexpr (!IsReferenceKernel<LayerFast>)
+        if constexpr (NkAcceleratedKernel<LayerFast>)
         {
             if (LayerFast::TryConv2dForward(input,
                                             weights,
@@ -206,12 +193,12 @@ namespace detail
                            NetkitKernelActivation fuse_activation,
                            Tensor& output)
     {
-        if constexpr (!IsReferenceKernel<LayerFast>)
+        if constexpr (NkAcceleratedKernel<LayerFast>)
         {
             if (LayerFast::TryFullyConnectedWithBias(input, weights, bias, fuse_activation, output))
                 return true;
         }
-        else if constexpr (!IsReferenceKernel<VectorFast>)
+        else if constexpr (NkAcceleratedKernel<VectorFast>)
         {
             if (VectorFast::TryFullyConnectedWithBias(input, weights, bias, output))
                 return false;
@@ -283,7 +270,7 @@ namespace detail
 
         static void SoftmaxImpl(const Tensor& a, Tensor& c)
         {
-            if constexpr (!IsReferenceKernel<LayerFast>)
+            if constexpr (NkAcceleratedKernel<LayerFast>)
             {
                 if (!LayerFast::TrySoftmaxForward(a, c))
                     ReferenceKernel::SoftmaxImpl(a, c);
@@ -324,7 +311,7 @@ namespace detail
                                          int pad_w,
                                          Tensor& output)
         {
-            if constexpr (!IsReferenceKernel<LayerFast>)
+            if constexpr (NkAcceleratedKernel<LayerFast>)
             {
                 if (!LayerFast::TryMaxPool2dForward(
                         input, pool_size, stride, pad_h, pad_w, NetkitKernelActivation::None, output))
@@ -341,7 +328,7 @@ namespace detail
                                          int pad_w,
                                          Tensor& output)
         {
-            if constexpr (!IsReferenceKernel<LayerFast>)
+            if constexpr (NkAcceleratedKernel<LayerFast>)
             {
                 if (!LayerFast::TryAvgPool2dForward(input, pool_size, stride, pad_h, pad_w, output))
                     ReferenceKernel::AvgPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
@@ -356,12 +343,12 @@ namespace detail
                                            int channels,
                                            Tensor& output)
         {
-            if constexpr (!IsReferenceKernel<LayerFast>)
+            if constexpr (NkAcceleratedKernel<LayerFast>)
             {
                 if (!LayerFast::TryBatchNorm2dForward(input, scale, bias, channels, output))
                     ReferenceKernel::BatchNorm2dForwardImpl(input, scale, bias, channels, output);
             }
-            else if constexpr (!IsReferenceKernel<VectorFast>)
+            else if constexpr (NkAcceleratedKernel<VectorFast>)
             {
                 if (!VectorFast::TryBatchNorm2dForward(input, scale, bias, channels, output))
                     ReferenceKernel::BatchNorm2dForwardImpl(input, scale, bias, channels, output);

@@ -1,31 +1,17 @@
 #include "cnn.hpp"
 #include "active_kernel.hpp"
 #include "activation_followup.hpp"
+#include "ops_resolver.hpp"
 #include "tensor_factory.hpp"
-#include "tensor_access.hpp"
-#include <array>
 #include <cstring>
 
 using namespace TensorFactory;
 
-namespace
+const NkOpsResolver& CNNNetwork::GetOpsResolver() const
 {
-    uint32_t CalcOutputDim(uint32_t input_dim, int kernel_size, int stride, int pad = 0)
-    {
-        return static_cast<uint32_t>((static_cast<int>(input_dim) + 2 * pad - kernel_size) / stride + 1);
-    }
-
-    void FlattenNhwc(const Tensor& input, Tensor& output)
-    {
-        const float* in = tensor_data_f32(const_cast<Tensor&>(input));
-        float* out = tensor_data_f32(output);
-        std::memcpy(out, in, static_cast<std::size_t>(input.num_elements) * sizeof(float));
-    }
-
-    uint32_t MaxU32(uint32_t a, uint32_t b)
-    {
-        return a > b ? a : b;
-    }
+    if (has_custom_resolver_)
+        return op_resolver_;
+    return GetDefaultOpsResolver();
 }
 
 void Conv2DLayer::forward(const Tensor& input, Tensor& output)
@@ -66,70 +52,18 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
     if (!blocks || num_layers == 0)
         return blocks != nullptr;
 
-    uint32_t h = in_h;
-    uint32_t w = in_w;
-    uint32_t channels = in_c;
+    const NkOpsResolver& resolver = GetOpsResolver();
+    NkCnnSpatialPlan plan{in_h, in_w, in_c, &max_activation_elements};
 
     for (uint32_t i = 0; i < num_layers; ++i)
     {
-        switch (blocks[i].type)
-        {
-            case CnnBlockType::Conv2D:
-            {
-                const uint32_t out_h = CalcOutputDim(h,
-                                                     blocks[i].conv.conv.kernel_size,
-                                                     blocks[i].conv.conv.stride,
-                                                     blocks[i].conv.conv.pad_h);
-                const uint32_t out_w = CalcOutputDim(w,
-                                                     blocks[i].conv.conv.kernel_size,
-                                                     blocks[i].conv.conv.stride,
-                                                     blocks[i].conv.conv.pad_w);
-                const uint32_t out_c = static_cast<uint32_t>(blocks[i].conv.conv.out_channels);
-                max_activation_elements = MaxU32(max_activation_elements, out_h * out_w * out_c);
-                h = out_h;
-                w = out_w;
-                channels = out_c;
-                break;
-            }
-            case CnnBlockType::MaxPool2D:
-            case CnnBlockType::AvgPool2D:
-            {
-                const int pool_size = blocks[i].type == CnnBlockType::MaxPool2D
-                                          ? blocks[i].pool.pool_size
-                                          : blocks[i].avg_pool.pool_size;
-                const int stride = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.stride
-                                                                             : blocks[i].avg_pool.stride;
-                const int pad_h = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_h
-                                                                            : blocks[i].avg_pool.pad_h;
-                const int pad_w = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_w
-                                                                            : blocks[i].avg_pool.pad_w;
-                const uint32_t out_h = CalcOutputDim(h, pool_size, stride, pad_h);
-                const uint32_t out_w = CalcOutputDim(w, pool_size, stride, pad_w);
-                max_activation_elements = MaxU32(max_activation_elements, out_h * out_w * channels);
-                h = out_h;
-                w = out_w;
-                break;
-            }
-            case CnnBlockType::BatchNorm2d:
-                max_activation_elements = MaxU32(max_activation_elements, h * w * channels);
-                break;
-            case CnnBlockType::Flatten:
-            {
-                const uint32_t features = h * w * channels;
-                max_activation_elements = MaxU32(max_activation_elements, features);
-                h = 1;
-                w = features;
-                channels = 1;
-                break;
-            }
-            case CnnBlockType::Dense:
-            {
-                const uint32_t out_features = blocks[i].dense.weights.shape[0];
-                max_activation_elements = MaxU32(max_activation_elements, out_features);
-                w = out_features;
-                break;
-            }
-        }
+        const NkLayerOpRegistration* registration =
+            resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
+        if (!registration || !registration->plan_activation)
+            return false;
+
+        if (!registration->plan_activation(blocks[i], plan))
+            return false;
     }
 
     if (max_activation_elements == 0)
@@ -235,95 +169,24 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
     if (!IsValid() || !HasActivationBuffers() || num_layers == 0)
         return empty;
 
+    const NkOpsResolver& resolver = GetOpsResolver();
     output_cache_ = {};
     Tensor current_input = input;
     float* write_buffer = ping_a;
 
     for (uint32_t i = 0; i < num_layers; ++i)
     {
-        Tensor layer_output{};
-
-        switch (blocks[i].type)
-        {
-            case CnnBlockType::Conv2D:
-            {
-                const uint32_t out_h = CalcOutputDim(current_input.shape[0],
-                                                     blocks[i].conv.conv.kernel_size,
-                                                     blocks[i].conv.conv.stride,
-                                                     blocks[i].conv.conv.pad_h);
-                const uint32_t out_w = CalcOutputDim(current_input.shape[1],
-                                                     blocks[i].conv.conv.kernel_size,
-                                                     blocks[i].conv.conv.stride,
-                                                     blocks[i].conv.conv.pad_w);
-                const uint32_t out_c = static_cast<uint32_t>(blocks[i].conv.conv.out_channels);
-                const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
-                layer_output = ViewND(write_buffer, 3, shape);
-                break;
-            }
-            case CnnBlockType::MaxPool2D:
-            case CnnBlockType::AvgPool2D:
-            {
-                const int pool_size = blocks[i].type == CnnBlockType::MaxPool2D
-                                          ? blocks[i].pool.pool_size
-                                          : blocks[i].avg_pool.pool_size;
-                const int stride = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.stride
-                                                                             : blocks[i].avg_pool.stride;
-                const int pad_h = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_h
-                                                                            : blocks[i].avg_pool.pad_h;
-                const int pad_w = blocks[i].type == CnnBlockType::MaxPool2D ? blocks[i].pool.pad_w
-                                                                            : blocks[i].avg_pool.pad_w;
-                const uint32_t out_h = CalcOutputDim(current_input.shape[0], pool_size, stride, pad_h);
-                const uint32_t out_w = CalcOutputDim(current_input.shape[1], pool_size, stride, pad_w);
-                const uint32_t out_c = current_input.shape[2];
-                const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
-                layer_output = ViewND(write_buffer, 3, shape);
-                break;
-            }
-            case CnnBlockType::BatchNorm2d:
-            {
-                const std::array<uint32_t, 3> shape = {
-                    current_input.shape[0], current_input.shape[1], current_input.shape[2]};
-                layer_output = ViewND(write_buffer, 3, shape);
-                break;
-            }
-            case CnnBlockType::Flatten:
-            {
-                const uint32_t features = current_input.num_elements;
-                layer_output = View2D(write_buffer, 1, features);
-                break;
-            }
-            case CnnBlockType::Dense:
-            {
-                const uint32_t out_features = blocks[i].dense.weights.shape[0];
-                layer_output = View2D(write_buffer, 1, out_features);
-                break;
-            }
-        }
-
-        if (!layer_output.data || layer_output.num_elements > max_activation_elements)
+        const NkLayerOpRegistration* registration =
+            resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
+        if (!registration || !registration->prepare_output || !registration->eval)
             return empty;
 
-        switch (blocks[i].type)
-        {
-            case CnnBlockType::Conv2D:
-                blocks[i].conv.forward(current_input, layer_output);
-                break;
-            case CnnBlockType::MaxPool2D:
-                blocks[i].pool.forward(current_input, layer_output);
-                break;
-            case CnnBlockType::AvgPool2D:
-                blocks[i].avg_pool.forward(current_input, layer_output);
-                break;
-            case CnnBlockType::BatchNorm2d:
-                blocks[i].batch_norm.forward(current_input, layer_output);
-                break;
-            case CnnBlockType::Flatten:
-                FlattenNhwc(current_input, layer_output);
-                break;
-            case CnnBlockType::Dense:
-                blocks[i].dense.forward(current_input, layer_output);
-                break;
-        }
+        Tensor layer_output{};
+        NkCnnOpContext ctx{blocks[i], current_input, layer_output, write_buffer, max_activation_elements};
+        if (!registration->prepare_output(ctx) || !layer_output.data)
+            return empty;
+
+        registration->eval(blocks[i], current_input, layer_output);
 
         current_input = layer_output;
         output_cache_ = layer_output;

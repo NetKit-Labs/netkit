@@ -1,6 +1,5 @@
 #include "ops.hpp"
 #include "active_kernel.hpp"
-#include "reference_kernel.hpp"
 
 namespace Ops
 {
@@ -99,23 +98,6 @@ namespace Ops
         }
 
         Kernels::MatMul(A, B, C);
-    }
-
-    bool IsFullyConnectedValid(const Tensor& input, const Tensor& kernel, const Tensor& output)
-    {
-        return input.rank == 2 && kernel.rank == 2 && output.rank == 2 && kernel.shape[1] == input.shape[1] &&
-               output.shape[0] == input.shape[0] && output.shape[1] == kernel.shape[0];
-    }
-
-    void FullyConnected(const Tensor& input, const Tensor& kernel, Tensor& output)
-    {
-        if (!IsFullyConnectedValid(input, kernel, output))
-        {
-            std::cout << "FullyConnected shape mismatch\n";
-            return;
-        }
-
-        ReferenceKernel::FullyConnected(input, kernel, output);
     }
 
     bool IsElementwiseValidND(const Tensor& A, const Tensor& B, const Tensor& C)

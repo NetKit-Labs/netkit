@@ -289,6 +289,63 @@ static void TestInspectModel(void)
                "inspect arena after forward");
 }
 
+static void TestManualMlpActivationBuffers(void)
+{
+    printf("\n--- manual mlp activation buffers ---\n");
+
+    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    nk_mlp_t mlp;
+    ExpectStatus(nk_mlp_create(&arena, 2, &mlp), NK_OK, "mlp create");
+
+    static float w0_data[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+    static float b0_data[2] = {0.0f, 0.0f};
+    static float w1_data[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+    static float b1_data[2] = {0.0f, 0.0f};
+
+    nk_tensor_t w0, b0, w1, b1, input, output;
+    nk_tensor_view_2d(w0_data, 2, 2, &w0);
+    nk_tensor_view_2d(b0_data, 1, 2, &b0);
+    nk_tensor_view_2d(w1_data, 2, 2, &w1);
+    nk_tensor_view_2d(b1_data, 1, 2, &b1);
+
+    ExpectStatus(nk_mlp_init_layer(&mlp, 0, &w0, &b0, NK_ACTIVATION_NONE, 0.01f), NK_OK, "mlp init layer 0");
+    ExpectStatus(nk_mlp_init_layer(&mlp, 1, &w1, &b1, NK_ACTIVATION_NONE, 0.01f), NK_OK, "mlp init layer 1");
+
+    ExpectTrue(!nk_mlp_has_activation_buffers(&mlp), "mlp buffers not ready before init");
+
+    static float in_data[2] = {1.0f, 2.0f};
+    static float out_data[2] = {0.0f, 0.0f};
+    nk_tensor_view_2d(in_data, 1, 2, &input);
+    nk_tensor_view_2d(out_data, 1, 2, &output);
+
+    ExpectStatus(nk_mlp_forward(&mlp, &arena, &input, &output),
+                 NK_ERR_NOT_INITIALIZED,
+                 "mlp forward without activation buffers");
+
+    ExpectStatus(nk_mlp_init_activation_buffers(&mlp, &arena, 1), NK_OK, "mlp init activation buffers");
+    ExpectTrue(nk_mlp_has_activation_buffers(&mlp), "mlp buffers ready after init");
+
+    ExpectStatus(nk_mlp_forward(&mlp, &arena, &input, &output), NK_OK, "mlp forward with buffers");
+    ExpectFloatEq(out_data[0], 1.0f, "manual mlp output[0]");
+    ExpectFloatEq(out_data[1], 2.0f, "manual mlp output[1]");
+}
+
+static void TestCnnLoadHasBuffers(void)
+{
+    printf("\n--- cnn load activation buffers ---\n");
+
+    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    nk_cnn_t cnn;
+    ExpectStatus(nk_cnn_load("models/cnn_4x4_single.nk", &arena, &cnn, NULL), NK_OK, "cnn load");
+    ExpectTrue(nk_cnn_has_activation_buffers(&cnn), "cnn buffers ready after load");
+}
+
 static void TestRegression(void)
 {
 #if defined(NETKIT_DESKTOP)
@@ -323,6 +380,8 @@ int main(void)
     TestInspectModel();
     TestMnistCnnLoad();
     TestModelLoadRun();
+    TestManualMlpActivationBuffers();
+    TestCnnLoadHasBuffers();
     TestRegression();
 
     printf("\n============================\n");

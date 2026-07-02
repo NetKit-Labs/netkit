@@ -243,6 +243,9 @@ public:
     void InitDenseLayer(uint32_t layer_idx, const Tensor& W, const Tensor& b,
                         ActivationType activation, float leaky_alpha = 0.01f);
 
+    void SetOpsResolver(const NkOpsResolver& resolver);  // trim via NkOpList<...>::View()
+    const NkOpsResolver& GetOpsResolver() const;
+
     // All blocks ping-pong between two load-time buffers; result in GetOutput()
     Tensor& forward(const Tensor& input, Arena& arena);
     CnnBlock& GetBlock(uint32_t idx);
@@ -253,6 +256,8 @@ public:
 Spatial tensors stay NHWC until flatten; dense head output is `[1, units]`. Returns null `data` on arena overflow.
 
 `NkLoader::LoadCNN` builds full pipelines from `.nk` files (including `models/mnist_cnn.nk`).
+
+Layer dispatch uses `NkOpList<Ops...>::View()` for compile-time op tables — see [KERNELS.md](KERNELS.md).
 
 ---
 

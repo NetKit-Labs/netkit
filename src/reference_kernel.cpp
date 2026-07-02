@@ -86,13 +86,6 @@ void ReferenceKernel::MulNDImpl(const Tensor& a, const Tensor& b, Tensor& c)
     const float* b_data = static_cast<const float*>(b.data);
     float* c_data = static_cast<float*>(c.data);
 
-    if (a.stride[0] == a.shape[1] && a.stride[1] == 1)
-    {
-        for (uint32_t i = 0; i < a.num_elements; i++)
-            c_data[i] = a_data[i] * b_data[i];
-        return;
-    }
-
     for (uint32_t idx = 0; idx < a.num_elements; idx++)
         c_data[idx] = a_data[idx] * b_data[idx];
 }

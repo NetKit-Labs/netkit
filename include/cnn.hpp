@@ -3,6 +3,7 @@
 #include "arena.hpp"
 #include "conv2d.hpp"
 #include "mlp.hpp"
+#include "ops_resolver.hpp"
 
 enum class ConvActivationType
 {
@@ -82,9 +83,19 @@ private:
     float* ping_b{};
     uint32_t max_activation_elements{};
     Tensor output_cache_{};
+    NkOpsResolver op_resolver_{};
+    bool has_custom_resolver_ = false;
 
 public:
     CNNNetwork(uint32_t num_layers, Arena& arena);
+
+    void SetOpsResolver(const NkOpsResolver& resolver)
+    {
+        op_resolver_ = resolver;
+        has_custom_resolver_ = true;
+    }
+
+    const NkOpsResolver& GetOpsResolver() const;
 
     bool IsValid() const { return blocks != nullptr; }
 

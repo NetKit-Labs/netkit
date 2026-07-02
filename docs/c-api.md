@@ -272,6 +272,8 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_mlp_create` | `MLPNetwork` constructor |
 | `nk_mlp_is_valid` | `MLPNetwork::IsValid` |
 | `nk_mlp_init_layer` | `MLPNetwork::InitLayer` |
+| `nk_mlp_init_activation_buffers` | `MLPNetwork::InitActivationBuffers` |
+| `nk_mlp_has_activation_buffers` | `MLPNetwork::HasActivationBuffers` |
 | `nk_mlp_forward` | `MLPNetwork::forward` |
 
 ### CNN (`cnn.hpp`)
@@ -286,6 +288,8 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_cnn_init_batch_norm_layer` | `CNNNetwork::InitBatchNormLayer` |
 | `nk_cnn_init_flatten_layer` | `CNNNetwork::InitFlattenLayer` |
 | `nk_cnn_init_dense_layer` | `CNNNetwork::InitDenseLayer` |
+| `nk_cnn_init_activation_buffers` | `CNNNetwork::InitActivationBuffers` |
+| `nk_cnn_has_activation_buffers` | `CNNNetwork::HasActivationBuffers` |
 | `nk_cnn_forward` | `CNNNetwork::forward` |
 
 ```c

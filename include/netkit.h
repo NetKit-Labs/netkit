@@ -38,7 +38,6 @@ extern "C" {
 #define NK_MAX_LAYERS      16
 #define NK_MAX_PATH_LEN    256
 #define NK_MAX_MESSAGE_LEN 128
-#define NK_MAX_STRING_LEN  64
 
 #define NK_ARENA_STORAGE_BYTES 32
 #define NK_MODEL_STORAGE_BYTES 96
@@ -275,6 +274,8 @@ nk_status_t nk_mlp_init_layer(nk_mlp_t* mlp,
                             const nk_tensor_t* bias,
                             nk_activation_t activation,
                             float leaky_alpha);
+nk_status_t nk_mlp_init_activation_buffers(nk_mlp_t* mlp, nk_arena_t* arena, uint32_t batch_rows);
+bool nk_mlp_has_activation_buffers(const nk_mlp_t* mlp);
 nk_status_t nk_mlp_forward(nk_mlp_t* mlp,
                            nk_arena_t* arena,
                            const nk_tensor_t* input,
@@ -329,6 +330,13 @@ nk_status_t nk_cnn_init_dense_layer(nk_cnn_t* cnn,
                                     const nk_tensor_t* bias,
                                     nk_activation_t activation,
                                     float leaky_alpha);
+
+nk_status_t nk_cnn_init_activation_buffers(nk_cnn_t* cnn,
+                                           nk_arena_t* arena,
+                                           uint32_t in_h,
+                                           uint32_t in_w,
+                                           uint32_t in_c);
+bool nk_cnn_has_activation_buffers(const nk_cnn_t* cnn);
 
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            nk_arena_t* arena,

@@ -117,6 +117,8 @@ Both suites exercise the same **69 embedded `.nk` inference cases** (16 hand-che
 | `MLPNetwork::IsValid` | `nk_mlp_is_valid` |
 | `MLPNetwork` constructor | `nk_mlp_create` |
 | `InitLayer` | `nk_mlp_init_layer` |
+| `InitActivationBuffers` | `nk_mlp_init_activation_buffers` |
+| `HasActivationBuffers` | `nk_mlp_has_activation_buffers` |
 | `forward` | `nk_mlp_forward` |
 
 ### CNN (`cnn.hpp`)
@@ -134,6 +136,8 @@ Both suites exercise the same **69 embedded `.nk` inference cases** (16 hand-che
 | `InitBatchNormLayer` | `nk_cnn_init_batch_norm_layer` |
 | `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |
+| `InitActivationBuffers` | `nk_cnn_init_activation_buffers` |
+| `HasActivationBuffers` | `nk_cnn_has_activation_buffers` |
 | `forward` | `nk_cnn_forward` |
 | `LoadCNN` (mixed conv/pool/avg pool/batch norm/flatten/dense `.nk`) | `nk_cnn_load` |
 
@@ -162,6 +166,8 @@ High-level combined handle (C convenience):
 | C++ | Reason |
 |-----|--------|
 | `PrintHeader` | Detailed `.nk` header dump |
+| `NkOpsResolver`, `NkOpList`, `CNNNetwork::SetOpsResolver` | Firmware op trimming — compile-time `NkOpList<Ops...>::View()` in C++ only; file load uses default resolver internally |
+| `ArenaUtil` | CLI/regression sizing helpers |
 
 ### Regression tests
 

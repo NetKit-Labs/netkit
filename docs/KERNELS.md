@@ -58,6 +58,19 @@ On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP acceler
 
 ## Dispatch pattern
 
+`kernel_dispatch.hpp` uses **C++20 concepts** (`NkAcceleratedKernel`) and `if constexpr` to pick CMSIS `Try*` paths at compile time — no runtime backend switching, no virtual functions:
+
+```cpp
+template<typename T>
+concept NkAcceleratedKernel = !std::same_as<T, ReferenceKernel>;
+
+if constexpr (NkAcceleratedKernel<LayerFast>) {
+    if (!LayerFast::TryConv2dForward(...)) { /* reference fallback */ }
+}
+```
+
+Layer code calls `Kernels::Op(...)` only — not raw `ReferenceKernel::` (except inside kernel dispatch fallbacks).
+
 Each fast backend exposes static `Try*` methods that return `bool`:
 
 - `true` — backend handled the op
@@ -69,7 +82,7 @@ Example from `ComposedKernel`:
 static void MaxPool2dForwardImpl(const Tensor& input, int pool_size, int stride,
                                  int pad_h, int pad_w, Tensor& output)
 {
-    if constexpr (!IsReferenceKernel<LayerFast>)
+    if constexpr (NkAcceleratedKernel<LayerFast>)
     {
         if (!LayerFast::TryMaxPool2dForward(input, pool_size, stride, pad_h, pad_w,
                                               NetkitKernelActivation::None, output))
@@ -88,6 +101,35 @@ No virtual functions; the compiler inlines the selected path for each translatio
 2. Add `TryOp` to CMSIS backends if applicable (guard with `#if NETKIT_USE_CMSIS_*` in `.cpp`).
 3. Wire `ComposedKernel::OpImpl` via a `Try*` helper in `kernel_dispatch.hpp`.
 4. Call `Kernels::Op(...)` from layer code — not from a new `#if` branch.
+
+## Layer dispatch (OpsResolver)
+
+CNN forward uses a **static function-pointer registry** (`ops_resolver.hpp`) — no virtuals, heap, or `std::vector`.
+
+### C++26 compile-time resolver tables
+
+Each layer op is a descriptor struct with `static constexpr NkLayerOpRegistration kRegistration`. `NkOpList<Ops...>` folds descriptors into a **`constinit`** registration array and resolver view — built at compile time with no dynamic static initialization (MCU-safe):
+
+```cpp
+struct NkConv2DOpDescriptor {
+    static constexpr NkLayerOpRegistration kRegistration = { ... };
+};
+
+using MyOps = NkOpList<NkConv2DOpDescriptor, NkDenseOpDescriptor>;
+cnn.SetOpsResolver(MyOps::View());  // reference to constinit static storage
+```
+
+Descriptors live in `layer_op_registry.hpp`; implementations in `ops_resolver.cpp`. `NkAllLayerOps` is the full six-op table used by `GetDefaultOpsResolver()`.
+
+```
+CNNNetwork::forward
+        │
+        ▼
+  NkOpsResolver::Find(opcode)
+        │
+        ▼
+  prepare_output / eval  →  Kernels::…
+```
 
 ## Related docs
 

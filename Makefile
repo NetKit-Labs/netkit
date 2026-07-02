@@ -67,7 +67,7 @@ TARGET = netkit
 LIB = libnetkit.a
 
 RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/ops.cpp \
-                    src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/nk_format.cpp src/nk_loader.cpp \
+                    src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/ops_resolver.cpp src/nk_format.cpp src/nk_loader.cpp \
                     src/netkit_api.cpp
 
 TARGET_CPPFLAGS = $(NETKIT_ARCH_CFLAGS)

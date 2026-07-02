@@ -36,6 +36,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/conv2d.cpp
     src/mlp.cpp
     src/cnn.cpp
+    src/ops_resolver.cpp
     src/nk_format.cpp
     src/nk_loader.cpp
     src/netkit_api.cpp

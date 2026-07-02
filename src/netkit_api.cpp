@@ -511,6 +511,20 @@ nk_status_t nk_mlp_init_layer(nk_mlp_t* mlp,
     return NK_OK;
 }
 
+nk_status_t nk_mlp_init_activation_buffers(nk_mlp_t* mlp, nk_arena_t* arena, uint32_t batch_rows)
+{
+    if (!nk_mlp_is_valid(mlp) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    if (!MlpPtr(mlp)->net->InitActivationBuffers(*ArenaPtr(arena), batch_rows))
+        return NK_ERR_ARENA_OVERFLOW;
+    return NK_OK;
+}
+
+bool nk_mlp_has_activation_buffers(const nk_mlp_t* mlp)
+{
+    return mlp && MlpPtr(mlp)->net && MlpPtr(mlp)->net->HasActivationBuffers();
+}
+
 nk_status_t nk_mlp_forward(nk_mlp_t* mlp,
                            nk_arena_t* arena,
                            const nk_tensor_t* input,
@@ -518,7 +532,11 @@ nk_status_t nk_mlp_forward(nk_mlp_t* mlp,
 {
     if (!nk_mlp_is_valid(mlp) || !arena || !input || !output)
         return NK_ERR_INVALID_ARGUMENT;
+    if (!MlpPtr(mlp)->net->HasActivationBuffers())
+        return NK_ERR_NOT_INITIALIZED;
     MlpPtr(mlp)->net->forward(*AsTensor(input), *AsTensor(output), *ArenaPtr(arena));
+    if (!AsTensor(output)->data)
+        return NK_ERR_ARENA_OVERFLOW;
     return NK_OK;
 }
 
@@ -634,6 +652,24 @@ nk_status_t nk_cnn_init_dense_layer(nk_cnn_t* cnn,
     return NK_OK;
 }
 
+nk_status_t nk_cnn_init_activation_buffers(nk_cnn_t* cnn,
+                                           nk_arena_t* arena,
+                                           uint32_t in_h,
+                                           uint32_t in_w,
+                                           uint32_t in_c)
+{
+    if (!nk_cnn_is_valid(cnn) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    if (!CnnPtr(cnn)->net->InitActivationBuffers(*ArenaPtr(arena), in_h, in_w, in_c))
+        return NK_ERR_ARENA_OVERFLOW;
+    return NK_OK;
+}
+
+bool nk_cnn_has_activation_buffers(const nk_cnn_t* cnn)
+{
+    return cnn && CnnPtr(cnn)->net && CnnPtr(cnn)->net->HasActivationBuffers();
+}
+
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            nk_arena_t* arena,
                            const nk_tensor_t* input,
@@ -641,6 +677,8 @@ nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
 {
     if (!nk_cnn_is_valid(cnn) || !arena || !input || !output)
         return NK_ERR_INVALID_ARGUMENT;
+    if (!CnnPtr(cnn)->net->HasActivationBuffers())
+        return NK_ERR_NOT_INITIALIZED;
     Tensor& out = CnnPtr(cnn)->net->forward(*AsTensor(input), *ArenaPtr(arena));
     if (!out.data)
         return NK_ERR_ARENA_OVERFLOW;

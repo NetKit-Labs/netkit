@@ -237,13 +237,28 @@ make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 | `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Ops add/mul/scale/clip/matmul; FC/batch-norm on desktop/MPU; `ARM_MATH_LOOPUNROLL` |
 | `NETKIT_ARCH=<core>` | `ARM_MATH_*` (see table above) | Core-specific CMSIS-DSP/NN tuning |
 
-Dense weights use CMSIS-NN `[out, in]` layout via `FullyConnected` (same as PyTorch `nn.Linear`).
+Dense weights use CMSIS-NN `[out, in]` layout via `Kernels::FullyConnectedWithBias` (same as PyTorch `nn.Linear`).
 
 Float32 CMSIS-NN support is **experimental** upstream. Helium (MVE) and Neon targets get optimized kernels when `NETKIT_ARCH` and the toolchain flags align.
 
 ### Kernel dispatch (CRTP)
 
 Backends are composed at **compile time** via `active_kernel.hpp` — there is no runtime backend switch. Layer and ops code call `Kernels::Op(...)`; `ComposedKernel` tries CMSIS `Try*` methods and falls back to `ReferenceKernel`.
+
+### Layer dispatch (OpsResolver)
+
+CNN graph execution uses an **MCU-safe op registry** (`include/ops_resolver.hpp`) — function pointers and fixed static storage, no virtuals, heap, or `std::vector`.
+
+**C++26 constinit resolver tables**: `NkOpList<Ops...>` builds the lookup table at compile time into `constinit` static storage (no dynamic static initialization).
+
+```cpp
+#include "layer_op_registry.hpp"
+
+// Only conv + dense — linker can drop unused operator bodies
+cnn.SetOpsResolver(NkOpList<NkConv2DOpDescriptor, NkDenseOpDescriptor>::View());
+```
+
+`GetDefaultOpsResolver()` returns `NkAllLayerOps::View()` when `ops_resolver.cpp` is linked.
 
 Full architecture: [KERNELS.md](KERNELS.md).
 
