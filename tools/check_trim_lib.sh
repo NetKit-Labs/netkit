@@ -34,8 +34,16 @@ if ! defined_symbols libnetkit_trim.a | grep -q 'NkEvalConv2D'; then
   exit 1
 fi
 
-full_size=$(stat -f%z libnetkit.a)
-trim_size=$(stat -f%z libnetkit_trim.a)
+file_size() {
+  if stat -f%z "$1" >/dev/null 2>&1; then
+    stat -f%z "$1"
+  else
+    stat -c%s "$1"
+  fi
+}
+
+full_size=$(file_size libnetkit.a)
+trim_size=$(file_size libnetkit_trim.a)
 echo "libnetkit.a:      ${full_size} bytes"
 echo "libnetkit_trim.a: ${trim_size} bytes"
 
