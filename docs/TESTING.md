@@ -24,7 +24,7 @@ cmake -B cmake-build && cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Embedded runtime-only builds: `make NETKIT_TARGET=mcu lib` or `make NETKIT_TARGET=mpu lib` — see [BUILD_TARGETS.md](BUILD_TARGETS.md). Full regression requires `NETKIT_TARGET=cpu`. New users: [GETTING_STARTED.md](GETTING_STARTED.md).
+Embedded runtime-only builds: `make NETKIT_TARGET=mcu lib` or `make NETKIT_TARGET=mpu lib` — see [BUILD_TARGETS.md](BUILD_TARGETS.md). Full regression requires `NETKIT_TARGET=cpu`. MCU/MPU bring-up smoke: `make test-embedded-smoke-matrix` — see [Embedded smoke](#embedded-smoke-mcupu). New users: [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ## C++ regression (`.nk` loader + inference)
 
@@ -52,6 +52,21 @@ These tests validate **`.nk` parsing, weight loading, and forward inference** ag
 pip install -e python   # adds onnxruntime
 make test-python
 ```
+
+## Embedded smoke (MCU/MPU)
+
+`tests/embedded_smoke.c` validates the **lean firmware runtime** without `NETKIT_DESKTOP` APIs (`nk_run_all_tests`, CLI, etc.). It uses a caller-owned static arena (`NK_ARENA_DEFAULT_CAPACITY`), parses two hand models, and runs `nk_model_load` + `nk_model_run` on `test_mlp.nk` and `cnn_4x4_single.nk`.
+
+```bash
+make cmsis-init   # required for CMSIS profiles
+make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
+./tests/embedded_smoke
+
+# Full matrix (mcu/mpu × reference + CMSIS × CM4/M33/A32 arch flags)
+make test-embedded-smoke-matrix
+```
+
+Host execution exercises linking and inference paths before on-device bring-up. On hardware, link the same `libnetkit.a` profile and call `nk_model_run` with models stored in flash.
 
 This belongs in Python because ONNX is a host-side format only — the C++ runtime loads `.nk` exclusively.
 
@@ -155,5 +170,6 @@ GitHub Actions (`.github/workflows/ci.yml`):
 6. `make test` — full C++ embedded + C API + Python ONNX parity
 7. Example and CLI smoke tests
 8. CMake configure + build smoke test
+9. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS smoke matrix (last; rebuilds lean profiles)
 
 Model weights and embedded test cases are in the repo — no training in CI.

@@ -32,6 +32,8 @@
 #   make test         — full regression (cpu only)
 #   make test-cpp     — ./netkit test (cpu only)
 #   make test-c       — ./tests/test_c_api (cpu only)
+#   make embedded-smoke — lean MCU/MPU smoke binary
+#   make test-embedded-smoke-matrix — MCU/MPU + NETKIT_ARCH + CMSIS profiles
 #   make examples     — infer_cpp + infer_c
 #   make export-mnist — regenerate MNIST model + cases (requires numpy)
 #   make clean        — remove build products
@@ -137,6 +139,10 @@ TEST_C = tests/test_c_api
 TEST_C_SRC = tests/test_c_api.c
 TEST_C_OBJ = tests/test_c_api.o
 
+EMBEDDED_SMOKE = tests/embedded_smoke
+EMBEDDED_SMOKE_SRC = tests/embedded_smoke.c
+EMBEDDED_SMOKE_OBJ = tests/embedded_smoke.o
+
 NK_INFER = tools/nk_infer
 NK_INFER_SRC = tools/nk_infer.c
 NK_INFER_OBJ = tools/nk_infer.o
@@ -145,14 +151,15 @@ NK_INFER_OBJ = tools/nk_infer.o
         export-mnist export-mnist-cnn export-mnist-all export-op-matrix \
         export-fashion-mnist export-fashion-mnist-cnn export-fashion-mnist-all \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
-        cpu cpu-global mcu mcu-heap mpu mpu-heap
+        cpu cpu-global mcu mcu-heap mpu mpu-heap embedded-smoke test-embedded-smoke \
+        test-embedded-smoke-matrix
 
 ifeq ($(BUILD_CLI),1)
 all: $(TARGET)
 build-all: all examples $(TEST_C)
 else
 all: $(LIB)
-build-all: $(LIB) examples
+build-all: $(LIB) examples embedded-smoke
 endif
 
 lib: $(LIB)
@@ -176,6 +183,9 @@ $(TEST_C): $(LIB) $(TEST_C_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(TEST_C_OBJ) $(LIB)
 endif
 
+$(EMBEDDED_SMOKE): $(LIB) $(EMBEDDED_SMOKE_OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $(EMBEDDED_SMOKE_OBJ) $(LIB)
+
 ifeq ($(BUILD_CLI),1)
 $(NK_INFER): $(LIB) $(NK_INFER_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(NK_INFER_OBJ) $(LIB)
@@ -198,9 +208,12 @@ $(TEST_C_OBJ): $(TEST_C_SRC) include/netkit.h
 	$(CC) $(CFLAGS) -c $< -o $@
 endif
 
+$(EMBEDDED_SMOKE_OBJ): $(EMBEDDED_SMOKE_SRC) include/netkit.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
 clean:
-	rm -f $(CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(NK_INFER_OBJ) \
-	      $(TARGET) $(LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(NK_INFER)
+	rm -f $(CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) \
+	      $(TARGET) $(LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 	rm -f src/*.o examples/*.o tests/*.o tools/*.o
 	rm -rf build/cmsis_nn build/cmsis_dsp
 
@@ -236,6 +249,14 @@ example-c: $(EXAMPLE_C)
 example-cpp: $(EXAMPLE_CPP)
 
 examples: example-cpp example-c
+
+embedded-smoke: $(EMBEDDED_SMOKE)
+
+test-embedded-smoke: embedded-smoke
+	./$(EMBEDDED_SMOKE)
+
+test-embedded-smoke-matrix:
+	./tools/run_embedded_smoke.sh
 
 cpu:
 	$(MAKE) NETKIT_TARGET=cpu all
