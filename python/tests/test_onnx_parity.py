@@ -12,8 +12,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "models"
 
-# mnist_cnn / fashion_mnist_cnn ONNX sidecars do not match .nk via ONNX Runtime today;
-# .nk correctness is covered by C++ embedded TCAS tests.
+# Full suite: every .nk model with a matching ONNX sidecar.
 PARITY_PAIRS = [
     ("test_mlp.nk", "test_mlp.onnx"),
     ("mlp_hand.nk", "mlp_hand.onnx"),
@@ -24,11 +23,12 @@ PARITY_PAIRS = [
     ("op_matrix_cnn.nk", "op_matrix_cnn.onnx"),
     ("deep_mlp.nk", "deep_mlp.onnx"),
     ("mnist_mlp.nk", "mnist_mlp.onnx"),
+    ("mnist_cnn.nk", "mnist_cnn.onnx"),
     ("fashion_mnist_mlp.nk", "fashion_mnist_mlp.onnx"),
+    ("fashion_mnist_cnn.nk", "fashion_mnist_cnn.onnx"),
 ]
 
-# Full suite when every pair is present (CNN tutorial models excluded above).
-EXPECTED_CASES = 49
+EXPECTED_CASES = 69
 
 
 def _nk_infer_bin() -> Path:

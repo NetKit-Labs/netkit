@@ -51,7 +51,7 @@ PyTorch/TensorFlow exports often include `MatMul`, `Add`, `BatchNormalization`, 
 | Suite | What it validates |
 |-------|-------------------|
 | C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (69 cases) |
-| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (49 cases; tutorial CNN ONNX exports pending) |
+| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (69 cases) |
 
 ```bash
 make                          # build netkit CLI

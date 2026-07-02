@@ -254,7 +254,7 @@ Bias add (ref FC)     → CMSIS-NN add → CMSIS-DSP add → reference
 
 ## Testing
 
-Full regression (`make test` — 69 embedded C++ cases + 49 Python ONNX parity) requires **`NETKIT_TARGET=cpu`**. Validate on desktop first, then run device smoke tests with the lean MCU/MPU library.
+Full regression (`make test` — 69 embedded C++ cases + 69 Python ONNX parity) requires **`NETKIT_TARGET=cpu`**. Validate on desktop first, then run device smoke tests with the lean MCU/MPU library.
 
 ```bash
 make cmsis-init

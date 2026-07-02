@@ -233,8 +233,13 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
             continue
 
         if layer_type == "flatten":
+            # netkit flattens NHWC (spatial then channels); ONNX Conv tensors are NCHW.
+            nhwc_out = f"nhwc{layer_idx}"
+            nodes.append(
+                helper.make_node("Transpose", [tensor], [nhwc_out], perm=[0, 2, 3, 1])
+            )
             flat_out = f"flat{layer_idx}"
-            nodes.append(helper.make_node("Flatten", [tensor], [flat_out], axis=1))
+            nodes.append(helper.make_node("Flatten", [nhwc_out], [flat_out], axis=1))
             tensor = flat_out
             dense_in = spatial_h * spatial_w * channels
             layer_idx += 1

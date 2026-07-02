@@ -10,7 +10,7 @@ make build-all    # netkit + examples + C API test binary (cpu)
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # ./netkit test only (69 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
-make test-python  # .nk vs ONNX Runtime (49 cases; requires onnxruntime)
+make test-python  # .nk vs ONNX Runtime (69 cases; requires onnxruntime)
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
@@ -46,7 +46,7 @@ These tests validate **`.nk` parsing, weight loading, and forward inference** ag
 
 ## Python ONNX parity
 
-`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (49 cases; `mnist_cnn` and `fashion_mnist_cnn` excluded until ONNX sidecars match).
+`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (69 cases).
 
 ```bash
 pip install -e python   # adds onnxruntime
