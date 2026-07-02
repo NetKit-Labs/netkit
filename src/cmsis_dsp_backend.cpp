@@ -4,6 +4,7 @@
  * CMSIS-DSP is Apache-2.0 — see third_party/CMSIS-DSP/LICENSE.
  */
 #include "cmsis_dsp_kernel.hpp"
+#include "netkit_config.h"
 
 #if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
 

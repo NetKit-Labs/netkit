@@ -4,6 +4,7 @@
  * CMSIS-NN is Apache-2.0 — see third_party/CMSIS-NN/LICENSE.
  */
 #include "cmsis_nn_kernel.hpp"
+#include "netkit_config.h"
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
 
