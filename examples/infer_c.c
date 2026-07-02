@@ -42,14 +42,25 @@ int main(int argc, char** argv)
 
     alignas(max_align_t) static unsigned char arena_memory[NK_ARENA_DEFAULT_CAPACITY];
     nk_arena_t arena;
+    int exit_code = 0;
+
+#if defined(NETKIT_ARENA_HEAP)
+    if (nk_arena_init_heap(&arena, NK_ARENA_DEFAULT_CAPACITY) != NK_OK)
+    {
+        fprintf(stderr, "arena init failed\n");
+        return 1;
+    }
+#else
     nk_arena_init(&arena, arena_memory, sizeof(arena_memory));
+#endif
 
     nk_model_t model;
     const nk_status_t load_status = nk_model_load(nk_path, &arena, &model);
     if (load_status != NK_OK)
     {
         fprintf(stderr, "load failed: %s (%s)\n", nk_status_string(load_status), nk_last_error());
-        return 1;
+        exit_code = 1;
+        goto done;
     }
 
     float output[4096];
@@ -64,7 +75,8 @@ int main(int argc, char** argv)
     if (run_status != NK_OK)
     {
         fprintf(stderr, "run failed: %s (%s)\n", nk_status_string(run_status), nk_last_error());
-        return 1;
+        exit_code = 1;
+        goto done;
     }
 
     printf("Model: %s\n", nk_path);
@@ -78,5 +90,9 @@ int main(int argc, char** argv)
         printf("%s%.4f", i ? ", " : "", output[i]);
     printf("\n");
 
-    return 0;
+done:
+#if defined(NETKIT_ARENA_HEAP)
+    nk_arena_destroy_heap(&arena);
+#endif
+    return exit_code;
 }

@@ -4,6 +4,7 @@
 #include "tensor_factory.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
+#include "arena_util.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,7 +16,15 @@ namespace Cli
     {
         constexpr uint32_t kMaxInputFloats = 4096;
 
-        alignas(std::max_align_t) unsigned char g_arena_buffer[Arena::kDefaultCapacity];
+#if !defined(NETKIT_ARENA_HEAP)
+        alignas(std::max_align_t) unsigned char g_arena_buffer[ArenaUtil::kMnistCnnCapacity];
+#endif
+
+        std::size_t ArenaCapacityForModel(const NkLoader::ParsedModel& parsed)
+        {
+            const bool is_cnn = parsed.header.network_kind == NkFormat::NetworkKind::Cnn;
+            return ArenaUtil::CapacityForInputElements(NkLoader::InputElements(parsed), is_cnn);
+        }
 
         void PrintHelp(const char* program)
         {
@@ -208,8 +217,19 @@ namespace Cli
             {
                 NkLoader::PrintNetworkSummary(resolved, parsed);
 
-                Arena arena;
-                arena.init(g_arena_buffer, sizeof(g_arena_buffer));
+                const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
+                ArenaUtil::Scoped arena_scope(arena_capacity,
+#if defined(NETKIT_ARENA_HEAP)
+                                              nullptr);
+#else
+                                              g_arena_buffer);
+#endif
+                if (!arena_scope)
+                {
+                    std::cerr << "Failed to initialize arena\n";
+                    return 1;
+                }
+                Arena& arena = arena_scope.Get();
 
                 const uint32_t input_elements = NkLoader::InputElements(parsed);
                 float input_values[kMaxInputFloats] = {};
@@ -311,8 +331,19 @@ namespace Cli
                 return 1;
             }
 
-            Arena arena;
-            arena.init(g_arena_buffer, sizeof(g_arena_buffer));
+            const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
+            ArenaUtil::Scoped arena_scope(arena_capacity,
+#if defined(NETKIT_ARENA_HEAP)
+                                          nullptr);
+#else
+                                          g_arena_buffer);
+#endif
+            if (!arena_scope)
+            {
+                std::cerr << "Failed to initialize arena\n";
+                return 1;
+            }
+            Arena& arena = arena_scope.Get();
 
             NkLoader::PrintNetworkSummary(resolved, parsed);
             std::cout << "\n";

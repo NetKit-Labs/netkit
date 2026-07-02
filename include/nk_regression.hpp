@@ -11,5 +11,8 @@ namespace NkRegression
     };
 
     RunSummary RunModelTests(const char* nk_path);
-    RunSummary RunNkOnnxParity(const char* nk_path, const char* onnx_path);
+
+    // CPU heap regression: one malloc for the full suite; call EndRegressionArena() when done.
+    void BeginRegressionArena();
+    void EndRegressionArena();
 }

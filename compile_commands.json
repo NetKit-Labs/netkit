@@ -1,107 +1,92 @@
 [
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/main.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/main.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/main.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/cli.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/cli.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/cli.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/test.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/test.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/test.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/arena.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/arena.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/arena.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/tensor_factory.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/tensor_factory.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/tensor_factory.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/tensor_access.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/tensor_access.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/tensor_access.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/ops.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/ops.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/ops.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/conv2d.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/conv2d.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/conv2d.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/mlp.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/mlp.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/mlp.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/cnn.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/cnn.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/cnn.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/nk_regression.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/nk_regression.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/nk_regression.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/netkit_api.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/netkit_api.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/netkit_api.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/protobuf_wire.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/protobuf_wire.cpp"
-  },
-  {
-    "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/onnx_model.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/onnx_model.cpp"
-  },
-  {
-    "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/onnx_importer.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/onnx_importer.cpp"
-  },
-  {
-    "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/test_onnx.cpp",
-    "file": "/Users/jimlavrenz/workspace/netkit/src/test_onnx.cpp"
-  },
-  {
-    "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/nk_format.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/nk_format.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/nk_format.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c src/nk_loader.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c src/nk_loader.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/src/nk_loader.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -c examples/infer_cpp.cpp",
+    "command": "clang++ -std=c++26 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c examples/infer_cpp.cpp",
     "file": "/Users/jimlavrenz/workspace/netkit/examples/infer_cpp.cpp"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -c examples/infer_c.c",
+    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c tools/nk_infer.c",
+    "file": "/Users/jimlavrenz/workspace/netkit/tools/nk_infer.c"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c examples/infer_c.c",
     "file": "/Users/jimlavrenz/workspace/netkit/examples/infer_c.c"
   },
   {
     "directory": "/Users/jimlavrenz/workspace/netkit",
-    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -c tests/test_c_api.c",
+    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c tests/test_c_api.c",
     "file": "/Users/jimlavrenz/workspace/netkit/tests/test_c_api.c"
   }
 ]

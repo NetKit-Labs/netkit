@@ -5,6 +5,7 @@
  * Run:   ./examples/infer_cpp models/test_mlp.nk 1 2
  */
 #include "arena.hpp"
+#include "arena_util.hpp"
 #include "cnn.hpp"
 #include "nk_loader.hpp"
 #include "mlp.hpp"
@@ -75,8 +76,13 @@ int main(int argc, char** argv)
         input_buffer[i] = std::strtof(argv[i + 2], nullptr);
 
     alignas(std::max_align_t) static unsigned char arena_memory[Arena::kDefaultCapacity];
-    Arena arena;
-    arena.init(arena_memory, sizeof(arena_memory));
+    ArenaUtil::Scoped arena_scope(Arena::kDefaultCapacity, arena_memory);
+    if (!arena_scope)
+    {
+        std::cerr << "arena init failed\n";
+        return 1;
+    }
+    Arena& arena = arena_scope.Get();
 
     std::cout << "Model: " << nk_path << "\n";
 

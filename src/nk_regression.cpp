@@ -1,7 +1,7 @@
 #include "nk_regression.hpp"
 #include "nk_loader.hpp"
-#include "onnx_importer.hpp"
 #include "tensor_factory.hpp"
+#include "arena_util.hpp"
 
 #include <array>
 #include <cmath>
@@ -14,13 +14,15 @@ namespace NkRegression
 {
     namespace
     {
-        constexpr std::size_t kHandArenaCapacity = Arena::kDefaultCapacity;
-        constexpr std::size_t kMnistMlpArenaCapacity = 2u * 1024u * 1024u;
-        constexpr std::size_t kMnistCnnArenaCapacity = 4u * 1024u * 1024u;
+        constexpr std::size_t kHandArenaCapacity = ArenaUtil::kHandCapacity;
+        constexpr std::size_t kMnistMlpArenaCapacity = ArenaUtil::kMnistMlpCapacity;
+        constexpr std::size_t kMnistCnnArenaCapacity = ArenaUtil::kMnistCnnCapacity;
 
+#if !defined(NETKIT_ARENA_HEAP)
         alignas(std::max_align_t) unsigned char g_hand_arena[kHandArenaCapacity];
         alignas(std::max_align_t) unsigned char g_mnist_mlp_arena[kMnistMlpArenaCapacity];
         alignas(std::max_align_t) unsigned char g_mnist_cnn_arena[kMnistCnnArenaCapacity];
+#endif
 
         bool FileReadable(const char* path)
         {
@@ -55,6 +57,7 @@ namespace NkRegression
             return kHandArenaCapacity;
         }
 
+#if !defined(NETKIT_ARENA_HEAP)
         unsigned char* ArenaBufferForCapacity(std::size_t capacity)
         {
             if (capacity == kMnistCnnArenaCapacity)
@@ -63,6 +66,23 @@ namespace NkRegression
                 return g_mnist_mlp_arena;
             return g_hand_arena;
         }
+#endif
+
+#if defined(NETKIT_ARENA_HEAP)
+        Arena g_regression_heap_arena{};
+        bool g_regression_heap_ready = false;
+
+        Arena& RegressionHeapArena()
+        {
+            if (!g_regression_heap_ready)
+            {
+                g_regression_heap_ready =
+                    ArenaUtil::Init(g_regression_heap_arena, kMnistCnnArenaCapacity, nullptr);
+            }
+            g_regression_heap_arena.reset();
+            return g_regression_heap_arena;
+        }
+#endif
 
         bool FloatNear(float a, float b, float eps)
         {
@@ -299,169 +319,6 @@ namespace NkRegression
             return true;
         }
 
-        bool ForwardMlpNk(const char* nk_path,
-                          const float* input_values,
-                          uint32_t input_count,
-                          float* output,
-                          uint32_t output_count,
-                          Arena& arena)
-        {
-            MLPNetwork* network = nullptr;
-            std::array<uint32_t, kMaxTensorRank> input_shape{};
-            uint32_t input_rank = 0;
-
-            if (NkLoader::LoadMLP(nk_path, arena, network, input_shape, input_rank).status !=
-                    NkLoader::LoadStatus::Ok ||
-                !network || !network->IsValid())
-                return false;
-
-            if (input_count != input_shape[0] * input_shape[1])
-                return false;
-
-            Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
-            Tensor out = TensorFactory::Create2D(arena, input_shape[0], output_count / input_shape[0]);
-            if (!input.data || !out.data)
-                return false;
-
-            float* input_data = static_cast<float*>(input.data);
-            for (uint32_t i = 0; i < input_count; ++i)
-                input_data[i] = input_values[i];
-
-            network->forward(input, out, arena);
-            if (!out.data || out.num_elements != output_count)
-                return false;
-
-            std::memcpy(output, out.data, static_cast<std::size_t>(output_count) * sizeof(float));
-            return true;
-        }
-
-        bool ForwardMlpOnnx(const char* onnx_path,
-                            const float* input_values,
-                            uint32_t input_count,
-                            float* output,
-                            uint32_t output_count,
-                            Arena& arena)
-        {
-            MLPNetwork* mlp = nullptr;
-            CNNNetwork* cnn = nullptr;
-            NkLoader::NetworkKind kind = NkLoader::NetworkKind::Unknown;
-            std::array<uint32_t, kMaxTensorRank> input_shape{};
-            uint32_t input_rank = 0;
-
-            if (OnnxImporter::LoadFromOnnx(onnx_path, arena, kind, mlp, cnn, input_shape, input_rank).status !=
-                    OnnxImporter::ImportStatus::Ok ||
-                kind != NkLoader::NetworkKind::Mlp || !mlp)
-                return false;
-
-            if (input_count != input_shape[0] * input_shape[1])
-                return false;
-
-            Tensor input = TensorFactory::Create2D(arena, input_shape[0], input_shape[1]);
-            Tensor out = TensorFactory::Create2D(arena, input_shape[0], output_count / input_shape[0]);
-            if (!input.data || !out.data)
-                return false;
-
-            float* input_data = static_cast<float*>(input.data);
-            for (uint32_t i = 0; i < input_count; ++i)
-                input_data[i] = input_values[i];
-
-            mlp->forward(input, out, arena);
-            if (!out.data || out.num_elements != output_count)
-                return false;
-
-            std::memcpy(output, out.data, static_cast<std::size_t>(output_count) * sizeof(float));
-            return true;
-        }
-
-        bool ForwardCnnNk(const char* nk_path,
-                          const std::array<uint32_t, kMaxTensorRank>& input_shape,
-                          const float* input_values,
-                          uint32_t input_count,
-                          float* output,
-                          uint32_t& output_count,
-                          Arena& arena)
-        {
-            CNNNetwork* network = nullptr;
-            std::array<uint32_t, kMaxTensorRank> loaded_shape{};
-            uint32_t input_rank = 0;
-
-            if (NkLoader::LoadCNN(nk_path, arena, network, loaded_shape, input_rank).status !=
-                    NkLoader::LoadStatus::Ok ||
-                !network || !network->IsValid())
-                return false;
-
-            const uint32_t required = input_shape[0] * input_shape[1] * input_shape[2];
-            if (input_count != required)
-                return false;
-
-            float input_buffer[NkFormat::kMaxCaseFloats] = {};
-            for (uint32_t i = 0; i < input_count; ++i)
-                input_buffer[i] = input_values[i];
-
-            Tensor input = MakeNhwcInput(input_buffer, input_shape[0], input_shape[1], input_shape[2]);
-            Tensor& out = network->forward(input, arena);
-            if (!out.data)
-                return false;
-
-            output_count = out.num_elements;
-            std::memcpy(output, out.data, static_cast<std::size_t>(output_count) * sizeof(float));
-            return true;
-        }
-
-        bool ForwardCnnOnnx(const char* onnx_path,
-                            const std::array<uint32_t, kMaxTensorRank>& input_shape,
-                            const float* input_values,
-                            uint32_t input_count,
-                            float* output,
-                            uint32_t& output_count,
-                            Arena& arena)
-        {
-            MLPNetwork* mlp = nullptr;
-            CNNNetwork* network = nullptr;
-            NkLoader::NetworkKind kind = NkLoader::NetworkKind::Unknown;
-            std::array<uint32_t, kMaxTensorRank> loaded_shape{};
-            uint32_t input_rank = 0;
-
-            if (OnnxImporter::LoadFromOnnx(onnx_path, arena, kind, mlp, network, loaded_shape, input_rank).status !=
-                    OnnxImporter::ImportStatus::Ok ||
-                kind != NkLoader::NetworkKind::Cnn || !network)
-                return false;
-
-            const uint32_t required = input_shape[0] * input_shape[1] * input_shape[2];
-            if (input_count != required)
-                return false;
-
-            float input_buffer[NkFormat::kMaxCaseFloats] = {};
-            for (uint32_t i = 0; i < input_count; ++i)
-                input_buffer[i] = input_values[i];
-
-            Tensor input = MakeNhwcInput(input_buffer, input_shape[0], input_shape[1], input_shape[2]);
-            Tensor& out = network->forward(input, arena);
-            if (!out.data)
-                return false;
-
-            output_count = out.num_elements;
-            std::memcpy(output, out.data, static_cast<std::size_t>(output_count) * sizeof(float));
-            return true;
-        }
-
-        bool CompareOutputs(const float* nk_out,
-                            const float* onnx_out,
-                            uint32_t count,
-                            float tol,
-                            const char* label)
-        {
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                if (!FloatNear(nk_out[i], onnx_out[i], tol))
-                {
-                    std::cout << "FAIL " << label << ": nk/onnx mismatch at out[" << i << "] "
-                              << nk_out[i] << " vs " << onnx_out[i] << "\n";
-                    return false;
-                }
-            }
-            return true;
-        }
     }
 
     RunSummary RunModelTests(const char* nk_path)
@@ -497,7 +354,7 @@ namespace NkRegression
 
         const NkLoader::NetworkKind kind = parse_result.kind;
         const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
-        unsigned char* arena_buffer = ArenaBufferForCapacity(arena_capacity);
+        (void)arena_capacity;
 
         std::cout << "Model: " << resolved << "\n";
         std::cout << "Embedded cases: " << tests.num_cases << "\n";
@@ -508,8 +365,24 @@ namespace NkRegression
             const NkLoader::TestCase& test_case = tests.cases[i];
             std::cout << "\nCase: " << test_case.name << "\n";
 
-            Arena arena;
-            arena.init(arena_buffer, arena_capacity);
+#if defined(NETKIT_ARENA_HEAP)
+            Arena& arena = RegressionHeapArena();
+            if (!g_regression_heap_ready || !arena.base)
+            {
+                std::cout << "FAIL " << test_case.name << ": arena init failed\n";
+                ++summary.failed;
+                continue;
+            }
+#else
+            ArenaUtil::Scoped arena_scope(arena_capacity, ArenaBufferForCapacity(arena_capacity));
+            if (!arena_scope)
+            {
+                std::cout << "FAIL " << test_case.name << ": arena init failed\n";
+                ++summary.failed;
+                continue;
+            }
+            Arena& arena = arena_scope.Get();
+#endif
 
             if (kind == NkLoader::NetworkKind::Mlp)
             {
@@ -561,121 +434,21 @@ namespace NkRegression
         return summary;
     }
 
-    RunSummary RunNkOnnxParity(const char* nk_path, const char* onnx_path)
+    void BeginRegressionArena()
     {
-        RunSummary summary{};
+#if defined(NETKIT_ARENA_HEAP)
+        (void)RegressionHeapArena();
+#endif
+    }
 
-        char nk_buffer[NkLoader::kMaxPathLen] = {};
-        char onnx_buffer[NkLoader::kMaxPathLen] = {};
-        const char* resolved_nk = ResolveModelPath(nk_path, nk_buffer, sizeof(nk_buffer));
-        const char* resolved_onnx = ResolveModelPath(onnx_path, onnx_buffer, sizeof(onnx_buffer));
-
-        NkLoader::ParsedModel parsed{};
-        if (NkLoader::ParseFile(resolved_nk, parsed).status != NkLoader::LoadStatus::Ok)
+    void EndRegressionArena()
+    {
+#if defined(NETKIT_ARENA_HEAP)
+        if (g_regression_heap_ready)
         {
-            std::cout << "FAIL ONNX parity: cannot parse " << resolved_nk << "\n";
-            ++summary.failed;
-            return summary;
+            ArenaUtil::Release(g_regression_heap_arena);
+            g_regression_heap_ready = false;
         }
-
-        NkLoader::TestSuite tests{};
-        if (NkLoader::ReadTestSuite(resolved_nk, tests).status != NkLoader::LoadStatus::Ok)
-        {
-            std::cout << "FAIL ONNX parity: no embedded tests in " << resolved_nk << "\n";
-            ++summary.failed;
-            return summary;
-        }
-
-        const NkLoader::NetworkKind kind = parsed.header.network_kind == NkFormat::NetworkKind::Mlp
-                                               ? NkLoader::NetworkKind::Mlp
-                                               : NkLoader::NetworkKind::Cnn;
-
-        std::cout << "ONNX parity model: " << resolved_nk << "\n";
-        std::cout << "  ONNX model: " << resolved_onnx << "\n";
-
-        const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
-        unsigned char* arena_buffer = ArenaBufferForCapacity(arena_capacity);
-
-        for (uint32_t i = 0; i < tests.num_cases; ++i)
-        {
-            const NkLoader::TestCase& test_case = tests.cases[i];
-
-            float nk_out[NkFormat::kMaxCaseFloats] = {};
-            float onnx_out[NkFormat::kMaxCaseFloats] = {};
-            uint32_t nk_out_count = test_case.output_count;
-            uint32_t onnx_out_count = test_case.output_count;
-
-            Arena nk_arena;
-            nk_arena.init(arena_buffer, arena_capacity);
-
-            bool ok = false;
-            if (kind == NkLoader::NetworkKind::Mlp)
-            {
-                nk_out_count = NkLoader::OutputElements(parsed);
-                if (!ForwardMlpNk(resolved_nk, test_case.input, test_case.input_count, nk_out, nk_out_count, nk_arena))
-                {
-                    std::cout << "FAIL ONNX parity " << test_case.name << ": NK forward failed\n";
-                    ++summary.failed;
-                    continue;
-                }
-
-                Arena onnx_arena;
-                onnx_arena.init(arena_buffer, arena_capacity);
-                if (!ForwardMlpOnnx(resolved_onnx, test_case.input, test_case.input_count, onnx_out, nk_out_count,
-                                    onnx_arena))
-                {
-                    std::cout << "FAIL ONNX parity " << test_case.name << ": ONNX forward failed\n";
-                    ++summary.failed;
-                    continue;
-                }
-
-                ok = CompareOutputs(nk_out, onnx_out, nk_out_count, tests.tolerance, test_case.name);
-            }
-            else
-            {
-                std::array<uint32_t, kMaxTensorRank> input_shape{};
-                for (uint32_t r = 0; r < parsed.header.input_rank; ++r)
-                    input_shape[r] = parsed.header.input_shape[r];
-
-                if (!ForwardCnnNk(resolved_nk, input_shape, test_case.input, test_case.input_count, nk_out,
-                                  nk_out_count, nk_arena))
-                {
-                    std::cout << "FAIL ONNX parity " << test_case.name << ": NK forward failed\n";
-                    ++summary.failed;
-                    continue;
-                }
-
-                Arena onnx_arena;
-                onnx_arena.init(arena_buffer, arena_capacity);
-                if (!ForwardCnnOnnx(resolved_onnx, input_shape, test_case.input, test_case.input_count, onnx_out,
-                                    onnx_out_count, onnx_arena))
-                {
-                    std::cout << "FAIL ONNX parity " << test_case.name << ": ONNX forward failed\n";
-                    ++summary.failed;
-                    continue;
-                }
-
-                if (nk_out_count != onnx_out_count)
-                {
-                    std::cout << "FAIL ONNX parity " << test_case.name << ": output size " << nk_out_count << " vs "
-                              << onnx_out_count << "\n";
-                    ++summary.failed;
-                    continue;
-                }
-
-                ok = CompareOutputs(nk_out, onnx_out, nk_out_count, tests.tolerance, test_case.name);
-            }
-
-            if (ok)
-            {
-                std::cout << "PASS ONNX parity " << test_case.name << " (nk vs onnx, " << nk_out_count
-                          << " outputs)\n";
-                ++summary.passed;
-            }
-            else
-                ++summary.failed;
-        }
-
-        return summary;
+#endif
     }
 }

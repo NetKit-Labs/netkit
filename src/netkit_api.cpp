@@ -6,12 +6,13 @@
 #include "conv2d.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
+#if defined(NETKIT_DESKTOP)
 #include "nk_regression.hpp"
 #include "cli.hpp"
 #include "test.hpp"
+#endif
 #include <cstdio>
 #include <cstring>
-#include <iostream>
 #include <new>
 #include <span>
 
@@ -270,6 +271,25 @@ size_t nk_arena_remaining(const nk_arena_t* arena)
 {
     return arena ? ArenaPtr(arena)->remaining() : 0;
 }
+
+#if defined(NETKIT_ARENA_HEAP)
+nk_status_t nk_arena_init_heap(nk_arena_t* arena, size_t capacity)
+{
+    if (!arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    std::memset(arena->storage, 0, sizeof(arena->storage));
+    if (!ArenaPtr(arena)->init_heap(capacity))
+        return NK_ERR_ARENA_OVERFLOW;
+    return NK_OK;
+}
+
+void nk_arena_destroy_heap(nk_arena_t* arena)
+{
+    if (!arena)
+        return;
+    ArenaPtr(arena)->destroy_heap();
+}
+#endif
 
 nk_status_t nk_tensor_create_2d(nk_arena_t* arena, uint32_t rows, uint32_t cols, nk_tensor_t* out)
 {
@@ -962,6 +982,7 @@ nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_
     return NK_OK;
 }
 
+#if defined(NETKIT_DESKTOP)
 nk_test_summary_t nk_run_model_tests(const char* nk_path)
 {
     nk_test_summary_t summary{};
@@ -984,5 +1005,6 @@ int nk_cli_run(int argc, char** argv)
 {
     return Cli::Run(argc, argv);
 }
+#endif /* NETKIT_DESKTOP */
 
 } /* extern "C" */

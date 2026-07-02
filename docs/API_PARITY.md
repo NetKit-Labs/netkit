@@ -15,11 +15,11 @@ C source in this repository is limited to `tests/test_c_api.c` and `examples/inf
 2. **Naming:** C functions use the `nk_` prefix and snake_case (`nk_model_load`, `nk_ops_relu`).
 3. **Errors:** C functions return `nk_status_t`; details are available via `nk_last_error()`.
 4. **Memory:** C handles (`nk_arena_t`, `nk_model_t`, `nk_mlp_t`, `nk_cnn_t`) use fixed-size opaque storage for stack allocation — no heap in the handle itself.
-5. **Regression tests:** embedded in `.nk` files (`TCAS` section). C callers use `nk_run_model_tests()` / `nk_run_all_tests()`.
+5. **Regression tests:** embedded in `.nk` files (`TCAS` section). C callers use `nk_run_model_tests()` / `nk_run_all_tests()` (**CPU / desktop builds only**).
 
 When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-api.md](cpp-api.md).
 
-Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md).
+Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md), [BUILD_TARGETS.md](BUILD_TARGETS.md), [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ## Test suites
 
@@ -29,7 +29,7 @@ Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md).
 | C API | C23 | `make test-c` | `tests/test_c_api.c` |
 | Both | — | `make test` | runs C++ then C |
 
-Both suites exercise the same **72 inference regression cases** (16 hand-checked + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity); the C suite adds direct API smoke tests (arena, tensor, ops, load/run).
+Both suites exercise the same **36 embedded `.nk` inference cases** (16 hand-checked + 10 MNIST MLP + 10 MNIST CNN); the C suite adds direct API smoke tests (arena, tensor, ops, load/run). ONNX parity is tested separately in Python — see [TESTING.md](TESTING.md).
 
 ## Symbol map
 
@@ -46,6 +46,7 @@ Both suites exercise the same **72 inference regression cases** (16 hand-checked
 | C++ | C |
 |-----|---|
 | `Arena::init` | `nk_arena_init` |
+| `Arena::init_heap` / `destroy_heap` (`NETKIT_ARENA_HEAP`) | `nk_arena_init_heap` / `nk_arena_destroy_heap` |
 | `Arena::alloc` | `nk_arena_alloc` (size + alignment) |
 | `Arena::reset` | `nk_arena_reset` |
 | `Arena::capacity` / `offset` / `remaining` | `nk_arena_capacity`, `nk_arena_used`, `nk_arena_remaining` |

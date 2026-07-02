@@ -1,14 +1,36 @@
 # C++ API Reference (C++26)
 
-Headers live in [`include/`](../include/). All implementation files use `-std=c++26`.
+Headers live in [`include/`](../include/). Configuration: [`include/netkit_config.h`](../include/netkit_config.h). All implementation files use `-std=c++26`.
+
+**New users:** [GETTING_STARTED.md](GETTING_STARTED.md) · **Philosophy:** [PHILOSOPHY.md](PHILOSOPHY.md)
 
 **Numeric type:** inference uses **float32 only** today — see [DATATYPES.md](DATATYPES.md) for the quantized-type roadmap (float16, int16, int8, int4 planned).
+
+## Build configuration
+
+| Makefile | Macro | Outputs |
+|----------|-------|---------|
+| `NETKIT_TARGET=cpu` | `NETKIT_TARGET_CPU`, `NETKIT_DESKTOP` | `netkit` CLI + full `libnetkit.a` |
+| `NETKIT_TARGET=mcu` | `NETKIT_TARGET_MCU` | Lean `libnetkit.a` only |
+| `NETKIT_TARGET=mpu` | `NETKIT_TARGET_MPU` | Lean `libnetkit.a` only |
+
+| Flag | Macro | Arena |
+|------|-------|-------|
+| CPU default | `NETKIT_ARENA_HEAP` | Heap API; CLI uses model-sized allocation |
+| `NETKIT_GLOBAL_ARENA=1` | `NETKIT_GLOBAL_ARENA` | Static buffer on CPU |
+| `NETKIT_HEAP_ARENA=1` (MCU/MPU) | `NETKIT_ARENA_HEAP` | Optional heap on embedded |
+
+`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`: **4 MiB** (CPU), **64 KiB** (MCU), **128 KiB** (MPU).
+
+See [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
 ## Core headers
 
 | Header | Purpose |
 |--------|---------|
+| `netkit_config.h` | Compile-time target and arena macros (C and C++) |
 | `arena.hpp` | Bump-pointer arena allocator |
+| `arena_util.hpp` | `ArenaUtil::Init`, `Scoped`, model capacity helpers |
 | `tensor.hpp` | `Tensor`, `DataType`, `kMaxTensorRank` |
 | `tensor_factory.hpp` | Tensor creation, fill, print |
 | `tensor_access.hpp` | NHWC indexing helpers |
@@ -31,7 +53,7 @@ See [ARENA.md](ARENA.md) for the full bump-allocator guide.
 
 ```cpp
 struct Arena {
-    static constexpr std::size_t kDefaultCapacity = 64 * 1024;
+    // kDefaultCapacity: 4 MiB (CPU), 64 KiB (MCU), 128 KiB (MPU) — see netkit_config.h
 
     void init(void* memory, std::size_t size);
     void* alloc(std::size_t size, std::size_t alignment);  // alignment: power of two
@@ -45,6 +67,32 @@ struct Arena {
 **Why alignment matters:** weight blobs can have an odd float count, leaving the arena offset at 4 mod 8 on 64-bit platforms. Without padding, a following `MLPNetwork` or `CNNNetwork` allocation would be misaligned for `placement new`. The engine passes the correct `alignof` at every internal call site.
 
 All network and tensor allocations during load/inference draw from the arena. No `free()` — call `reset()` to reuse the buffer.
+
+### ArenaUtil (`arena_util.hpp`)
+
+Target-aware helpers used by the CLI and regression harness:
+
+```cpp
+namespace ArenaUtil {
+    constexpr std::size_t kHandCapacity = 64 * 1024;
+    constexpr std::size_t kMnistMlpCapacity = 2 * 1024 * 1024;
+    constexpr std::size_t kMnistCnnCapacity = 4 * 1024 * 1024;
+
+    std::size_t CapacityForInputElements(uint32_t input_elements, bool is_cnn);
+    bool Init(Arena& arena, std::size_t capacity, void* global_buffer = nullptr);
+    void Release(Arena& arena);  // CPU only: frees heap backing; no-op on MCU/MPU
+    class Scoped;  // RAII — calls Release on destruction (CPU heap builds)
+}
+```
+
+On CPU (heap default), `Init(capacity, nullptr)` calls `arena.init_heap()` once. Regression reuses one heap buffer for the full suite (`NkRegression::BeginRegressionArena` / `EndRegressionArena`). On MCU/MPU, pass your static buffer pointer; `destroy_heap()` never frees memory.
+
+When `NETKIT_ARENA_HEAP` is defined, `Arena` also provides:
+
+```cpp
+bool init_heap(std::size_t size);
+void destroy_heap();
+```
 
 ---
 
@@ -262,7 +310,6 @@ LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
 namespace NkRegression {
     struct RunSummary { uint32_t passed; uint32_t failed; };
     RunSummary RunModelTests(const char* nk_path);
-    RunSummary RunNkOnnxParity(const char* nk_path, const char* onnx_path);
 }
 ```
 

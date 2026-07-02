@@ -1,9 +1,9 @@
 # CLI Reference
 
-The `netkit` binary is a **desktop development tool** implemented in C++26 (`src/cli.cpp`, entry via `Cli::Run()` in `src/main.cpp`). It wraps the same engine as the library APIs.
+The `netkit` binary is a **desktop development tool** ( **`NETKIT_TARGET=cpu`** only) implemented in C++26 (`src/cli.cpp`, entry via `Cli::Run()` in `src/main.cpp`). It wraps the same inference engine as the library APIs. MCU/MPU builds produce `libnetkit.a` without the CLI — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
 ```bash
-make              # builds ./netkit
+make              # NETKIT_TARGET=cpu (default) — builds ./netkit
 ./netkit <command> [arguments]
 ./netkit help     # print usage (also: -h, --help)
 ```
@@ -52,7 +52,7 @@ Exit code `0` if all cases pass, `1` if any fail.
 Prints per-case PASS/FAIL lines and a summary:
 
 ```
-Passed: 72
+Passed: 36
 Failed: 0
 ```
 
@@ -85,7 +85,7 @@ Load a model and run one forward pass.
 1. Parses the `.nk` header and prints a boxed network summary
 2. Loads weights from the same file
 3. Validates input element count against the model input shape
-4. Runs forward pass using the internal 64 KiB arena
+4. Runs forward pass using a **model-sized heap arena** (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN)
 5. Prints labeled input and output tensors
 
 **Input count:**
@@ -133,7 +133,7 @@ The C API equivalent is `nk_arch_print()`.
 
 **`--full`:** Load weights, run a zero-input forward pass, and report arena memory usage after load and forward. Use this to size embedded arena buffers before deployment. The C API equivalent is `nk_inspect_model()`.
 
-The CLI uses a **64 KiB** internal arena (`Arena::kDefaultCapacity`). That is enough for hand test models. **MNIST models** need multi-MiB buffers — `inspect --full` on `mnist_mlp.nk` / `mnist_cnn.nk` may fail with arena overflow on the CLI even though `make test` passes (tests use 2 MiB / 4 MiB). Size your own firmware buffer from `nk_inspect_model()` with a large enough arena, or see [ARENA.md](ARENA.md).
+On the default **CPU (heap arena)** build, the CLI allocates a model-appropriate arena automatically (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN). Examples use **`NK_ARENA_DEFAULT_CAPACITY` (4 MiB)**. Build with `NETKIT_GLOBAL_ARENA=1` for static backing — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
 ## Path resolution
 
@@ -155,3 +155,34 @@ The examples take input as separate argv floats instead of `--input`:
 ```
 
 See [GETTING_STARTED.md](GETTING_STARTED.md) for build and link instructions.
+
+## Prerequisites
+
+The CLI exists only in **CPU** builds:
+
+```bash
+make              # default: NETKIT_TARGET=cpu
+make cpu          # same
+```
+
+MCU/MPU builds (`make NETKIT_TARGET=mcu lib`) do **not** produce `./netkit`. Use the library API on device; use the desktop CLI to develop and size arenas.
+
+## Build and memory (CLI)
+
+| Setting | Default | Override |
+|---------|---------|----------|
+| Target | `NETKIT_TARGET=cpu` | — |
+| Arena backing | **Heap** (`malloc`) | `NETKIT_GLOBAL_ARENA=1` → static 4 MiB buffer in CLI |
+| Arena size (heap) | **Model-based** — see below | Not user-configurable at CLI argv level |
+
+CLI arena sizes (via `ArenaUtil::CapacityForInputElements`):
+
+| Model class | Heap size |
+|-------------|-----------|
+| Hand MLP/CNN | 64 KiB |
+| MNIST MLP (784 inputs) | 2 MiB |
+| MNIST CNN (784 inputs) | 4 MiB |
+
+C API embed: `nk_cli_run(argc, argv)` — requires `NETKIT_DESKTOP` (CPU build).
+
+See [BUILD_TARGETS.md](BUILD_TARGETS.md) and [ARENA.md](ARENA.md).

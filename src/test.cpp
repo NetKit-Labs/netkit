@@ -1,10 +1,11 @@
 #include "nk_regression.hpp"
-#include "test_onnx.hpp"
 #include <iostream>
 
 NkRegression::RunSummary run_all_tests()
 {
     NkRegression::RunSummary total{};
+
+    NkRegression::BeginRegressionArena();
 
     auto merge = [&](const NkRegression::RunSummary& part) {
         total.passed += part.passed;
@@ -38,7 +39,7 @@ NkRegression::RunSummary run_all_tests()
     std::cout << "============================\n";
     merge(NkRegression::RunModelTests("models/mnist_cnn.nk"));
 
-    merge(run_onnx_import_tests());
+    NkRegression::EndRegressionArena();
 
     return total;
 }

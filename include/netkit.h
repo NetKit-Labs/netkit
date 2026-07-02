@@ -3,7 +3,9 @@
  *
  * Inference uses float32 only today. Planned: float16, int16, int8, int4.
  * Documentation:
+ *   docs/PHILOSOPHY.md       — product vision, Phase 1/2, roadmap
  *   docs/GETTING_STARTED.md  — build, test, first inference
+ *   docs/BUILD_TARGETS.md    — NETKIT_TARGET, arena flags, defaults
  *   docs/DATATYPES.md        — float32 today, quantized types roadmap
  *   docs/ARENA.md            — bump allocator memory model
  *   docs/c-api.md            — full C API reference
@@ -14,6 +16,7 @@
 #ifndef NETKIT_H
 #define NETKIT_H
 
+#include "netkit_config.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdalign.h>
@@ -36,7 +39,6 @@ extern "C" {
 #define NK_MAX_PATH_LEN    256
 #define NK_MAX_MESSAGE_LEN 128
 #define NK_MAX_STRING_LEN  64
-#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U)
 
 #define NK_ARENA_STORAGE_BYTES 32
 #define NK_MODEL_STORAGE_BYTES 64
@@ -194,6 +196,10 @@ const char* nk_last_error(void);
 /* -------------------------------------------------------------------------- */
 
 void nk_arena_init(nk_arena_t* arena, void* memory, size_t size);
+#if defined(NETKIT_ARENA_HEAP)
+nk_status_t nk_arena_init_heap(nk_arena_t* arena, size_t capacity);
+void nk_arena_destroy_heap(nk_arena_t* arena);
+#endif
 void* nk_arena_alloc(nk_arena_t* arena, size_t size, size_t alignment);
 void nk_arena_reset(nk_arena_t* arena);
 size_t nk_arena_capacity(const nk_arena_t* arena);
@@ -358,18 +364,20 @@ nk_status_t nk_model_run(const nk_model_t* model,
                          uint32_t* output_count);
 nk_status_t nk_inspect_model(const char* nk_path, nk_arena_t* arena, nk_inspect_info_t* info);
 
+#if defined(NETKIT_DESKTOP)
 /* -------------------------------------------------------------------------- */
-/* Regression tests (nk_regression.hpp, test.hpp)                             */
+/* Regression tests (nk_regression.hpp, test.hpp) — CPU / desktop builds only   */
 /* -------------------------------------------------------------------------- */
 
 nk_test_summary_t nk_run_model_tests(const char* nk_path);
 nk_test_summary_t nk_run_all_tests(void);
 
 /* -------------------------------------------------------------------------- */
-/* CLI (cli.hpp)                                                              */
+/* CLI (cli.hpp) — CPU / desktop builds only                                  */
 /* -------------------------------------------------------------------------- */
 
 int nk_cli_run(int argc, char** argv);
+#endif /* NETKIT_DESKTOP */
 
 #ifdef __cplusplus
 }

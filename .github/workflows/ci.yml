@@ -19,10 +19,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -e python
+
       - name: Build
         run: make
 
-      - name: Run C++ and C API tests
+      - name: Run C++, C API, and Python tests
         run: make test
 
       - name: Build and run C++ example

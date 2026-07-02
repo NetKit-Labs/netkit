@@ -1,17 +1,37 @@
 # netkit Makefile
 #
-# Primary build system (GNU Make). See docs/TESTING.md for full test layout.
+# Primary build system (GNU Make). See docs/TESTING.md and docs/BUILD_TARGETS.md.
+#
+# Build target (NETKIT_TARGET):
+#   cpu (default) — desktop: CLI, regression; arena defaults to heap
+#   mcu           — lean runtime only; arena defaults to caller-owned global/static buffer
+#   mpu           — lean runtime only; same arena default as MCU
+#
+# Arena overrides:
+#   NETKIT_GLOBAL_ARENA=1  — CPU only: use static/global arena instead of heap default
+#   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
 #
 # Common targets:
-#   make              — netkit CLI + libnetkit.a (default)
-#   make build-all    — netkit + usage examples + C API test binary
-#   make test         — C++ regression, then C API regression (72 inference cases)
-#   make test-cpp     — ./netkit test
-#   make test-c       — ./tests/test_c_api
+#   make              — cpu: netkit CLI + libnetkit.a (heap arena default)
+#   make lib          — libnetkit.a for current NETKIT_TARGET
+#   make build-all    — cpu: netkit + examples + C API tests; mcu/mpu: lib + examples
+#   make test         — full regression (cpu only)
+#   make test-cpp     — ./netkit test (cpu only)
+#   make test-c       — ./tests/test_c_api (cpu only)
 #   make examples     — infer_cpp + infer_c
 #   make export-mnist — regenerate MNIST model + cases (requires numpy)
 #   make clean        — remove build products
 #   make rebuild      — clean + make
+#
+# Examples:
+#   make                                    # desktop (cpu, heap arena)
+#   make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all
+#   make NETKIT_TARGET=mcu lib              # lean runtime, global arena
+#   make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
+
+NETKIT_TARGET ?= cpu
+NETKIT_GLOBAL_ARENA ?= 0
+NETKIT_HEAP_ARENA ?= 0
 
 CC = clang
 CXX = clang++
@@ -20,11 +40,44 @@ CXXFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c++26 -Wall -Wextra -
 TARGET = netkit
 LIB = libnetkit.a
 
-CORE_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp \
-               src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/nk_regression.cpp \
-               src/netkit_api.cpp src/protobuf_wire.cpp src/onnx_model.cpp src/onnx_importer.cpp \
-               src/test_onnx.cpp src/nk_format.cpp src/nk_loader.cpp \
-               src/cli.cpp src/test.cpp
+RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/ops.cpp \
+                    src/conv2d.cpp src/mlp.cpp src/cnn.cpp src/nk_format.cpp src/nk_loader.cpp \
+                    src/netkit_api.cpp
+
+DESKTOP_SOURCES = src/nk_regression.cpp src/cli.cpp src/test.cpp
+
+TARGET_CPPFLAGS =
+ifeq ($(NETKIT_TARGET),cpu)
+  TARGET_CPPFLAGS += -DNETKIT_TARGET_CPU=1
+  CORE_SOURCES = $(RUNTIME_SOURCES) $(DESKTOP_SOURCES)
+  BUILD_CLI = 1
+  BUILD_C_TESTS = 1
+  ifeq ($(NETKIT_GLOBAL_ARENA),1)
+    TARGET_CPPFLAGS += -DNETKIT_GLOBAL_ARENA=1
+  endif
+else ifeq ($(NETKIT_TARGET),mcu)
+  TARGET_CPPFLAGS += -DNETKIT_TARGET_MCU=1
+  CORE_SOURCES = $(RUNTIME_SOURCES)
+  BUILD_CLI = 0
+  BUILD_C_TESTS = 0
+  ifeq ($(NETKIT_HEAP_ARENA),1)
+    TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
+  endif
+else ifeq ($(NETKIT_TARGET),mpu)
+  TARGET_CPPFLAGS += -DNETKIT_TARGET_MPU=1
+  CORE_SOURCES = $(RUNTIME_SOURCES)
+  BUILD_CLI = 0
+  BUILD_C_TESTS = 0
+  ifeq ($(NETKIT_HEAP_ARENA),1)
+    TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
+  endif
+else
+  $(error NETKIT_TARGET must be cpu, mcu, or mpu (got '$(NETKIT_TARGET)'))
+endif
+
+CFLAGS += $(TARGET_CPPFLAGS)
+CXXFLAGS += $(TARGET_CPPFLAGS)
+
 CLI_SOURCES = src/main.cpp
 
 CORE_OBJECTS = $(CORE_SOURCES:.cpp=.o)
@@ -42,19 +95,31 @@ TEST_C = tests/test_c_api
 TEST_C_SRC = tests/test_c_api.c
 TEST_C_OBJ = tests/test_c_api.o
 
-.PHONY: all lib clean rebuild test test-cpp test-c run example-c example-cpp examples export-mnist export-mnist-cnn export-mnist-all export-nk build-all
+NK_INFER = tools/nk_infer
+NK_INFER_SRC = tools/nk_infer.c
+NK_INFER_OBJ = tools/nk_infer.o
 
+.PHONY: all lib clean rebuild test test-cpp test-c test-python run example-c example-cpp examples \
+        export-mnist export-mnist-cnn export-mnist-all export-nk build-all embed-tests \
+        cpu cpu-global mcu mcu-heap mpu mpu-heap
+
+ifeq ($(BUILD_CLI),1)
 all: $(TARGET)
-
 build-all: all examples $(TEST_C)
+else
+all: $(LIB)
+build-all: $(LIB) examples
+endif
 
 lib: $(LIB)
 
 $(LIB): $(CORE_OBJECTS)
 	ar rcs $@ $^
 
+ifeq ($(BUILD_CLI),1)
 $(TARGET): $(LIB) $(CLI_OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $(CLI_OBJECTS) $(LIB)
+endif
 
 $(EXAMPLE_C): $(LIB) $(EXAMPLE_C_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_C_OBJ) $(LIB)
@@ -62,8 +127,15 @@ $(EXAMPLE_C): $(LIB) $(EXAMPLE_C_OBJ)
 $(EXAMPLE_CPP): $(LIB) $(EXAMPLE_CPP_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_CPP_OBJ) $(LIB)
 
+ifeq ($(BUILD_C_TESTS),1)
 $(TEST_C): $(LIB) $(TEST_C_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(TEST_C_OBJ) $(LIB)
+endif
+
+ifeq ($(BUILD_CLI),1)
+$(NK_INFER): $(LIB) $(NK_INFER_OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $(NK_INFER_OBJ) $(LIB)
+endif
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -71,25 +143,45 @@ $(TEST_C): $(LIB) $(TEST_C_OBJ)
 $(EXAMPLE_CPP_OBJ): $(EXAMPLE_CPP_SRC)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+$(NK_INFER_OBJ): $(NK_INFER_SRC) include/netkit.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(EXAMPLE_C_OBJ): $(EXAMPLE_C_SRC) include/netkit.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
+ifeq ($(BUILD_C_TESTS),1)
 $(TEST_C_OBJ): $(TEST_C_SRC) include/netkit.h
 	$(CC) $(CFLAGS) -c $< -o $@
+endif
 
 clean:
-	rm -f $(CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) \
-	      $(TARGET) $(LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C)
+	rm -f $(CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(NK_INFER_OBJ) \
+	      $(TARGET) $(LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(NK_INFER)
 
 rebuild: clean all
 
+ifeq ($(BUILD_CLI),1)
 test-cpp: $(TARGET)
 	./$(TARGET) test
+else
+test-cpp:
+	@echo "test-cpp requires NETKIT_TARGET=cpu (got $(NETKIT_TARGET))" >&2
+	@exit 1
+endif
 
+ifeq ($(BUILD_C_TESTS),1)
 test-c: $(TEST_C)
 	./$(TEST_C)
+else
+test-c:
+	@echo "test-c requires NETKIT_TARGET=cpu (got $(NETKIT_TARGET))" >&2
+	@exit 1
+endif
 
-test: test-cpp test-c
+test: test-cpp test-c test-python
+
+test-python: $(TARGET) $(NK_INFER)
+	PYTHONPATH=python python3 -m unittest discover -s python/tests -p 'test_*.py'
 
 run: test
 
@@ -98,6 +190,24 @@ example-c: $(EXAMPLE_C)
 example-cpp: $(EXAMPLE_CPP)
 
 examples: example-cpp example-c
+
+cpu:
+	$(MAKE) NETKIT_TARGET=cpu all
+
+cpu-global:
+	$(MAKE) NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all
+
+mcu:
+	$(MAKE) NETKIT_TARGET=mcu lib
+
+mcu-heap:
+	$(MAKE) NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
+
+mpu:
+	$(MAKE) NETKIT_TARGET=mpu lib
+
+mpu-heap:
+	$(MAKE) NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
 
 export-mnist:
 	PYTHONPATH=python python3 tools/export_mnist_mlp.py

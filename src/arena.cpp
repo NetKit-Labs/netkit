@@ -1,6 +1,9 @@
 #include "arena.hpp"
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#if defined(NETKIT_ARENA_HEAP)
+#include <cstdlib>
+#endif
 
 namespace
 {
@@ -17,10 +20,45 @@ namespace
 
 void Arena::init(void* memory, std::size_t size)
 {
+#if defined(NETKIT_ARENA_HEAP) && defined(NETKIT_TARGET_CPU)
+    if (heap_owned)
+        destroy_heap();
+#endif
     base = static_cast<std::byte*>(memory);
     capacity = size;
     offset = 0;
+    heap_owned = false;
 }
+
+#if defined(NETKIT_ARENA_HEAP)
+bool Arena::init_heap(std::size_t size)
+{
+    if (!size || base)
+        return false;
+    void* memory = std::malloc(size);
+    if (!memory)
+        return false;
+    base = static_cast<std::byte*>(memory);
+    capacity = size;
+    offset = 0;
+    heap_owned = true;
+    return true;
+}
+
+void Arena::destroy_heap()
+{
+    if (!heap_owned || !base)
+        return;
+#if defined(NETKIT_TARGET_CPU)
+    std::free(base);
+    base = nullptr;
+    capacity = 0;
+    offset = 0;
+    heap_owned = false;
+#endif
+    /* MCU/MPU: intentional no-op — heap backing, if used, is never freed. */
+}
+#endif
 
 void* Arena::alloc(std::size_t size, std::size_t alignment)
 {

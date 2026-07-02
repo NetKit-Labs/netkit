@@ -1,6 +1,6 @@
 # API Overview
 
-netkit exposes two language interfaces over the same **C++26 inference engine**:
+netkit exposes two language interfaces over the same **C++26 inference engine**. For the product vision (Phase 1 interpreter runtime, Phase 2 packager optimizations), see [PHILOSOPHY.md](PHILOSOPHY.md). New users start with [GETTING_STARTED.md](GETTING_STARTED.md).
 
 | API | Header | Language | Use when |
 |-----|--------|----------|----------|
@@ -9,39 +9,56 @@ netkit exposes two language interfaces over the same **C++26 inference engine**:
 
 Both APIs share:
 
-- Bump-pointer **arena** memory management (no heap in layer code paths)
+- Bump-pointer **arena** memory management (no heap in layer code paths on MCU/MPU)
 - **`.nk`** single-file model loading
-- **MLP** and **CNN** forward-only inference (including conv / pool / flatten / dense CNN pipelines)
+- **MLP** and **CNN** forward-only inference (conv / pool / flatten / dense)
 - **NHWC** tensor layout for convolutions
-- **Float32 only (today)** — all inference tensors, weights, and math use IEEE-754 single precision; float16, int16, int8, and int4 planned ([DATATYPES.md](DATATYPES.md))
+- **Float32 only (today)** — float16, int16, int8, int4 planned ([DATATYPES.md](DATATYPES.md))
 
-Every stable C++ public symbol has a documented C equivalent except CLI-only diagnostics — see [API_PARITY.md](API_PARITY.md).
+Every stable C++ public symbol has a documented C equivalent except desktop-only diagnostics — see [API_PARITY.md](API_PARITY.md).
 
 ## Documentation map
 
 | Document | Contents |
 |----------|----------|
-| [GETTING_STARTED.md](GETTING_STARTED.md) | Build, test, first inference, examples |
-| [ARENA.md](ARENA.md) | Bump allocator memory model |
-| [DATATYPES.md](DATATYPES.md) | Float32 today; float16/int roadmap |
+| [PHILOSOPHY.md](PHILOSOPHY.md) | Phase 1 runtime vs Phase 2 packager; memory and roadmap |
+| [GETTING_STARTED.md](GETTING_STARTED.md) | Clone, build, CLI, integrate C/C++ |
+| [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET=cpu\|mcu\|mpu`, arena flags, defaults |
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect`, help |
-| [NK_FORMAT.md](NK_FORMAT.md) | Binary `.nk` layout |
+| [ARENA.md](ARENA.md) | Bump allocator, sizing, alignment |
+| [DATATYPES.md](DATATYPES.md) | Float32 today; float16/int roadmap |
+| [NK_FORMAT.md](NK_FORMAT.md) | `.nk` layout + embedded tests |
 | [TESTING.md](TESTING.md) | Regression suites, Make targets, CI |
-| [NK_FORMAT.md](NK_FORMAT.md) | `.nk` format + embedded regression tests |
-| [MNIST.md](MNIST.md) | Trained MNIST MLP test bundle |
-| [MNIST_CNN.md](MNIST_CNN.md) | Trained MNIST CNN test bundle |
-| [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map and parity policy |
-| [c-api.md](c-api.md) | Full C23 reference (`netkit.h`) |
-| [cpp-api.md](cpp-api.md) | Full C++26 reference (headers in `include/`) |
+| [MNIST.md](MNIST.md) / [MNIST_CNN.md](MNIST_CNN.md) | Trained MNIST bundles |
+| [API_PARITY.md](API_PARITY.md) | C ↔ C++ symbol map |
+| [c-api.md](c-api.md) | Full C23 reference |
+| [cpp-api.md](cpp-api.md) | Full C++26 reference |
+
+## Build targets and memory defaults
+
+| Target | Command | CLI | `NK_ARENA_DEFAULT_CAPACITY` |
+|--------|---------|-----|----------------------------|
+| CPU | `make` | Yes | **4 MiB** |
+| MCU | `make NETKIT_TARGET=mcu lib` | No | **64 KiB** |
+| MPU | `make NETKIT_TARGET=mpu lib` | No | **128 KiB** |
+
+**Arena backing flags** (see [BUILD_TARGETS.md](BUILD_TARGETS.md)):
+
+| Flag | Effect |
+|------|--------|
+| *(CPU default)* | Heap arena — `nk_arena_init_heap` / CLI model-sized buffers |
+| `NETKIT_GLOBAL_ARENA=1` (CPU) | Static/global arena only |
+| `NETKIT_HEAP_ARENA=1` (MCU/MPU) | Compile in optional heap arena API |
 
 ## Quick comparison
 
 ### Load and run (C23)
 
 ```c
+alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
 nk_arena_t arena;
 nk_model_t model;
-nk_arena_init(&arena, memory, size);
+nk_arena_init(&arena, memory, sizeof(memory));
 nk_model_load("models/test_mlp.nk", &arena, &model);
 nk_model_run(&model, &arena, input, n, output, cap, &out_n);
 ```
@@ -52,7 +69,7 @@ Full example: [`examples/infer_c.c`](../examples/infer_c.c)
 
 ```cpp
 Arena arena;
-arena.init(buffer, size);
+arena.init(buffer, sizeof(buffer));
 MLPNetwork* net = nullptr;
 std::array<uint32_t, kMaxTensorRank> shape{};
 uint32_t rank = 0;
@@ -62,41 +79,30 @@ net->forward(input, output, arena);
 
 Full example: [`examples/infer_cpp.cpp`](../examples/infer_cpp.cpp)
 
-## CLI
+## CLI (CPU build only)
 
 The `netkit` binary is a desktop development tool (C++26). See [CLI.md](CLI.md).
 
 | Command | Description |
 |---------|-------------|
-| `netkit test` | Run all registered regression tests (72 inference cases) |
+| `netkit test` | Run embedded `.nk` regression tests (36 cases) |
 | `netkit run <model.nk> --input a,b,c` | Single inference |
 | `netkit inspect <model.nk>` | Boxed network summary (`--full` for arena sizing) |
-| `netkit help`, `netkit -h`, `netkit --help` | Print CLI usage |
-
-Full option reference: [CLI.md](CLI.md).
+| `netkit help`, `-h`, `--help` | Print CLI usage |
 
 ## Language standards
 
 | Code | Standard | Role |
 |------|----------|------|
-| C++ engine | **C++26** | All implementation, primary API, CLI, C++ tests |
-| C API | **C23** | `netkit.h`, `examples/infer_c.c`, `tests/test_c_api.c` |
-
-Application code is C++26. C23 is limited to the C header, the `extern "C"` bridge (`src/netkit_api.cpp`), C examples, and the C API test harness.
+| C++ engine + headers | **C++26** | Implementation, primary API, CLI |
+| C API | **C23** | `netkit.h`, examples, firmware integration |
 
 ## Linking
 
-`libnetkit.a` contains C++ object code. Link C applications with a C++-aware linker:
-
 ```bash
-clang -std=c23 -Iinclude -c my_app.c -o my_app.o
-clang++ -std=c++26 -o my_app my_app.o libnetkit.a
-```
-
-C++ applications:
-
-```bash
-clang++ -std=c++26 -Iinclude -o my_app my_app.cpp libnetkit.a
+make lib          # or make (CPU) for CLI + lib
+clang -std=c23 -Iinclude -c app.c -o app.o
+clang++ -std=c++26 -o app app.o libnetkit.a
 ```
 
 Build the library with `make lib`.
@@ -110,48 +116,30 @@ Build the library with `make lib`.
 
 ## Memory model
 
-Full guide: [ARENA.md](ARENA.md). Data type constraints: [DATATYPES.md](DATATYPES.md).
+Full guide: [ARENA.md](ARENA.md). Data types: [DATATYPES.md](DATATYPES.md).
 
-Both APIs require a **caller-provided buffer** for the arena. You pass the buffer and its size to `Arena::init()` / `nk_arena_init()`. The size is **not** in the model file — it depends on weights plus two ping-pong activation buffers allocated at load (see [ARENA.md](ARENA.md)).
+Both APIs use a **caller-provided arena buffer** (or heap backing when `NETKIT_ARENA_HEAP` is enabled). Size is **not** in the model file — it depends on weights plus ping-pong activation buffers at load.
 
-**Default constant:** 64 KiB (`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`) is used in examples, CLI, and hand tests. MNIST models need multi-MiB buffers; the test suite uses 2 MiB (MLP) and 4 MiB (CNN).
+**Defaults:** CPU **4 MiB** constant; MCU **64 KiB**; MPU **128 KiB**. CLI/regression on CPU use model-sized heap (64 KiB / 2 MiB / 4 MiB).
 
-**Sizing workflow:** `./netkit inspect <model.nk> --full` or `nk_inspect_model()` → read `arena_bytes_after_forward` → allocate static storage with headroom.
+**Sizing:** `./netkit inspect <model.nk> --full` or `nk_inspect_model()` → `arena_bytes_after_forward` → add headroom.
 
-**Backing buffer:** declare with `alignas(max_align_t)` / `alignas(std::max_align_t)` so the arena base address satisfies the platform’s strictest alignment.
+**Alignment:** `alignas(max_align_t)` backing buffers; `nk_arena_alloc(arena, size, alignment)` with power-of-two alignment.
 
-**Aligned bump allocation:** `Arena::alloc(size, alignment)` and `nk_arena_alloc(arena, size, alignment)` insert padding when the current offset is not a multiple of `alignment`. `alignment` must be a power of two. Returns `nullptr` on overflow or invalid arguments.
-
-| Allocation kind | Typical alignment |
-|-----------------|-------------------|
-| float tensors, weight blobs | `alignof(float)` (4) |
-| Structs, placement `new`, pointer arrays | `alignof(T)` (usually 8 on 64-bit) |
-
-The engine uses these rules internally so odd-sized weight payloads do not misalign network structs. Direct C callers using `nk_arena_alloc` must pass the correct alignment themselves.
-
-Size the buffer using `./netkit inspect --full` or `nk_inspect_model()`. When allocation fails, functions return an arena overflow error — there is no automatic growth.
-
-Call `nk_arena_reset()` / `Arena::reset()` between inference batches to reuse the same buffer (then reload the model).
-
-netkit implements its own minimal arena (~86 lines) rather than linking [memkit](https://github.com/jameslavrenz/memkit); alignment behavior matches memkit’s `static_arena` bump policy.
+netkit implements its own minimal arena rather than linking [memkit](https://github.com/jameslavrenz/memkit); alignment behavior matches memkit’s bump policy.
 
 ## Supported model format
 
-Runtime models are **`.nk` v1** single files. Full layout: [NK_FORMAT.md](NK_FORMAT.md).
-
-- Magic `NKIT`, version `1`
-- Network kind: MLP or CNN
-- Activations: none, relu, sigmoid, tanh, leaky_relu, relu6, softmax
-- Weights and biases: float32 little-endian in-file payloads
+Runtime models are **`.nk` v1** single files — [NK_FORMAT.md](NK_FORMAT.md).
 
 Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`.
 
 ## Testing
 
-Both API test suites run **72 inference regression cases**. See [TESTING.md](TESTING.md), [NK_FORMAT.md](NK_FORMAT.md), [MNIST.md](MNIST.md), and [MNIST_CNN.md](MNIST_CNN.md).
+Both API test suites run **36 embedded `.nk` regression cases** on CPU builds — [TESTING.md](TESTING.md). ONNX parity runs in Python (`make test-python`).
 
 ```bash
-make test       # C++ then C
+make test       # C++ then C (cpu only)
 make test-cpp   # ./netkit test
 make test-c     # ./tests/test_c_api
 ```

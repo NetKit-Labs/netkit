@@ -68,7 +68,28 @@ void* net_mem = arena.alloc(sizeof(CNNNetwork), alignof(CNNNetwork));
 arena.reset();  // reuse for next inference
 ```
 
-Default capacity constant: `Arena::kDefaultCapacity` (64 KiB) is a **convenience default**, not an engine limit. You always pass the actual buffer size to `init()`.
+Default capacity constant:
+
+| Target | `NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity` |
+|--------|-----------------------------------------------------------|
+| CPU | **4 MiB** |
+| MCU | **64 KiB** |
+| MPU | **128 KiB** |
+
+CLI/regression on CPU allocate **model-sized** heap buffers (64 KiB hand / 2 MiB MNIST MLP / 4 MiB MNIST CNN) via `ArenaUtil::CapacityForInputElements`.
+
+### Heap-backed arena (CPU default; MCU/MPU optional)
+
+When `NETKIT_ARENA_HEAP` is defined ( **CPU builds by default**, or MCU/MPU with `NETKIT_HEAP_ARENA=1` ), `init_heap()` performs **one** `malloc` for the backing buffer. All inference allocations are bump-pointer inside that buffer — no `realloc`, no per-tensor heap calls.
+
+| Target | `init_heap` | `destroy_heap` / `ArenaUtil::Release` |
+|--------|-------------|----------------------------------------|
+| **CPU** | Once per session (CLI command or full test suite) | Frees backing memory when the session ends |
+| **MCU / MPU** | Optional once at startup | **No-op** — heap backing is never freed |
+
+Regression on CPU (`make test-cpp`) uses **one** heap arena for all 36 cases (`BeginRegressionArena` / `EndRegressionArena`), resetting the bump offset between cases instead of malloc/free per case.
+
+See [BUILD_TARGETS.md](BUILD_TARGETS.md). Helper: `ArenaUtil::Init()` in `arena_util.hpp`.
 
 ## Choosing arena size
 
@@ -104,7 +125,8 @@ There is no automatic growth — if `alloc` fails, loaders return an arena overf
 
 | Caller | Buffer size | Models |
 |--------|-------------|--------|
-| CLI `run` / `inspect`, hand-checked tests, examples, C API smoke tests | **64 KiB** (`Arena::kDefaultCapacity`) | Hand MLP/CNN only |
+| CLI `run` / `inspect` (CPU, heap) | **64 KiB / 2 MiB / 4 MiB** (model-sized) | Hand / MNIST MLP / MNIST CNN |
+| Examples, C API smoke (CPU) | **4 MiB** (`NK_ARENA_DEFAULT_CAPACITY`) | Includes MNIST CNN |
 | MNIST MLP tests (`src/nk_regression.cpp`) | **2 MiB** | `mnist_mlp.nk` |
 | MNIST CNN tests (`src/nk_regression.cpp`) | **4 MiB** | `mnist_cnn.nk` |
 

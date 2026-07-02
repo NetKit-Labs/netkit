@@ -76,6 +76,28 @@ static void TestArena(void)
     ExpectTrue(nk_arena_used(&arena) == 0, "arena reset");
 }
 
+#if defined(NETKIT_ARENA_HEAP)
+static void TestArenaHeap(void)
+{
+    printf("\n--- arena heap ---\n");
+
+    nk_arena_t arena;
+    ExpectStatus(nk_arena_init_heap(&arena, 4096), NK_OK, "arena heap init");
+    ExpectTrue(nk_arena_capacity(&arena) == 4096, "heap arena capacity");
+
+    void* block = nk_arena_alloc(&arena, 128, 8);
+    ExpectTrue(block != NULL, "heap arena alloc");
+
+#if defined(NETKIT_TARGET_CPU)
+    nk_arena_destroy_heap(&arena);
+    ExpectTrue(nk_arena_capacity(&arena) == 0, "heap arena destroyed");
+#else
+    nk_arena_destroy_heap(&arena);
+    ExpectTrue(nk_arena_capacity(&arena) == 4096, "heap arena not freed on MCU/MPU");
+#endif
+}
+#endif
+
 static void TestArenaAlignment(void)
 {
     printf("\n--- arena alignment ---\n");
@@ -267,14 +289,18 @@ static void TestInspectModel(void)
 
 static void TestRegression(void)
 {
+#if defined(NETKIT_DESKTOP)
     printf("\n============================\n");
     printf(" C API REGRESSION TESTS\n");
     printf("============================\n");
 
     const nk_test_summary_t summary = nk_run_all_tests();
     ExpectTrue(summary.failed == 0, "regression failed count");
-    ExpectTrue(summary.passed == 72,
-               "regression passed count (16 hand + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity)");
+    ExpectTrue(summary.passed == 36,
+               "regression passed count (16 hand + 10 MNIST MLP + 10 MNIST CNN)");
+#else
+    printf("\n--- regression (skipped: NETKIT_TARGET is not cpu) ---\n");
+#endif
 }
 
 int main(void)
@@ -284,6 +310,9 @@ int main(void)
     printf("============================\n");
 
     TestArena();
+#if defined(NETKIT_ARENA_HEAP)
+    TestArenaHeap();
+#endif
     TestArenaAlignment();
     TestTensorOps();
     TestParseArchitecture();

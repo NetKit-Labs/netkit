@@ -8,15 +8,18 @@ Models are loaded from binary **`.nk`** files (single-file architecture + weight
 
 | Guide | Description |
 |-------|-------------|
-| **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, and first inference in minutes |
+| **[Philosophy](docs/PHILOSOPHY.md)** | Phase 1 runtime vs Phase 2 packager; design principles |
+| **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, CLI, and first inference for new users |
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
+| **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
+| **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
-| **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int8 roadmap |
-| **[ONNX Import](docs/ONNX.md)** | C++ ONNX loader for parity tests; packager converts ONNX → `.nk` |
-| **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` commands |
+| **[Data Types](docs/DATATYPES.md)** | Float32 today; float16 / int16 / int8 / int4 roadmap |
+| **[ONNX Import](docs/ONNX.md)** | Python packager (ONNX → `.nk`); parity tests in Python |
 | **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — Python packager + C++ loader |
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI |
+| **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
 | **[MNIST MLP Test](docs/MNIST.md)** | Trained 784→128→10 MLP on handwritten digits |
@@ -38,14 +41,14 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — High-level network abstractions with `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
-- **Regression tests** — hand-checked plus MNIST MLP and CNN (72 cases via `make test`)
+- **Regression tests** — embedded `.nk` cases (36 C++) plus Python ONNX parity (26) via `make test`
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 
 ## Quick start
 
 ```bash
-make              # build netkit CLI + libnetkit.a
-make test         # C++ API tests + C API tests
+make              # build netkit CLI + libnetkit.a (NETKIT_TARGET=cpu)
+make test         # C++ embedded regression + Python ONNX parity (cpu only)
 ./netkit run models/test_mlp.nk --input 1,2
 make example-cpp    # C++26 usage demo
 make example-c      # C23 usage demo
@@ -127,11 +130,15 @@ Format spec: [docs/NK_FORMAT.md](docs/NK_FORMAT.md). Regression tests: [docs/TES
 ### Targets
 
 ```bash
-make              # netkit CLI + libnetkit.a
-make build-all    # netkit + examples + C API test binary
-make test         # C++ API tests + C API tests (72 regression cases)
-make test-cpp     # C++ API regression only
+make              # netkit CLI + libnetkit.a (NETKIT_TARGET=cpu, heap arena default)
+make NETKIT_TARGET=mcu lib   # lean embedded runtime
+make NETKIT_TARGET=mpu lib   # lean embedded runtime
+make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
+make build-all    # cpu: netkit + examples + C API test binary
+make test         # C++ embedded regression + Python ONNX parity (cpu only)
+make test-cpp     # C++ embedded .nk cases only (36)
 make test-c       # C API regression only
+make test-python  # .nk vs ONNX Runtime (36)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
 make export-mnist # regenerate MNIST MLP model (requires numpy)
@@ -140,39 +147,44 @@ make clean
 make rebuild
 ```
 
-See [docs/TESTING.md](docs/TESTING.md) for the full regression layout.
+See [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md) for CPU vs MCU vs MPU builds and [docs/TESTING.md](docs/TESTING.md) for the regression layout.
 
 ## Testing
 
 Full guide: [docs/TESTING.md](docs/TESTING.md)
 
 ```bash
-make test       # C++ API tests, then C API tests
+make test       # C++ embedded cases, then C API, then Python ONNX parity
 make test-cpp   # ./netkit test
 make test-c     # ./tests/test_c_api
+make test-python
 ```
 
-| Suite | Language | Entry point | Inference cases |
-|-------|----------|-------------|-----------------|
-| C++ API | C++26 | `./netkit test` → `src/test.cpp` | 72 (16 hand + 10 MNIST MLP + 10 MNIST CNN + 36 ONNX parity) |
-| C API | C23 | `tests/test_c_api.c` | Same 72 + API smoke tests |
+| Suite | Language | Entry point | Cases |
+|-------|----------|-------------|-------|
+| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 36 (16 hand + 10 MNIST MLP + 10 MNIST CNN) |
+| C API | C23 | `tests/test_c_api.c` | Same 36 + API smoke tests |
+| ONNX parity | Python | `python/tests/test_onnx_parity.py` | 26 (.nk vs ONNX Runtime; mnist_cnn pending) |
 
 Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
 MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.md).
 
 ## Design principles
 
-- **Lightweight** — Standard C/C++ only, no external dependencies
-- **Memory-conscious** — Arena bump allocator with explicit alignment; caller-owned backing buffer
+See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative. In brief:
+
+- **Phase 1 (today)** — Interpreter-style C++ runtime: load `.nk`, execute layer graph with generic kernels
+- **Phase 2 (planned)** — Python packager optimizations: fusion, layout, quantization-aware export
+- **Lightweight** — Standard C/C++ only, no external dependencies in the engine
+- **Memory-conscious** — Arena bump allocator; target-specific defaults (CPU 4 MiB / MCU 64 KiB / MPU 128 KiB)
 - **Single-threaded** — Sequential forward pass
 - **Inference-only** — No training
 
 ## Roadmap
 
-- Max/average pooling (max pool supported in CNN pipelines; avg pool not yet)
-- Conv padding
-- Batch normalization
-- Quantization (int8, uint8)
+- **Numeric types:** float16, int16, int8, int4 ([DATATYPES.md](docs/DATATYPES.md))
+- **Packager:** operator fusion, quantized `.nk` export ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
+- **Runtime:** avg pooling, conv padding, batch normalization
 
 ## License
 

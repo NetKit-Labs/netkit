@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export netkit .nk models to ONNX for importer parity tests.
+"""Export netkit .nk models to ONNX for Python parity tests.
 
 Requires: pip install onnx numpy
 

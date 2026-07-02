@@ -1,5 +1,7 @@
 # Data Types and Numeric Precision
 
+Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md) (Phase 2 packager will emit quantized `.nk` payloads).
+
 ## Float32 only (today)
 
 **All inference in netkit today uses IEEE-754 single precision (`float`, 32-bit).**
@@ -18,19 +20,20 @@ The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future
 
 ## Planned (roadmap)
 
-Quantized and reduced-precision paths are planned but not implemented:
+Quantized and reduced-precision paths are planned for **Phase 2** (Python packager + runtime decode kernels):
 
 | Type | Status | Intended use |
 |------|--------|--------------|
-| **float16** | Planned | Half-precision weights/activations where hardware supports it |
-| **int16** | Planned | Wider quantized weights |
-| **int8** | Planned | Standard post-training or QAT deployment |
-| **int4** | Planned | Aggressive edge quantization (subject to kernel support) |
+| **float16** | Planned | Half-precision weights/activations where hardware supports FP16 |
+| **int16** | Planned | Wider quantized weights; intermediate precision |
+| **int8** | Planned | Standard post-training or QAT deployment on MCU/MPU |
+| **int4** | Planned | Aggressive edge quantization (kernel and layout TBD) |
 
 When added, expect:
 
 - Extended `.nk` format versions with per-tensor dtype tags
-- Separate load/run paths or automatic dequant stubs in the arena
+- Packager-side quantization, calibration, and layout selection ([PHILOSOPHY.md](PHILOSOPHY.md))
+- Runtime load paths and kernels per dtype (possibly fused in Phase 2)
 - Updated regression suites with tolerance policies per type
 
 Until then, **export scripts and models must emit float32** — see [NK_FORMAT.md](NK_FORMAT.md).

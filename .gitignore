@@ -1,8 +1,9 @@
-# Executables
-netkit
+# Executables (repo root only — do not match python/netkit/)
+/netkit
 examples/infer_c
 examples/infer_cpp
 tests/test_c_api
+tools/nk_infer
 
 # Libraries
 libnetkit.a
@@ -20,6 +21,10 @@ netkit.dSYM/
 # macOS
 .DS_Store
 
+# Python
+python/netkit_tools.egg-info/
+
 # clangd index cache
 .cache/
+
 /data/

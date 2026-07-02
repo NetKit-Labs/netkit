@@ -2,6 +2,8 @@
 
 Convert ONNX models into binary **`.nk`** files for the C++ runtime.
 
+**Role in netkit:** Phase 1 serializer (ONNX → `.nk`). Phase 2 will add compiler-style optimizations here (fusion, layout, quantization) — see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md).
+
 ## Install
 
 ```bash
@@ -23,6 +25,15 @@ python -m netkit inspect models/test_mlp.nk
 make export-nk
 ```
 
+## Testing
+
+```bash
+pip install -e python   # onnx + onnxruntime for parity tests
+make test-python        # .nk CLI vs ONNX Runtime (from repo root, after make)
+```
+
+See [docs/TESTING.md](../docs/TESTING.md) and [docs/ONNX.md](../docs/ONNX.md).
+
 ## C++ runtime
 
 ```bash
@@ -30,4 +41,4 @@ make export-nk
 ./netkit run models/test_mlp.nk --input 1,2
 ```
 
-See [docs/NK_FORMAT.md](../docs/NK_FORMAT.md) for the binary layout.
+See [docs/NK_FORMAT.md](../docs/NK_FORMAT.md) for the binary layout. Getting started: [docs/GETTING_STARTED.md](../docs/GETTING_STARTED.md).

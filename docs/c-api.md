@@ -1,10 +1,54 @@
 # C API Reference (C23)
 
-Public header: [`include/netkit.h`](../include/netkit.h)
+Public header: [`include/netkit.h`](../include/netkit.h)  
+Configuration: [`include/netkit_config.h`](../include/netkit_config.h)
 
 Compile user code with `-std=c23`. Link against `libnetkit.a` using a C++ linker driver.
 
 Every function listed here mirrors a C++26 entry point. See [`API_PARITY.md`](API_PARITY.md) for the full symbol map and contribution policy.
+
+Overview for new users: [GETTING_STARTED.md](GETTING_STARTED.md). Philosophy: [PHILOSOPHY.md](PHILOSOPHY.md).
+
+## Build configuration
+
+Set the deployment target when building or integrating netkit:
+
+| Makefile | `-D` macro | Role |
+|----------|------------|------|
+| `NETKIT_TARGET=cpu` (default) | `NETKIT_TARGET_CPU` | Desktop — CLI, regression |
+| `NETKIT_TARGET=mcu` | `NETKIT_TARGET_MCU` | Lean firmware runtime |
+| `NETKIT_TARGET=mpu` | `NETKIT_TARGET_MPU` | Lean firmware runtime |
+
+| Makefile flag | Macro | Effect |
+|---------------|-------|--------|
+| *(CPU default)* | `NETKIT_ARENA_HEAP` | `nk_arena_init_heap()` available; default CPU examples use heap |
+| `NETKIT_GLOBAL_ARENA=1` (CPU) | `NETKIT_GLOBAL_ARENA` | Static arena only on CPU; no heap helpers |
+| `NETKIT_HEAP_ARENA=1` (MCU/MPU) | `NETKIT_HEAP_ARENA` → `NETKIT_ARENA_HEAP` | Optional heap API on embedded |
+
+| `NK_ARENA_DEFAULT_CAPACITY` | CPU | MCU | MPU |
+|-----------------------------|-----|-----|-----|
+| Value | **4 MiB** | **64 KiB** | **128 KiB** |
+
+Full guide: [BUILD_TARGETS.md](BUILD_TARGETS.md).
+
+### Desktop-only symbols (`NETKIT_DESKTOP`)
+
+Available only when `NETKIT_TARGET=cpu`:
+
+```c
+nk_test_summary_t nk_run_model_tests(const char* nk_path);
+nk_test_summary_t nk_run_all_tests(void);
+int nk_cli_run(int argc, char** argv);
+```
+
+### Heap arena symbols (`NETKIT_ARENA_HEAP`)
+
+When compiled in (CPU default, or MCU/MPU with `NETKIT_HEAP_ARENA=1`):
+
+```c
+nk_status_t nk_arena_init_heap(nk_arena_t* arena, size_t capacity);
+void nk_arena_destroy_heap(nk_arena_t* arena);
+```
 
 ## Version
 
@@ -24,7 +68,7 @@ const char* nk_version_string(void);  // "0.1.0"
 | `NK_MAX_LAYERS` | 16 | Max layers in architecture metadata |
 | `NK_MAX_PATH_LEN` | 256 | Path buffer size used internally |
 | `NK_MAX_MESSAGE_LEN` | 128 | Max length of last error message |
-| `NK_ARENA_DEFAULT_CAPACITY` | 65536 | Default arena size (64 KiB) |
+| `NK_ARENA_DEFAULT_CAPACITY` | 4 MiB (CPU) / 64 KiB (MCU) / 128 KiB (MPU) | Default static arena size by build target |
 | `NK_ARENA_STORAGE_BYTES` | 32 | Size of `nk_arena_t.storage` |
 | `NK_MODEL_STORAGE_BYTES` | 64 | Size of `nk_model_t.storage` |
 | `NK_MLP_STORAGE_BYTES` | 16 | Size of `nk_mlp_t.storage` |
@@ -141,6 +185,10 @@ typedef struct nk_inspect_info {
 
 ```c
 void nk_arena_init(nk_arena_t* arena, void* memory, size_t size);
+#if defined(NETKIT_ARENA_HEAP)   /* CPU default; MCU/MPU when NETKIT_HEAP_ARENA=1 */
+nk_status_t nk_arena_init_heap(nk_arena_t* arena, size_t capacity);
+void nk_arena_destroy_heap(nk_arena_t* arena);
+#endif
 void* nk_arena_alloc(nk_arena_t* arena, size_t size, size_t alignment);
 void nk_arena_reset(nk_arena_t* arena);
 size_t nk_arena_capacity(const nk_arena_t* arena);
@@ -159,9 +207,11 @@ size_t nk_arena_remaining(const nk_arena_t* arena);
 
 Returns `NULL` when the arena is uninitialized, arguments are invalid (`size == 0`, bad alignment), or the arena is full.
 
-**Backing memory** passed to `nk_arena_init` should be declared `alignas(max_align_t)`.
+**Backing memory** passed to `nk_arena_init` should be declared `alignas(max_align_t)`. This is the **default on MCU and MPU**, and on CPU when built with `NETKIT_GLOBAL_ARENA=1`. The default **CPU** build uses `nk_arena_init_heap()` instead — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
-**Sizing:** pass whatever `size` your model needs. Default examples use `NK_ARENA_DEFAULT_CAPACITY` (64 KiB). MNIST needs multi-MiB buffers. Use `nk_inspect_model()` and read `arena_bytes_after_forward` in `nk_inspect_info_t`, then allocate static storage with headroom. See [ARENA.md](ARENA.md).
+`nk_arena_init_heap()` performs **one** `malloc` for the backing buffer; inference uses bump allocation inside it. `nk_arena_destroy_heap()` frees that buffer on **CPU only**; on MCU/MPU it is a no-op.
+
+**Sizing:** CPU examples use `NK_ARENA_DEFAULT_CAPACITY` (**4 MiB**) so MNIST-scale models fit. MCU/MPU use 64 KiB / 128 KiB. For custom firmware, use `nk_inspect_model()` and read `arena_bytes_after_forward`. See [ARENA.md](ARENA.md).
 
 Model load / run APIs allocate internally with the correct alignment; you only need `nk_arena_alloc` when building custom integrations on top of the C API.
 
@@ -287,7 +337,9 @@ nk_status_t nk_inspect_model(...);
 
 **C++-only diagnostics (no C binding):** `NkLoader::PrintHeader` — detailed binary header dump. See [API_PARITY.md](API_PARITY.md).
 
-## Tests and CLI
+## Tests and CLI (CPU / desktop builds only)
+
+Available when `NETKIT_DESKTOP` is defined (`NETKIT_TARGET=cpu`):
 
 ```c
 nk_test_summary_t nk_run_model_tests(const char* nk_path);
@@ -295,7 +347,7 @@ nk_test_summary_t nk_run_all_tests(void);
 int nk_cli_run(int argc, char** argv);
 ```
 
-Embedded test format: [NK_FORMAT.md](NK_FORMAT.md). CLI commands: [CLI.md](CLI.md).
+Embedded test format: [NK_FORMAT.md](NK_FORMAT.md). CLI commands: [CLI.md](CLI.md). Build profiles: [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
 ## Model load and inference
 

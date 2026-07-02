@@ -1,10 +1,10 @@
 # ONNX Import
 
-netkit includes a **dependency-free ONNX importer** written in C++26. It parses ONNX `ModelProto` protobuf wire format directly (no libprotobuf, no ONNX Runtime) and loads supported graphs into `MLPNetwork` / `CNNNetwork` for inference and parity testing.
+ONNX is a **host-side** format only. The Python packager reads ONNX and writes **`.nk`**; the C++ runtime loads `.nk` only.
 
-For deployment, convert ONNX to **`.nk`** with the Python packager — the C++ runtime loads `.nk` only.
+There is **no ONNX reader in C++**. Parity between converted models and their source graphs is tested in Python (`python/tests/test_onnx_parity.py`) using ONNX Runtime as the reference.
 
-## Python packager (recommended)
+## Python packager
 
 ```bash
 pip install -e python
@@ -15,30 +15,6 @@ make export-nk    # all bundled regression models
 ```
 
 See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
-
-## C++ runtime importer (parity tests)
-
-The C++ importer loads ONNX directly into arena-backed networks — used by ONNX parity tests in `src/test_onnx.cpp` to compare against committed `.nk` files.
-
-```cpp
-#include "onnx_importer.hpp"
-
-MLPNetwork* mlp = nullptr;
-CNNNetwork* cnn = nullptr;
-NkLoader::NetworkKind kind{};
-std::array<uint32_t, kMaxTensorRank> input_shape{};
-uint32_t input_rank = 0;
-
-OnnxImporter::LoadFromOnnx("model.onnx", arena, kind, mlp, cnn, input_shape, input_rank);
-```
-
-Headers:
-
-| Header | Purpose |
-|--------|---------|
-| `onnx_importer.hpp` | Load-from-ONNX API |
-| `onnx_model.hpp` | Parsed ONNX graph (internal/debug) |
-| `protobuf_wire.hpp` | Minimal protobuf wire decoder |
 
 ## Supported ONNX operators
 
@@ -53,12 +29,12 @@ Headers:
 
 ## Input layouts
 
-| netkit network | ONNX graph input | `.nk` input shape |
-|----------------|------------------|-------------------|
+| netkit network | ONNX graph input | `.nk` runtime input shape |
+|----------------|------------------|----------------------------|
 | MLP | `[batch, features]` | same |
 | CNN | `[N, C, H, W]` (NCHW) | `[H, W, C]` NHWC |
 
-At inference time, feed CNN inputs in **NHWC flatten order** (same as existing netkit CNN models). The importer reorders conv weights; it does **not** transpose runtime inputs.
+At inference time, feed CNN inputs in **NHWC flatten order** (same as existing netkit CNN models). The converter reorders conv weights; it does **not** transpose runtime inputs.
 
 ## Limitations (v1)
 
@@ -67,23 +43,31 @@ At inference time, feed CNN inputs in **NHWC flatten order** (same as existing n
 - **Linear graphs** — no branches, skip connections, or subgraphs
 - **No `Pad`** — padded convolutions are not supported (matches netkit valid conv)
 - **Square kernels** — `Conv` / `MaxPool` use one `kernel_shape` value for height and width
-- **Desktop import tool** — uses `std::vector` while parsing; inference still uses the arena
 
-PyTorch/TensorFlow exports often include `MatMul`, `Add`, `BatchNormalization`, or `Reshape` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`) or extend the importer.
+PyTorch/TensorFlow exports often include `MatMul`, `Add`, `BatchNormalization`, or `Reshape` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`) or extend the converter.
 
-## Regenerating test ONNX files
+## Testing
+
+| Suite | What it validates |
+|-------|-------------------|
+| C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (36 cases) |
+| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (26 cases; `mnist_cnn` export pending) |
+
+```bash
+make                          # build netkit CLI
+pip install -e python   # onnx + onnxruntime
+make test                     # C++ embedded + Python ONNX parity
+```
+
+Regenerate bundled ONNX sidecars from committed `.nk` files:
 
 ```bash
 pip install onnx numpy
 python3 tools/export_onnx_test_models.py
-make export-nk
-make test-cpp
 ```
-
-Committed assets: `models/*.onnx` for all regression models (`test_mlp`, `mlp_hand`, `test_cnn`, `cnn_4x4_single`, `cnn_hand`, `mnist_mlp`, `mnist_cnn`). Parity tests in `src/test_onnx.cpp` run the same inputs through `.nk` and ONNX import and compare outputs.
 
 ## Related docs
 
-- [NK_FORMAT.md](NK_FORMAT.md) — binary model layout
-- [ARENA.md](ARENA.md) — size the arena for loaded models
+- [NK_FORMAT.md](NK_FORMAT.md) — binary model layout and embedded tests
+- [TESTING.md](TESTING.md) — full test matrix
 - [CLI.md](CLI.md) — full CLI reference
