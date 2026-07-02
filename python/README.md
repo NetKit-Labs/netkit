@@ -2,7 +2,9 @@
 
 Convert ONNX models into binary **`.nk`** files for the C++ runtime.
 
-**Role in netkit:** Phase 1 serializer (ONNX → `.nk`). Phase 2 will add compiler-style optimizations here (fusion, layout, quantization) — see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md).
+**Role in netkit:** Phase 1 serializer (ONNX → `.nk`). Phase 2 adds packager optimizations (fusion at export, layout, quantization) — see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md).
+
+Supported ONNX ops: `Gemm`, `Conv` (symmetric padding), `MaxPool`, `AveragePool`, `BatchNormalization`, `Flatten`, and fused activations (`Relu`, `Sigmoid`, `Tanh`, `LeakyRelu`, `Clip`→ReLU6, `Softmax`). Details: [docs/ONNX.md](../docs/ONNX.md).
 
 ## Install
 
@@ -34,6 +36,7 @@ make export-nk
 ```bash
 pip install -e python   # onnx + onnxruntime for parity tests
 make test-python        # .nk vs ONNX Runtime, 69 cases (from repo root, after make)
+python -m unittest python.tests.test_onnx_convert_ops  # padding, avg pool, batch norm, fusion
 ```
 
 See [docs/TESTING.md](../docs/TESTING.md) and [docs/ONNX.md](../docs/ONNX.md).

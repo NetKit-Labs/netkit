@@ -12,7 +12,7 @@
 #   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
 #
 # Optional CMSIS-NN kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_nn.sh):
-#   NETKIT_CMSIS_NN=1      — use ARM CMSIS-NN float32 conv2d + max-pool + FC backends
+#   NETKIT_CMSIS_NN=1      — use ARM CMSIS-NN float32 conv2d + pool + batch norm + FC backends
 #
 # Optional CMSIS-DSP kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_dsp.sh):
 #   NETKIT_CMSIS_DSP=1     — use ARM CMSIS-DSP float32 vector/matrix ops in Ops::

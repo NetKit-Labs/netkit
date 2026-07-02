@@ -11,7 +11,7 @@ Companion project: [memkit](https://github.com/jameslavrenz/memkit) for general-
 The C++ engine is an **interpreter-style forward executor**:
 
 1. Load a `.nk` file (architecture descriptor + float32 weights).
-2. Walk the layer list at runtime (Dense, Conv2D, MaxPool2D, Flatten, activations).
+2. Walk the layer list at runtime (Dense, Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, activations).
 3. Execute generic kernel ops (`MatMul`, `Conv2D`, activations) from shared implementations.
 4. Allocate weights and **ping-pong activation buffers** from a bump arena.
 
@@ -25,9 +25,9 @@ The Python packager (`python/netkit/`) converts **ONNX → `.nk`** and can embed
 
 Phase 2 moves optimization **into the packager** so firmware stays lean:
 
-| Optimization (planned) | Effect |
+| Optimization | Effect |
 |------------------------|--------|
-| Operator fusion | Fold conv+relu, dense+activation into fewer runtime steps |
+| Operator fusion (partial) | Conv/Gemm + ReLU, Sigmoid, Tanh, LeakyRelu, ReLU6, Softmax fused at ONNX export into `.nk` activation tags |
 | Constant folding / layout | Precompute shapes, choose memory-friendly weight layout |
 | Dead-code elimination | Strip unused nodes before `.nk` emission |
 | Quantization-aware export | Emit int8/int16/float16 payloads with scale metadata |

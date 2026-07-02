@@ -8,6 +8,8 @@ bool Conv2D::forward(const Tensor& input, Tensor& output, NetkitBackendActivatio
                                     bias,
                                     kernel_size,
                                     stride,
+                                    pad_h,
+                                    pad_w,
                                     in_channels,
                                     out_channels,
                                     fuse_activation,
@@ -34,12 +36,17 @@ bool Conv2D::forward(const Tensor& input, Tensor& output, NetkitBackendActivatio
                     {
                         for (int ic = 0; ic < in_channels; ic++)
                         {
-                            uint32_t ih = oh * stride + kh;
-                            uint32_t iw = ow * stride + kw;
+                            const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                            const int iw = static_cast<int>(ow) * stride + kw - pad_w;
+                            if (ih < 0 || iw < 0 || ih >= static_cast<int>(input.shape[0]) ||
+                                iw >= static_cast<int>(input.shape[1]))
+                                continue;
 
-                            uint32_t in_idx = index_nhwc(input, ih, iw, ic);
+                            const uint32_t in_idx =
+                                index_nhwc(input, static_cast<uint32_t>(ih), static_cast<uint32_t>(iw), ic);
 
-                            uint32_t w_idx = (((oc * kernel_size + kh) * kernel_size + kw) * in_channels) + ic;
+                            const uint32_t w_idx =
+                                (((oc * kernel_size + kh) * kernel_size + kw) * in_channels) + ic;
 
                             sum += in[in_idx] * weights[w_idx];
                         }

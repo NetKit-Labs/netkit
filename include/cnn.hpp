@@ -19,6 +19,8 @@ enum class CnnBlockType
 {
     Conv2D,
     MaxPool2D,
+    AvgPool2D,
+    BatchNorm2d,
     Flatten,
     Dense
 };
@@ -40,11 +42,30 @@ struct MaxPool2DLayer
     void forward(const Tensor& input, Tensor& output);
 };
 
+struct AvgPool2DLayer
+{
+    int pool_size = 2;
+    int stride = 2;
+
+    void forward(const Tensor& input, Tensor& output);
+};
+
+struct BatchNorm2DLayer
+{
+    int channels = 0;
+    float* scale = nullptr;
+    float* bias = nullptr;
+
+    void forward(const Tensor& input, Tensor& output);
+};
+
 struct CnnBlock
 {
     CnnBlockType type = CnnBlockType::Conv2D;
     Conv2DLayer conv;
     MaxPool2DLayer pool;
+    AvgPool2DLayer avg_pool;
+    BatchNorm2DLayer batch_norm;
     MLPLayer dense;
 };
 
@@ -81,9 +102,15 @@ public:
                        float* weights,
                        float* bias,
                        ConvActivationType activation,
-                       float leaky_alpha = 0.01f);
+                       float leaky_alpha = 0.01f,
+                       int pad_h = 0,
+                       int pad_w = 0);
 
     void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+
+    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+
+    void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);
 
     void InitFlattenLayer(uint32_t layer_idx);
 

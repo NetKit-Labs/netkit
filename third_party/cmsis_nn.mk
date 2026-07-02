@@ -18,7 +18,9 @@ CMSIS_NN_SOURCES = \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nntables_flt.c \
 	$(CMSIS_NN_DIR)/Source/FullyConnectedFunctions/arm_fully_connected_f32.c \
 	$(CMSIS_NN_DIR)/Source/PoolingFunctions/arm_max_pool_f32.c \
+	$(CMSIS_NN_DIR)/Source/PoolingFunctions/arm_avg_pool_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_maxpool1d_f32.c \
+	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_batch_norm_f32.c \
 	$(CMSIS_NN_DIR)/Source/ActivationFunctions/arm_nn_activation_f32.c \
 	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_softmax_f32.c \
 	$(CMSIS_NN_DIR)/Source/BasicMathFunctions/arm_elementwise_add_f32.c

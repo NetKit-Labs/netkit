@@ -26,6 +26,8 @@ class LayerKind(IntEnum):
     CONV2D = 2
     MAX_POOL2D = 3
     FLATTEN = 4
+    AVG_POOL2D = 5
+    BATCH_NORM2D = 6
 
 
 class DType(IntEnum):
@@ -97,15 +99,30 @@ def pack_dense_layer(*, units: int, activation: Activation, alpha: float) -> byt
 
 
 def pack_conv_layer(
-    *, kernel_size: int, stride: int, filters: int, activation: Activation, alpha: float
+    *,
+    kernel_size: int,
+    stride: int,
+    filters: int,
+    activation: Activation,
+    alpha: float,
+    pad_h: int = 0,
+    pad_w: int = 0,
 ) -> bytes:
     return pack_layer_kind(LayerKind.CONV2D) + struct.pack(
         "<III", kernel_size, stride, filters
-    ) + struct.pack("<B3xf", int(activation), alpha)
+    ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, 0, alpha)
 
 
 def pack_pool_layer(*, pool_size: int, stride: int) -> bytes:
     return pack_layer_kind(LayerKind.MAX_POOL2D) + struct.pack("<II", pool_size, stride)
+
+
+def pack_avg_pool_layer(*, pool_size: int, stride: int) -> bytes:
+    return pack_layer_kind(LayerKind.AVG_POOL2D) + struct.pack("<II", pool_size, stride)
+
+
+def pack_batch_norm_layer(*, channels: int) -> bytes:
+    return pack_layer_kind(LayerKind.BATCH_NORM2D) + struct.pack("<II", channels, 0)
 
 
 def pack_flatten_layer() -> bytes:

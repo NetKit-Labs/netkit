@@ -14,13 +14,14 @@ except ImportError as exc:  # pragma: no cover
 from .format import Activation, activation_from_name
 from .writer import LayerSpec, ModelSpec, write_nk
 
-
-def _next_is_relu(nodes, index: int) -> bool:
-    return index + 1 < len(nodes) and nodes[index + 1].op_type == "Relu"
-
-
-def _next_is_softmax(nodes, index: int) -> bool:
-    return index + 1 < len(nodes) and nodes[index + 1].op_type == "Softmax"
+_STANDALONE_ACTIVATIONS = {
+    "Relu",
+    "Softmax",
+    "Sigmoid",
+    "Tanh",
+    "LeakyRelu",
+    "Clip",
+}
 
 
 def _initializer_map(model: onnx.ModelProto) -> dict[str, np.ndarray]:
@@ -62,6 +63,13 @@ def _attr_int(node, name: str, default: int = 0) -> int:
     return default
 
 
+def _attr_float(node, name: str, default: float = 0.0) -> float:
+    for attr in node.attribute:
+        if attr.name == name:
+            return float(attr.f)
+    return default
+
+
 def _onnx_gemm_weight_to_netkit(weight: np.ndarray, *, trans_b: int) -> tuple[np.ndarray, int]:
     """Normalize ONNX Gemm B matrix to netkit dense layout [out, in]."""
     if trans_b:
@@ -74,6 +82,58 @@ def _attr_ints(node, name: str, default: list[int] | None = None) -> list[int]:
         if attr.name == name:
             return list(attr.ints)
     return default or []
+
+
+def _conv_output_dim(size: int, kernel: int, stride: int, pad: int) -> int:
+    return (size + 2 * pad - kernel) // stride + 1
+
+
+def _pool_output_dim(size: int, kernel: int, stride: int) -> int:
+    return (size - kernel) // stride + 1
+
+
+def _clip_is_relu6(node, initializers: dict[str, np.ndarray]) -> bool:
+    if len(node.input) < 3:
+        return False
+    min_name, max_name = node.input[1], node.input[2]
+    if min_name not in initializers or max_name not in initializers:
+        return False
+    min_val = float(initializers[min_name].reshape(-1)[0])
+    max_val = float(initializers[max_name].reshape(-1)[0])
+    return min_val == 0.0 and max_val == 6.0
+
+
+def _peek_fused_activation(
+    nodes, index: int, initializers: dict[str, np.ndarray]
+) -> tuple[Activation, float, int]:
+    if index + 1 >= len(nodes):
+        return Activation.NONE, 0.01, 0
+
+    nxt = nodes[index + 1]
+    if nxt.op_type == "Relu":
+        return Activation.RELU, 0.01, 1
+    if nxt.op_type == "Softmax":
+        return Activation.SOFTMAX, 0.01, 1
+    if nxt.op_type == "Sigmoid":
+        return Activation.SIGMOID, 0.01, 1
+    if nxt.op_type == "Tanh":
+        return Activation.TANH, 0.01, 1
+    if nxt.op_type == "LeakyRelu":
+        return Activation.LEAKY_RELU, _attr_float(nxt, "alpha", 0.01), 1
+    if nxt.op_type == "Clip" and _clip_is_relu6(nxt, initializers):
+        return Activation.RELU6, 0.01, 1
+    return Activation.NONE, 0.01, 0
+
+
+def _symmetric_conv_pads(node) -> tuple[int, int]:
+    pads = _attr_ints(node, "pads", [0, 0, 0, 0])
+    if len(pads) < 2:
+        return 0, 0
+    pad_h = int(pads[0])
+    pad_w = int(pads[1])
+    if len(pads) >= 4 and (pads[0] != pads[2] or pads[1] != pads[3]):
+        raise ValueError("asymmetric conv padding is not supported")
+    return pad_h, pad_w
 
 
 def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
@@ -91,27 +151,22 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
         i = 0
         while i < len(nodes):
             node = nodes[i]
-            if node.op_type in {"Relu", "Softmax"}:
+            if node.op_type in _STANDALONE_ACTIVATIONS:
                 i += 1
                 continue
 
             if node.op_type != "Gemm":
                 raise ValueError(f"unsupported ONNX op for MLP: {node.op_type}")
 
-            activation = Activation.NONE
-            skip = 0
-            if _next_is_relu(nodes, i):
-                activation = Activation.RELU
-                skip = 1
-            elif _next_is_softmax(nodes, i):
-                activation = Activation.SOFTMAX
-                skip = 1
+            activation, alpha, skip = _peek_fused_activation(nodes, i, initializers)
 
             weight = initializers[node.input[1]]
             bias = initializers[node.input[2]] if len(node.input) >= 3 else None
             trans_b = _attr_int(node, "transB", 0)
             packed_w, out_features = _onnx_gemm_weight_to_netkit(weight, trans_b=trans_b)
-            layers.append(LayerSpec(kind="dense", units=out_features, activation=activation))
+            layers.append(
+                LayerSpec(kind="dense", units=out_features, activation=activation, alpha=alpha)
+            )
             weight_tensors.append(packed_w)
             bias_tensors.append(
                 (bias.astype(np.float32) if bias is not None else np.zeros(out_features, dtype=np.float32))
@@ -134,18 +189,11 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
     i = 0
     while i < len(nodes):
         node = nodes[i]
-        if node.op_type in {"Relu", "Softmax"}:
+        if node.op_type in _STANDALONE_ACTIVATIONS:
             i += 1
             continue
 
-        activation = Activation.NONE
-        skip = 0
-        if _next_is_relu(nodes, i):
-            activation = Activation.RELU
-            skip = 1
-        elif _next_is_softmax(nodes, i):
-            activation = Activation.SOFTMAX
-            skip = 1
+        activation, alpha, skip = _peek_fused_activation(nodes, i, initializers)
 
         if node.op_type == "Conv":
             weight = initializers[node.input[1]]
@@ -153,7 +201,8 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
             kernel_shape = _attr_ints(node, "kernel_shape")
             strides = _attr_ints(node, "strides")
             kernel = int(kernel_shape[0]) if kernel_shape else int(weight.shape[2])
-            stride = int(strides[0]) if strides else kernel
+            stride = int(strides[0]) if strides else 1
+            pad_h, pad_w = _symmetric_conv_pads(node)
             out_c = weight.shape[0]
             layers.append(
                 LayerSpec(
@@ -162,14 +211,17 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
                     stride=stride,
                     filters=out_c,
                     activation=activation,
+                    alpha=alpha,
+                    pad_h=pad_h,
+                    pad_w=pad_w,
                 )
             )
             weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
             bias_tensors.append(
                 (bias.astype(np.float32) if bias is not None else np.zeros(out_c, dtype=np.float32))
             )
-            spatial_h = (spatial_h - kernel) // stride + 1
-            spatial_w = (spatial_w - kernel) // stride + 1
+            spatial_h = _conv_output_dim(spatial_h, kernel, stride, pad_h)
+            spatial_w = _conv_output_dim(spatial_w, kernel, stride, pad_w)
             channels = out_c
             i += 1 + skip
             continue
@@ -180,8 +232,37 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
             kernel = int(kernel_shape[0]) if kernel_shape else 2
             stride = int(strides[0]) if strides else kernel
             layers.append(LayerSpec(kind="max_pool2d", pool_size=kernel, stride=stride))
-            spatial_h = (spatial_h - kernel) // stride + 1
-            spatial_w = (spatial_w - kernel) // stride + 1
+            spatial_h = _pool_output_dim(spatial_h, kernel, stride)
+            spatial_w = _pool_output_dim(spatial_w, kernel, stride)
+            i += 1
+            continue
+
+        if node.op_type == "AveragePool" or node.op_type == "AvgPool":
+            kernel_shape = _attr_ints(node, "kernel_shape")
+            strides = _attr_ints(node, "strides")
+            kernel = int(kernel_shape[0]) if kernel_shape else 2
+            stride = int(strides[0]) if strides else kernel
+            layers.append(LayerSpec(kind="avg_pool2d", pool_size=kernel, stride=stride))
+            spatial_h = _pool_output_dim(spatial_h, kernel, stride)
+            spatial_w = _pool_output_dim(spatial_w, kernel, stride)
+            i += 1
+            continue
+
+        if node.op_type == "BatchNormalization":
+            scale = initializers[node.input[1]]
+            beta = initializers[node.input[2]]
+            mean = initializers[node.input[3]]
+            var = initializers[node.input[4]]
+            epsilon = _attr_float(node, "epsilon", 1e-5)
+            out_c = int(scale.shape[0])
+            inv_std = 1.0 / np.sqrt(var.astype(np.float64) + epsilon)
+            folded_scale = (scale.astype(np.float64) * inv_std).astype(np.float32)
+            folded_bias = (beta.astype(np.float64) - mean.astype(np.float64) * folded_scale).astype(
+                np.float32
+            )
+            layers.append(LayerSpec(kind="batch_norm2d", channels=out_c))
+            weight_tensors.append(folded_scale)
+            bias_tensors.append(folded_bias)
             i += 1
             continue
 
@@ -197,7 +278,7 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
             trans_b = _attr_int(node, "transB", 0)
             packed_w, out_features = _onnx_gemm_weight_to_netkit(weight, trans_b=trans_b)
             layers.append(
-                LayerSpec(kind="dense", units=out_features, activation=activation)
+                LayerSpec(kind="dense", units=out_features, activation=activation, alpha=alpha)
             )
             weight_tensors.append(packed_w)
             bias_tensors.append(

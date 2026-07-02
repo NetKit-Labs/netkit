@@ -84,7 +84,7 @@ namespace Ops
         if (netkit_cmsis_nn_add_f32(&A, &B, &C))
             return;
 
-        if (netkit_cmsis_dsp_add_f32(&A, &B, &C))
+        if (netkit_cmsis_dsp_nn_overlap_fallback() && netkit_cmsis_dsp_add_f32(&A, &B, &C))
             return;
 
         const float* a = static_cast<const float*>(A.data);
@@ -134,7 +134,7 @@ namespace Ops
         if (netkit_cmsis_nn_add_f32(&A, &B, &C))
             return;
 
-        if (netkit_cmsis_dsp_add_f32(&A, &B, &C))
+        if (netkit_cmsis_dsp_nn_overlap_fallback() && netkit_cmsis_dsp_add_f32(&A, &B, &C))
             return;
 
         const float* a = static_cast<const float*>(A.data);
@@ -313,7 +313,7 @@ namespace Ops
         if (netkit_cmsis_activation_forward(&A, &C, NETKIT_BACKEND_ACT_RELU, 0.0f))
             return;
 
-        if (netkit_cmsis_dsp_clip_f32(&A, &C, 0.0f, FLT_MAX))
+        if (netkit_cmsis_dsp_nn_overlap_fallback() && netkit_cmsis_dsp_clip_f32(&A, &C, 0.0f, FLT_MAX))
             return;
 
         const float* a = static_cast<const float*>(A.data);
@@ -396,7 +396,7 @@ namespace Ops
         if (netkit_cmsis_activation_forward(&A, &C, NETKIT_BACKEND_ACT_RELU6, 0.0f))
             return;
 
-        if (netkit_cmsis_dsp_clip_f32(&A, &C, 0.0f, 6.0f))
+        if (netkit_cmsis_dsp_nn_overlap_fallback() && netkit_cmsis_dsp_clip_f32(&A, &C, 0.0f, 6.0f))
             return;
 
         const float* a = static_cast<const float*>(A.data);

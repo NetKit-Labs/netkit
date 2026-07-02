@@ -22,6 +22,8 @@ namespace NkFormat
             case LayerKind::Conv2D: return "conv2d";
             case LayerKind::MaxPool2D: return "max_pool2d";
             case LayerKind::Flatten: return "flatten";
+            case LayerKind::AvgPool2D: return "avg_pool2d";
+            case LayerKind::BatchNorm2d: return "batch_norm2d";
         }
         return "unknown";
     }

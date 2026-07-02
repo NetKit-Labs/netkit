@@ -71,3 +71,18 @@ jobs:
 
       - name: Embedded MCU/MPU smoke (NETKIT_ARCH + CMSIS)
         run: ./tools/run_embedded_smoke.sh
+
+  cm4-cross-compile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ARM GCC
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: CM4 compile-only (CMSIS-NN)
+        run: ./tools/compile_cm4_cross.sh

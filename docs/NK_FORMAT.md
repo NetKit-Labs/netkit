@@ -7,7 +7,7 @@ Version **2** — single-file inference bundle for embedded runtimes. Produced b
 | Section | Contents |
 |---------|----------|
 | Header | Magic, version, network kind, input shape, layer/tensor counts, payload sizes |
-| Layer descriptors | One record per layer (dense, conv2d, max_pool2d, flatten) |
+| Layer descriptors | One record per layer (dense, conv2d, max_pool2d, avg_pool2d, batch_norm2d, flatten) |
 | Tensor catalog | Shape + dtype for each weight tensor, then each bias tensor |
 | Weight payload | All weight tensors concatenated (float32, little-endian) |
 | Bias payload | All bias tensors concatenated (float32, little-endian) |
@@ -66,9 +66,11 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 | Kind | Value | Extra fields |
 |------|------:|--------------|
 | `dense` | 1 | `units u32`, `activation u8`, pad×3, `alpha f32` |
-| `conv2d` | 2 | `kernel u32`, `stride u32`, `filters u32`, `activation u8`, pad×3, `alpha f32` |
+| `conv2d` | 2 | `kernel u32`, `stride u32`, `filters u32`, `activation u8`, `pad_h u8`, `pad_w u8`, `reserved u8`, `alpha f32` |
 | `max_pool2d` | 3 | `pool_size u32`, `stride u32` |
 | `flatten` | 4 | (none) |
+| `avg_pool2d` | 5 | `pool_size u32`, `stride u32` |
+| `batch_norm2d` | 6 | `channels u32`, `reserved u32` |
 
 ### Activation enum (`uint8`)
 

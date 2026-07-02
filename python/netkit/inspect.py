@@ -27,18 +27,26 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
         }
     if kind == LayerKind.CONV2D:
         kernel, stride, filters = struct.unpack("<III", stream.read(12))
-        activation, alpha = struct.unpack("<B3xf", stream.read(8))
+        activation, pad_h, pad_w, _reserved, alpha = struct.unpack("<BBBBf", stream.read(8))
         return {
             "kind": "conv2d",
             "kernel_size": kernel,
             "stride": stride,
             "filters": filters,
+            "pad_h": pad_h,
+            "pad_w": pad_w,
             "activation": Activation(activation).name.lower(),
             "alpha": alpha,
         }
     if kind == LayerKind.MAX_POOL2D:
         pool, stride = struct.unpack("<II", stream.read(8))
         return {"kind": "max_pool2d", "pool_size": pool, "stride": stride}
+    if kind == LayerKind.AVG_POOL2D:
+        pool, stride = struct.unpack("<II", stream.read(8))
+        return {"kind": "avg_pool2d", "pool_size": pool, "stride": stride}
+    if kind == LayerKind.BATCH_NORM2D:
+        channels, _reserved = struct.unpack("<II", stream.read(8))
+        return {"kind": "batch_norm2d", "channels": channels}
     if kind == LayerKind.FLATTEN:
         return {"kind": "flatten"}
     raise ValueError(f"unsupported layer kind: {kind}")
@@ -50,6 +58,10 @@ def _layer_body_bytes(kind: int) -> int:
     if kind == LayerKind.CONV2D:
         return 20
     if kind == LayerKind.MAX_POOL2D:
+        return 8
+    if kind == LayerKind.AVG_POOL2D:
+        return 8
+    if kind == LayerKind.BATCH_NORM2D:
         return 8
     if kind == LayerKind.FLATTEN:
         return 0

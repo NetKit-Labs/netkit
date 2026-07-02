@@ -146,4 +146,40 @@ extern "C" int netkit_cmsis_dsp_clip_f32(const Tensor* input, Tensor* output, fl
     return 1;
 }
 
+extern "C" int netkit_cmsis_dsp_batch_norm2d_forward(const Tensor* input,
+                                                     const float* scale,
+                                                     const float* bias,
+                                                     int channels,
+                                                     Tensor* output)
+{
+    if (!input || !output || !scale || !bias || input->rank != 3 || output->rank != 3)
+        return 0;
+    if (!tensor_is_dense(input) || !tensor_is_dense(output))
+        return 0;
+    if (static_cast<int>(input->shape[2]) != channels || static_cast<int>(output->shape[2]) != channels)
+        return 0;
+    if (input->shape[0] != output->shape[0] || input->shape[1] != output->shape[1])
+        return 0;
+    if (channels <= 0)
+        return 0;
+
+    const uint32_t channel_count = static_cast<uint32_t>(channels);
+    const uint32_t spatial = input->shape[0] * input->shape[1];
+    const float32_t* scale_vec = static_cast<const float32_t*>(scale);
+    const float32_t* bias_vec = static_cast<const float32_t*>(bias);
+
+    const float32_t* in = static_cast<const float32_t*>(input->data);
+    float32_t* out = static_cast<float32_t*>(output->data);
+
+    for (uint32_t p = 0; p < spatial; ++p)
+    {
+        const float32_t* in_row = in + p * channel_count;
+        float32_t* out_row = out + p * channel_count;
+        arm_mult_f32(in_row, scale_vec, out_row, channel_count);
+        arm_add_f32(out_row, bias_vec, out_row, channel_count);
+    }
+
+    return 1;
+}
+
 #endif /* NETKIT_USE_CMSIS_DSP */

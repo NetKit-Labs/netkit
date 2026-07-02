@@ -21,10 +21,14 @@ See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
 | ONNX op | netkit layer | Notes |
 |---------|--------------|-------|
 | `Gemm` | `dense` | float32 weights/bias initializers; `transB` supported |
-| `Conv` | `conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]`; **valid conv, no padding** |
+| `Conv` | `conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]`; symmetric `pads` (top=left, bottom=right); fuses trailing activations |
 | `MaxPool` | `max_pool2d` | square kernel from `kernel_shape` |
+| `AveragePool` / `AvgPool` | `avg_pool2d` | square kernel from `kernel_shape` |
+| `BatchNormalization` | `batch_norm2d` | folded to per-channel `scale` + `bias` tensors |
 | `Flatten` | `flatten` | CNN head — test ONNX sidecars transpose NCHW→NHWC before flatten to match runtime |
 | `Relu` | activation | fused when immediately after Gemm/Conv |
+| `Sigmoid` / `Tanh` / `LeakyRelu` | activation | fused when immediately after Gemm/Conv |
+| `Clip` | activation | fused as ReLU6 when min=0, max=6 |
 | `Softmax` | activation | fused when immediately after final Gemm |
 
 ## Input layouts
@@ -41,10 +45,10 @@ At inference time, feed CNN inputs in **NHWC flatten order** (same as existing n
 - **Float32 only** — other ONNX `TensorProto` types are rejected
 - **No external data** — weights must be embedded in the `.onnx` file (`raw_data` or `float_data`)
 - **Linear graphs** — no branches, skip connections, or subgraphs
-- **No `Pad`** — padded convolutions are not supported (matches netkit valid conv)
-- **Square kernels** — `Conv` / `MaxPool` use one `kernel_shape` value for height and width
+- **Symmetric conv padding only** — `pads` must match top/bottom and left/right
+- **Square kernels** — `Conv` / pool ops use one `kernel_shape` value for height and width
 
-PyTorch/TensorFlow exports often include `MatMul`, `Add`, `BatchNormalization`, or `Reshape` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`) or extend the converter.
+PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `Pad` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`) or extend the converter.
 
 ## Testing
 

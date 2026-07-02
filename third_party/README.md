@@ -7,7 +7,7 @@ optimized neural-network kernels for Arm Cortex-M (with portable scalar fallback
 
 When enabled (`NETKIT_CMSIS_NN=1` / `-DNETKIT_CMSIS_NN=ON`), netkit uses CMSIS-NN for:
 
-- Conv2d, max-pool, fully-connected (dense weights in `[out, in]` layout)
+- Conv2d (with symmetric padding), max-pool, avg-pool, batch norm, fully-connected (dense weights in `[out, in]` layout)
 - Activations (ReLU, sigmoid, tanh, leaky ReLU, ReLU6) and softmax
 - Elementwise add (bias / residual paths)
 - ReLU/ReLU6 fusion inside conv and FC when the CMSIS path succeeds
@@ -20,7 +20,10 @@ optimized digital signal processing kernels (vector math, matrix multiply) for A
 When enabled (`NETKIT_CMSIS_DSP=1` / `-DNETKIT_CMSIS_DSP=ON`), netkit uses CMSIS-DSP for:
 
 - Ops elementwise add/mul, scale, clip (ReLU/ReLU6 fallback), matrix multiply
-- Fully-connected fallback via `arm_mat_vec_mult_f32`
+- Fully-connected fallback via `arm_mat_vec_mult_f32` (desktop, or MCU/MPU when CMSIS-NN is off)
+- Batch-norm fallback via `arm_mult_f32` + `arm_add_f32` (same gating as FC)
+
+On **MCU/MPU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then generic reference — DSP does not substitute for NN layer kernels. On **desktop**, DSP backs NN when the host NN path returns 0.
 - `ARM_MATH_LOOPUNROLL` on all CMSIS-DSP builds (desktop and embedded)
 
 ## Fetching
@@ -32,6 +35,8 @@ make cmsis-init
 ./tools/fetch_cmsis_dsp.sh
 # or: git submodule update --init third_party/CMSIS-NN third_party/CMSIS-DSP
 ```
+
+Both libraries are **git submodule pins** (`CMSIS-NN` @ `dbf45db`, `CMSIS-DSP` @ `4fb9ef7`). `make cmsis-init` checks out those commits when submodules are not initialized.
 
 ## Architecture flags (`NETKIT_ARCH`)
 

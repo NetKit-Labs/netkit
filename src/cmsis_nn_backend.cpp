@@ -73,6 +73,8 @@ extern "C" int netkit_cmsis_conv2d_forward(const Tensor* input,
                                            const float* bias,
                                            int kernel_size,
                                            int stride,
+                                           int pad_h,
+                                           int pad_w,
                                            int in_channels,
                                            int out_channels,
                                            NetkitBackendActivation fuse_activation,
@@ -94,7 +96,7 @@ extern "C" int netkit_cmsis_conv2d_forward(const Tensor* input,
     float* out = static_cast<float*>(output->data);
 
     const cmsis_nn_conv_params_f32 conv_params = {
-        .padding = {.w = 0, .h = 0},
+        .padding = {.w = pad_w, .h = pad_h},
         .stride = {.w = stride, .h = stride},
         .dilation = {.w = 1, .h = 1},
         .activation = fused_activation_clamp(fuse_activation),
@@ -186,6 +188,74 @@ extern "C" int netkit_cmsis_max_pool2d_forward(const Tensor* input,
                                             &filter_dims,
                                             &output_dims,
                                             out))
+               ? 1
+               : 0;
+}
+
+extern "C" int netkit_cmsis_avg_pool2d_forward(const Tensor* input, int pool_size, int stride, Tensor* output)
+{
+    if (!input || !output || input->rank != 3 || output->rank != 3)
+        return 0;
+
+    const cmsis_nn_pool_params_f32 pool_params = {
+        .stride = {.w = stride, .h = stride},
+        .padding = {.w = 0, .h = 0},
+        .activation = {.min = -FLT_MAX, .max = FLT_MAX},
+    };
+
+    const cmsis_nn_dims input_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(input->shape[0]),
+        .w = static_cast<int32_t>(input->shape[1]),
+        .c = static_cast<int32_t>(input->shape[2]),
+    };
+    const cmsis_nn_dims filter_dims = {.n = 1, .h = pool_size, .w = pool_size, .c = 1};
+    const cmsis_nn_dims output_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(output->shape[0]),
+        .w = static_cast<int32_t>(output->shape[1]),
+        .c = static_cast<int32_t>(output->shape[2]),
+    };
+
+    cmsis_nn_context ctx = {0};
+    const float* in = static_cast<const float*>(input->data);
+    float* out = static_cast<float*>(output->data);
+
+    return cmsis_status_ok(arm_avg_pool_f32(&ctx,
+                                            &pool_params,
+                                            &input_dims,
+                                            in,
+                                            &filter_dims,
+                                            &output_dims,
+                                            out))
+               ? 1
+               : 0;
+}
+
+extern "C" int netkit_cmsis_batch_norm2d_forward(const Tensor* input,
+                                                 const float* scale,
+                                                 const float* bias,
+                                                 int channels,
+                                                 Tensor* output)
+{
+    if (!input || !output || !scale || !bias || input->rank != 3 || output->rank != 3)
+        return 0;
+
+    if (static_cast<int>(input->shape[2]) != channels || static_cast<int>(output->shape[2]) != channels)
+        return 0;
+
+    const cmsis_nn_dims input_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(input->shape[0]),
+        .w = static_cast<int32_t>(input->shape[1]),
+        .c = channels,
+    };
+
+    const float* in = static_cast<const float*>(input->data);
+    float* out = static_cast<float*>(output->data);
+
+    return cmsis_status_ok(
+               arm_batch_norm_f32(in, out, scale, bias, &input_dims, ARM_NN_LAYOUT_NHWC))
                ? 1
                : 0;
 }

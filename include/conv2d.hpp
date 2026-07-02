@@ -7,6 +7,8 @@ struct Conv2D
 {
     int kernel_size = 3;
     int stride = 1;
+    int pad_h = 0;
+    int pad_w = 0;
     int in_channels;
     int out_channels;
 

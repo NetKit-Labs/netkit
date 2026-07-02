@@ -41,13 +41,18 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
     const bool used_cmsis_nn =
         netkit_cmsis_fully_connected_forward(&input, &weights, &bias, backend_activation, &output) != 0;
 
-    if (!used_cmsis_nn)
+    if (!used_cmsis_nn && netkit_cmsis_dsp_nn_overlap_fallback())
     {
         if (!netkit_cmsis_dsp_fully_connected_forward(&input, &weights, &bias, &output))
         {
             FullyConnected(input, weights, output);
             MatAdd(output, bias, output);
         }
+    }
+    else if (!used_cmsis_nn)
+    {
+        FullyConnected(input, weights, output);
+        MatAdd(output, bias, output);
     }
 
     switch (activation)

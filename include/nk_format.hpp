@@ -41,7 +41,9 @@ namespace NkFormat
         Dense = 1,
         Conv2D = 2,
         MaxPool2D = 3,
-        Flatten = 4
+        Flatten = 4,
+        AvgPool2D = 5,
+        BatchNorm2d = 6
     };
 
     enum class DType : uint8_t
@@ -95,7 +97,16 @@ namespace NkFormat
         uint32_t stride = 1;
         uint32_t filters = 0;
         Activation activation = Activation::None;
+        uint8_t pad_h = 0;
+        uint8_t pad_w = 0;
+        uint8_t reserved = 0;
         float alpha = 0.01f;
+    };
+
+    struct BatchNormLayerDesc
+    {
+        uint32_t channels = 0;
+        uint32_t reserved = 0;
     };
 
     struct PoolLayerDesc
@@ -110,6 +121,7 @@ namespace NkFormat
         DenseLayerDesc dense{};
         ConvLayerDesc conv{};
         PoolLayerDesc pool{};
+        BatchNormLayerDesc batch_norm{};
     };
 
     const char* NetworkKindName(NetworkKind kind);

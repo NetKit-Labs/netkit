@@ -18,6 +18,8 @@
  * Optional kernel backends (Makefile / CMake):
  *   NETKIT_USE_CMSIS_NN  — ARM CMSIS-NN float32 conv/pool/FC/activations/softmax/add
  *   NETKIT_USE_CMSIS_DSP — ARM CMSIS-DSP float32 vector/matrix ops + clip
+ *   On MCU/MPU with both enabled, NN owns overlapping layer ops; DSP is not a fallback.
+ *   On desktop (NETKIT_DESKTOP), DSP substitutes when NN host path is unavailable.
  *
  * Target architecture (Makefile NETKIT_ARCH=... / CMake -DNETKIT_ARCH=...):
  *   Maps to CMSIS ARM_MATH_* flags (CM0–M85, A32, NEON). Unset = desktop host.

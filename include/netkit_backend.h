@@ -9,6 +9,7 @@
 #define NETKIT_BACKEND_H
 
 #include "tensor.hpp"
+#include "netkit_config.h"
 #include <cstdint>
 
 #ifdef __cplusplus
@@ -31,6 +32,27 @@ static inline int netkit_activation_is_fused(NetkitBackendActivation activation)
     return activation == NETKIT_BACKEND_ACT_RELU || activation == NETKIT_BACKEND_ACT_RELU6;
 }
 
+/*
+ * CMSIS-DSP fallback for ops that CMSIS-NN also provides (FC, add, clip activations, batch norm).
+ * - Desktop (NETKIT_DESKTOP): use DSP when NN is unavailable or returns 0 (host smoke).
+ * - MCU/MPU with NETKIT_USE_CMSIS_NN: NN then generic only — do not substitute DSP.
+ * - MCU/MPU with DSP only: use DSP fallbacks normally.
+ */
+static inline int netkit_cmsis_dsp_nn_overlap_fallback(void)
+{
+#if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
+#if defined(NETKIT_DESKTOP)
+    return 1;
+#elif defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
+    return 0;
+#else
+    return 1;
+#endif
+#else
+    return 0;
+#endif
+}
+
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
 
 /* Returns 1 on success, 0 to fall back to the reference implementation. */
@@ -39,6 +61,8 @@ int netkit_cmsis_conv2d_forward(const Tensor* input,
                                 const float* bias,
                                 int kernel_size,
                                 int stride,
+                                int pad_h,
+                                int pad_w,
                                 int in_channels,
                                 int out_channels,
                                 NetkitBackendActivation fuse_activation,
@@ -49,6 +73,14 @@ int netkit_cmsis_max_pool2d_forward(const Tensor* input,
                                     int stride,
                                     NetkitBackendActivation fuse_activation,
                                     Tensor* output);
+
+int netkit_cmsis_avg_pool2d_forward(const Tensor* input, int pool_size, int stride, Tensor* output);
+
+int netkit_cmsis_batch_norm2d_forward(const Tensor* input,
+                                      const float* scale,
+                                      const float* bias,
+                                      int channels,
+                                      Tensor* output);
 
 int netkit_cmsis_fully_connected_forward(const Tensor* input,
                                          const Tensor* kernel,
@@ -74,6 +106,8 @@ static inline int netkit_cmsis_conv2d_forward(const Tensor*,
                                               int,
                                               int,
                                               int,
+                                              int,
+                                              int,
                                               NetkitBackendActivation,
                                               Tensor*)
 {
@@ -81,6 +115,20 @@ static inline int netkit_cmsis_conv2d_forward(const Tensor*,
 }
 
 static inline int netkit_cmsis_max_pool2d_forward(const Tensor*, int, int, NetkitBackendActivation, Tensor*)
+{
+    return 0;
+}
+
+static inline int netkit_cmsis_avg_pool2d_forward(const Tensor*, int, int, Tensor*)
+{
+    return 0;
+}
+
+static inline int netkit_cmsis_batch_norm2d_forward(const Tensor*,
+                                                    const float*,
+                                                    const float*,
+                                                    int,
+                                                    Tensor*)
 {
     return 0;
 }
@@ -128,6 +176,12 @@ int netkit_cmsis_dsp_fully_connected_forward(const Tensor* input,
                                              const Tensor* kernel,
                                              const Tensor* bias,
                                              Tensor* output);
+
+int netkit_cmsis_dsp_batch_norm2d_forward(const Tensor* input,
+                                          const float* scale,
+                                          const float* bias,
+                                          int channels,
+                                          Tensor* output);
 
 #else
 
@@ -181,6 +235,15 @@ static inline int netkit_cmsis_dsp_fully_connected_forward(const Tensor* input,
     (void)kernel;
     (void)bias;
     (void)output;
+    return 0;
+}
+
+static inline int netkit_cmsis_dsp_batch_norm2d_forward(const Tensor*,
+                                                        const float*,
+                                                        const float*,
+                                                        int,
+                                                        Tensor*)
+{
     return 0;
 }
 

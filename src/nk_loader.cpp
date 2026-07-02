@@ -56,13 +56,14 @@ namespace NkLoader
                     case NkFormat::LayerKind::Conv2D:
                     {
                         const NkFormat::ConvLayerDesc& layer = model.layers[i].conv;
-                        h = (h - layer.kernel_size) / layer.stride + 1;
-                        w = (w - layer.kernel_size) / layer.stride + 1;
+                        h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
+                        w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
                         c = layer.filters;
                         features = h * w * c;
                         break;
                     }
                     case NkFormat::LayerKind::MaxPool2D:
+                    case NkFormat::LayerKind::AvgPool2D:
                     {
                         const NkFormat::PoolLayerDesc& layer = model.layers[i].pool;
                         h = (h - layer.pool_size) / layer.stride + 1;
@@ -70,6 +71,9 @@ namespace NkLoader
                         features = h * w * c;
                         break;
                     }
+                    case NkFormat::LayerKind::BatchNorm2d:
+                        features = h * w * c;
+                        break;
                     case NkFormat::LayerKind::Flatten:
                         flattened = true;
                         features = h * w * c;
@@ -205,11 +209,11 @@ namespace NkLoader
         bool ReadConvLayer(std::FILE* file, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::Conv2D;
-            uint8_t pad[3] = {};
             uint8_t activation = 0;
             if (!ReadU32(file, layer.conv.kernel_size) || !ReadU32(file, layer.conv.stride) ||
                 !ReadU32(file, layer.conv.filters) || !ReadU8(file, activation) ||
-                !ReadExact(file, pad, sizeof(pad)) || !ReadF32(file, layer.conv.alpha))
+                !ReadU8(file, layer.conv.pad_h) || !ReadU8(file, layer.conv.pad_w) ||
+                !ReadU8(file, layer.conv.reserved) || !ReadF32(file, layer.conv.alpha))
                 return false;
 
             layer.conv.activation = static_cast<NkFormat::Activation>(activation);
@@ -220,6 +224,18 @@ namespace NkLoader
         {
             layer.kind = NkFormat::LayerKind::MaxPool2D;
             return ReadU32(file, layer.pool.pool_size) && ReadU32(file, layer.pool.stride);
+        }
+
+        bool ReadAvgPoolLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::AvgPool2D;
+            return ReadU32(file, layer.pool.pool_size) && ReadU32(file, layer.pool.stride);
+        }
+
+        bool ReadBatchNormLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::BatchNorm2d;
+            return ReadU32(file, layer.batch_norm.channels) && ReadU32(file, layer.batch_norm.reserved);
         }
 
         bool ReadFlattenLayer(std::FILE* file, NkFormat::LayerDesc& layer)
@@ -244,6 +260,10 @@ namespace NkLoader
                     return ReadConvLayer(file, layer);
                 case NkFormat::LayerKind::MaxPool2D:
                     return ReadPoolLayer(file, layer);
+                case NkFormat::LayerKind::AvgPool2D:
+                    return ReadAvgPoolLayer(file, layer);
+                case NkFormat::LayerKind::BatchNorm2d:
+                    return ReadBatchNormLayer(file, layer);
                 case NkFormat::LayerKind::Flatten:
                     return ReadFlattenLayer(file, layer);
                 default:
@@ -617,11 +637,20 @@ namespace NkLoader
                 case NkFormat::LayerKind::Conv2D:
                     std::cout << "Conv2D kernel=" << layer.conv.kernel_size
                               << " stride=" << layer.conv.stride << " filters=" << layer.conv.filters
+                              << " pad=" << static_cast<uint32_t>(layer.conv.pad_h) << ","
+                              << static_cast<uint32_t>(layer.conv.pad_w)
                               << " activation=" << NkFormat::ActivationName(layer.conv.activation);
                     break;
                 case NkFormat::LayerKind::MaxPool2D:
                     std::cout << "MaxPool2D pool=" << layer.pool.pool_size
                               << " stride=" << layer.pool.stride;
+                    break;
+                case NkFormat::LayerKind::AvgPool2D:
+                    std::cout << "AvgPool2D pool=" << layer.pool.pool_size
+                              << " stride=" << layer.pool.stride;
+                    break;
+                case NkFormat::LayerKind::BatchNorm2d:
+                    std::cout << "BatchNorm2d channels=" << layer.batch_norm.channels;
                     break;
                 case NkFormat::LayerKind::Flatten:
                     std::cout << "Flatten";
@@ -675,10 +704,18 @@ namespace NkLoader
                 case NkFormat::LayerKind::Conv2D:
                     std::cout << " kernel=" << layer.conv.kernel_size << " stride=" << layer.conv.stride
                               << " filters=" << layer.conv.filters
+                              << " pad=" << static_cast<uint32_t>(layer.conv.pad_h) << ","
+                              << static_cast<uint32_t>(layer.conv.pad_w)
                               << " activation=" << NkFormat::ActivationName(layer.conv.activation);
                     break;
                 case NkFormat::LayerKind::MaxPool2D:
                     std::cout << " pool=" << layer.pool.pool_size << " stride=" << layer.pool.stride;
+                    break;
+                case NkFormat::LayerKind::AvgPool2D:
+                    std::cout << " pool=" << layer.pool.pool_size << " stride=" << layer.pool.stride;
+                    break;
+                case NkFormat::LayerKind::BatchNorm2d:
+                    std::cout << " channels=" << layer.batch_norm.channels;
                     break;
                 case NkFormat::LayerKind::Flatten:
                     break;
@@ -877,11 +914,13 @@ namespace NkLoader
                                            weights + weight_offset,
                                            biases + bias_offset,
                                            ToConvActivation(layer.activation),
-                                           layer.alpha);
+                                           layer.alpha,
+                                           static_cast<int>(layer.pad_h),
+                                           static_cast<int>(layer.pad_w));
                     weight_offset += weight_elems;
                     bias_offset += layer.filters;
-                    h = (h - layer.kernel_size) / layer.stride + 1;
-                    w = (w - layer.kernel_size) / layer.stride + 1;
+                    h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
+                    w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
                     in_channels = layer.filters;
                     break;
                 }
@@ -891,6 +930,31 @@ namespace NkLoader
                     network->InitPoolLayer(i, static_cast<int>(layer.pool_size), static_cast<int>(layer.stride));
                     h = (h - layer.pool_size) / layer.stride + 1;
                     w = (w - layer.pool_size) / layer.stride + 1;
+                    break;
+                }
+                case NkFormat::LayerKind::AvgPool2D:
+                {
+                    const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
+                    network->InitAvgPoolLayer(i, static_cast<int>(layer.pool_size), static_cast<int>(layer.stride));
+                    h = (h - layer.pool_size) / layer.stride + 1;
+                    w = (w - layer.pool_size) / layer.stride + 1;
+                    break;
+                }
+                case NkFormat::LayerKind::BatchNorm2d:
+                {
+                    const NkFormat::BatchNormLayerDesc& layer = parsed.layers[i].batch_norm;
+                    const NkFormat::TensorDesc& s_desc = parsed.weight_tensors[weight_index++];
+                    const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                    if (s_desc.num_elements != layer.channels || b_desc.num_elements != layer.channels)
+                        return Fail(LoadStatus::SizeMismatch, "CNN batch norm tensor shape mismatch in .nk catalog");
+
+                    network->InitBatchNormLayer(i,
+                                                static_cast<int>(layer.channels),
+                                                weights + weight_offset,
+                                                biases + bias_offset);
+                    weight_offset += layer.channels;
+                    bias_offset += layer.channels;
                     break;
                 }
                 case NkFormat::LayerKind::Flatten:

@@ -12,6 +12,8 @@ from .format import (
     Activation,
     DType,
     NetworkKind,
+    pack_avg_pool_layer,
+    pack_batch_norm_layer,
     pack_conv_layer,
     pack_dense_layer,
     pack_flatten_layer,
@@ -31,7 +33,10 @@ class LayerSpec:
     kernel_size: int = 1
     stride: int = 1
     filters: int = 0
+    pad_h: int = 0
+    pad_w: int = 0
     pool_size: int = 2
+    channels: int = 0
 
 
 @dataclass
@@ -95,9 +100,15 @@ def write_nk(path: str | Path, spec: ModelSpec) -> None:
                 filters=layer.filters,
                 activation=layer.activation,
                 alpha=layer.alpha,
+                pad_h=layer.pad_h,
+                pad_w=layer.pad_w,
             )
         elif layer.kind == "max_pool2d":
             layer_bytes += pack_pool_layer(pool_size=layer.pool_size, stride=layer.stride)
+        elif layer.kind == "avg_pool2d":
+            layer_bytes += pack_avg_pool_layer(pool_size=layer.pool_size, stride=layer.stride)
+        elif layer.kind == "batch_norm2d":
+            layer_bytes += pack_batch_norm_layer(channels=layer.channels)
         elif layer.kind == "flatten":
             layer_bytes += pack_flatten_layer()
         else:

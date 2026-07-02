@@ -162,14 +162,15 @@ Requires **PyTorch** for training scripts (`pip install -e "python[train]"`). Nu
 
 GitHub Actions (`.github/workflows/ci.yml`):
 
-1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP
+1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP (submodule pins)
 2. `make` — default desktop build
 3. `make NETKIT_CMSIS_NN=1 test-cpp` — CMSIS-NN parity
 4. `make NETKIT_CMSIS_DSP=1 test-cpp` — CMSIS-DSP parity
 5. `make NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 test-cpp` — both backends
-6. `make test` — full C++ embedded + C API + Python ONNX parity
+6. `make test` — full C++ embedded + C API + Python ONNX parity + convert ops
 7. Example and CLI smoke tests
 8. CMake configure + build smoke test
 9. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS smoke matrix (last; rebuilds lean profiles)
+10. `./tools/compile_cm4_cross.sh` — compile-only Cortex-M4 + CMSIS-NN (`gcc-arm-none-eabi`)
 
 Model weights and embedded test cases are in the repo — no training in CI.

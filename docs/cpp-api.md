@@ -169,18 +169,18 @@ Validation helpers: `IsMatMulValid`, `CheckSameShape2D`, etc.
 
 ## Conv2D (`conv2d.hpp`)
 
-Low-level valid convolution (no padding).
+Low-level convolution with optional symmetric padding (`pad_h`, `pad_w`).
 
 ```cpp
 struct Conv2D {
-    int kernel_size, stride, in_channels, out_channels;
+    int kernel_size, stride, pad_h, pad_w, in_channels, out_channels;
     float* weights;  // [out][kh][kw][in]
     float* bias;     // [out]
     void forward(const Tensor& input, Tensor& output);
 };
 ```
 
-Output spatial size: `(input - kernel) / stride + 1`.
+Output spatial size: `(input + 2*pad - kernel) / stride + 1`.
 
 ---
 
@@ -212,10 +212,10 @@ Weight matrix shape per layer: `[out_features, in_features]` row-major (CMSIS-NN
 
 ## CNNNetwork (`cnn.hpp`)
 
-CNN pipelines support mixed blocks: conv2d, max_pool2d, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md).
+CNN pipelines support mixed blocks: conv2d, max_pool2d, avg_pool2d, batch_norm2d, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md).
 
 ```cpp
-enum class CnnBlockType { Conv2D, MaxPool2D, Flatten, Dense };
+enum class CnnBlockType { Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, Dense };
 
 class CNNNetwork {
 public:
@@ -225,8 +225,10 @@ public:
 
     bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);  // LoadCNN
 
-    void InitConvLayer(uint32_t layer_idx, ...);   // conv2d + activation
+    void InitConvLayer(uint32_t layer_idx, ...);   // conv2d + activation (+ pad_h/pad_w)
     void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride);
+    void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);
     void InitFlattenLayer(uint32_t layer_idx);
     void InitDenseLayer(uint32_t layer_idx, const Tensor& W, const Tensor& b,
                         ActivationType activation, float leaky_alpha = 0.01f);
@@ -356,6 +358,6 @@ Exclude `main.cpp`, `cli.cpp`, and `test.cpp` from your link if you provide your
 - Inference only (no training, no autodiff)
 - Single-threaded
 - No heap allocation in `MLPNetwork` / `CNNNetwork` layer paths
-- Convolutions are valid-only (no padding yet)
+- Conv padding is symmetric only; pool layers are valid-only (no pool padding yet)
 
-See the [roadmap](../README.md#roadmap) for planned ops (pooling, batch norm, quantization).
+See the [roadmap](../README.md#roadmap) for planned ops (asymmetric padding, quantization).
