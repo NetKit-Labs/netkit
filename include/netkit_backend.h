@@ -10,7 +10,6 @@
 
 #include "tensor.hpp"
 #include "netkit_config.h"
-#include <cstdint>
 
 #ifdef __cplusplus
 extern "C" {
