@@ -34,7 +34,6 @@ python -m netkit aot models/test_mlp.nk -o build/aot
 python -m netkit aot models/test_mlp.nk -o build/aot --language c
 python -m netkit aot models/test_mlp.nk -o build/aot --main   # optional smoke main
 python -m netkit aot models/mlp_hand.nk -o build/aot --arena-headroom 15   # MCU arena sizing
-python -m netkit aot models/speech_kws.nk -o build/aot --arena-headroom 15   # KWS firmware probe
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize   # fewer runtime ops
 
 # Convert all bundled regression models (from repo root)
@@ -71,7 +70,7 @@ result = compile_aot("models/cnn_extended_ops.nk", "build/aot", optimize=True)
 ```bash
 pip install -e python   # onnx + onnxruntime for parity tests
 make lib                # required for AOT compile tests
-make test-python        # ONNX parity (81) + AOT tests (from repo root)
+make test-python        # ONNX parity (49) + AOT tests (from repo root)
 python -m unittest python.tests.test_onnx_convert_ops  # padding, avg pool, batch norm, fusion
 python -m unittest python.tests.test_aot_compile
 ```

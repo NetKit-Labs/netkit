@@ -10,9 +10,9 @@ netkit uses **GNU Make** as the primary build and test driver. **CMake** is opti
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
 make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + examples + embedded_smoke
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
-make test-cpp     # ./netkit test only (91 embedded .nk cases)
+make test-cpp     # ./netkit test only (59 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
-make test-python  # ONNX parity (81) + AOT compile tests; requires libnetkit.a
+make test-python  # ONNX parity (49) + AOT compile tests; requires libnetkit.a
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
@@ -29,29 +29,26 @@ Embedded runtime-only builds: `make NETKIT_TARGET=mcu lib` or `make NETKIT_TARGE
 
 ## C++ regression (`.nk` loader + inference)
 
-Both `make test-cpp` and `make test-c` exercise the **same 91 embedded cases** via `run_all_tests()` / `nk_run_all_tests()`:
+Both `make test-cpp` and `make test-c` exercise the **same 59 embedded cases** via `run_all_tests()` / `nk_run_all_tests()`:
 
 | Suite | Cases | Source | Description |
 |-------|------:|--------|-------------|
 | Hand MLP | 9 | `models/test_mlp.nk`, `models/mlp_hand.nk` | Small hand-checked MLP forwards |
 | Hand CNN | 10 | `models/test_cnn.nk`, `models/cnn_4x4_single.nk`, `models/cnn_hand.nk`, `models/convnextv2_atto_block.nk`, `models/mobilenetv4_small_uib.nk`, `models/resnet18_basic_block.nk` | Hand-checked CNN + ConvNeXt V2 block + MobileNetV4 UIB + ResNet BasicBlock — [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), [RESNET18.md](RESNET18.md) |
-| Speech KWS | 12 | `models/speech_kws.nk` | Trained Speech Commands CNN on 16×10 mel features — [SPEECH_KWS.md](SPEECH_KWS.md) |
 | MNIST MLP | 10 | `models/mnist_mlp.nk` | Trained 784→128→10 MLP (98.06% test acc) |
 | MNIST CNN | 10 | `models/mnist_cnn.nk` | Conv+pool+flatten+dense CNN (99.02% test acc) |
 | Op matrix | 17 | `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/cnn_extended_ops.nk`, `models/deep_mlp.nk` | Activation sweep, padded conv/pool, avg pool, batch norm |
 | MobileNetV4 Small | 1 | `models/mobilenetv4_small.nk` | Full MNv4-Conv-Small backbone (22 layers, 56×56×3) — [MOBILENETV4.md](MOBILENETV4.md) |
 | ResNet-18 | 1 | `models/resnet18.nk` | Full ResNet-18 backbone (13 layers, 56×56×3) — [RESNET18.md](RESNET18.md) |
 | ConvNeXt V2-Atto | 1 | `models/convnextv2_atto.nk` | Full ConvNeXt V2-Atto backbone (24 layers, 32×32×3) — [CONVNEXTV2.md](CONVNEXTV2.md) |
-| Fashion-MNIST MLP | 10 | `models/fashion_mnist_mlp.nk` | Trained 784→128→10 MLP |
-| Fashion-MNIST CNN | 10 | `models/fashion_mnist_cnn.nk` | Conv+pool+flatten+dense CNN |
 
-**Total: 91 passed** when healthy (`19` hand + `12` speech KWS + `10` MNIST MLP + `10` MNIST CNN + `17` op matrix + `20` Fashion-MNIST + `1` MobileNetV4 Small + `1` ResNet-18 + `1` ConvNeXt V2-Atto).
+**Total: 59 passed** when healthy (`19` hand + `10` MNIST MLP + `10` MNIST CNN + `17` op matrix + `1` MobileNetV4 Small + `1` ResNet-18 + `1` ConvNeXt V2-Atto).
 
 These tests validate **`.nk` parsing, weight loading, and forward inference** against reference outputs embedded in each file (`TCAS` section). See [NK_FORMAT.md](NK_FORMAT.md).
 
 ## Python ONNX parity
 
-`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (81 cases).
+`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (49 cases).
 
 Requires **onnxruntime** for parity and **`make lib`** for AOT compile tests.
 
@@ -65,7 +62,7 @@ make test-python
 
 `python/tests/test_aot_compile.py` generates C++26 and C23 sources from hand `.nk` models, compiles them against `libnetkit.a`, and checks outputs against the NumPy reference forward pass (embedded TCAS inputs). Generated headers are checked for arena sizing constants; an MCU-target compile (`-DNETKIT_TARGET_MCU=1`) is exercised against `mlp_hand.nk`.
 
-Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.nk`, `speech_kws.nk`. With `--optimize` / `optimize=True`, `cnn_extended_ops.nk` is also checked end-to-end (optimized graph embedded, runtime parity preserved).
+Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.nk`. With `--optimize` / `optimize=True`, `cnn_extended_ops.nk` is also checked end-to-end (optimized graph embedded, runtime parity preserved).
 
 `python/tests/test_nk_optimize.py` covers individual graph passes (BN folding, conv+BN fusion, linear dense merge) with numeric checks against the reference forward pass.
 
@@ -73,15 +70,15 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.n
 
 | Harness | In CI job? | Models | What it checks |
 |---------|:----------:|--------|----------------|
-| `make test` / `make test-cpp` | Yes | hand + speech KWS + MNIST + op-matrix + Fashion-MNIST + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | Full `.nk` load + forward vs embedded TCAS expected outputs (**91 cases**) |
+| `make test` / `make test-cpp` | Yes | hand + MNIST + op-matrix + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | Full `.nk` load + forward vs embedded TCAS expected outputs (**59 cases**) |
 | `make test-c` | Yes | same via `nk_run_all_tests()` | C API parity with C++ regression |
-| `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | Yes | `test_mlp.nk`, `cnn_4x4_single.nk`, `speech_kws.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); CI job runs `./tools/run_embedded_smoke.sh` |
+| `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | Yes | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); CI job runs `./tools/run_embedded_smoke.sh` |
 
-Hand-checked models (`mlp_hand`, `cnn_hand`) are fully validated in **`make test`**. Embedded smoke uses `test_mlp`, `cnn_4x4_single`, and the MCU-sized **`speech_kws.nk`** fixture for fast firmware bring-up.
+Hand-checked models (`mlp_hand`, `cnn_hand`) are fully validated in **`make test`**. Embedded smoke uses `test_mlp` and `cnn_4x4_single` for fast firmware bring-up.
 
 ## Embedded smoke (MCU/MPU)
 
-`tests/embedded_smoke.c` validates the **lean firmware runtime** without `NETKIT_DESKTOP` APIs (`nk_run_all_tests`, CLI, etc.). It uses a caller-owned static arena (`NK_ARENA_DEFAULT_CAPACITY`), parses `test_mlp.nk`, `cnn_4x4_single.nk`, and `speech_kws.nk`, and runs `nk_model_load` + `nk_model_run` with fixed expected outputs.
+`tests/embedded_smoke.c` validates the **lean firmware runtime** without `NETKIT_DESKTOP` APIs (`nk_run_all_tests`, CLI, etc.). It uses a caller-owned static arena (`NK_ARENA_DEFAULT_CAPACITY`), parses `test_mlp.nk` and `cnn_4x4_single.nk`, and runs `nk_model_load` + `nk_model_run` with fixed expected outputs.
 
 For **`mlp_hand.nk`** and **`cnn_hand.nk`**, use **`make test`** (embedded TCAS regression).
 
@@ -94,7 +91,7 @@ make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embe
 make test-embedded-smoke-matrix
 ```
 
-Host execution exercises linking and inference paths before on-device bring-up. Smoke loads three bundled models: tiny MLP/CNN hand fixtures plus **`speech_kws.nk`** (160-element silence features, 12 logits). The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-DSP uses the portable `__GNUC_PYTHON__` path on the host (no CMSIS-Core headers). On hardware, link with your toolchain `-mcpu` flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
+Host execution exercises linking and inference paths before on-device bring-up. Smoke loads two bundled models: tiny MLP and CNN hand fixtures. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-DSP uses the portable `__GNUC_PYTHON__` path on the host (no CMSIS-Core headers). On hardware, link with your toolchain `-mcpu` flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
 
 | Doc | Contents |
 |-----|----------|
@@ -130,9 +127,7 @@ Sections printed in order:
 2. **CNN TESTS** — hand `.nk` models with embedded cases  
 3. **MNIST MLP TESTS** — `models/mnist_mlp.nk`  
 4. **MNIST CNN TESTS** — `models/mnist_cnn.nk`  
-5. **OP MATRIX TESTS** — `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/cnn_extended_ops.nk`, `models/deep_mlp.nk`  
-6. **FASHION-MNIST MLP TESTS** — `models/fashion_mnist_mlp.nk`  
-7. **FASHION-MNIST CNN TESTS** — `models/fashion_mnist_cnn.nk`
+5. **OP MATRIX TESTS** — `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/cnn_extended_ops.nk`, `models/deep_mlp.nk`
 
 ## Test output
 
@@ -151,7 +146,7 @@ Entry: `./tests/test_c_api` (C23).
 | Parse architecture | MLP and CNN `.nk` metadata |
 | Model load / run | `nk_model_load` + `nk_model_run` on hand MLP/CNN |
 | Hybrid CNN | `nk_parse_architecture` + `nk_cnn_load` on `mnist_cnn.nk` |
-| Full regression | `nk_run_all_tests()` — same **91** embedded cases as C++ |
+| Full regression | `nk_run_all_tests()` — same **59** embedded cases as C++ |
 
 The C API regression path uses the same C++ runner internally (`nk_run_all_tests` → `run_all_tests`).
 
@@ -164,8 +159,6 @@ The C API regression path uses the same C++ runner internally (`nk_run_all_tests
 | MNIST MLP case | `make export-mnist` (requires PyTorch: `pip install -e "python[train]"`) |
 | MNIST CNN case | `make export-mnist-cnn` (requires PyTorch) |
 | Op matrix models | `make export-op-matrix` (requires numpy) |
-| Fashion-MNIST MLP | `make export-fashion-mnist` (requires PyTorch) |
-| Fashion-MNIST CNN | `make export-fashion-mnist-cnn` (requires PyTorch) |
 
 Always run `make test` before committing.
 
@@ -178,9 +171,6 @@ make export-mnist       # MLP — full 60k, 40 epochs (~8s)
 make export-mnist-cnn   # CNN — full 60k, 20 epochs (~18 min)
 make export-mnist-all   # both + refresh ONNX from .nk
 make export-op-matrix   # synthetic activation/deep-chain models + ONNX
-make export-fashion-mnist       # Fashion-MNIST MLP (~30 epochs)
-make export-fashion-mnist-cnn   # Fashion-MNIST CNN (~15 epochs)
-make export-fashion-mnist-all   # both Fashion-MNIST models + ONNX
 make export-nk          # ONNX → .nk + embed hand tests
 make embed-tests        # re-embed hand tests from regression_data.py
 ```

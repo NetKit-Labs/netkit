@@ -13,7 +13,7 @@ if ! command -v make >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f models/test_mlp.nk || ! -f models/cnn_4x4_single.nk || ! -f models/speech_kws.nk ]]; then
+if [[ ! -f models/test_mlp.nk || ! -f models/cnn_4x4_single.nk ]]; then
   echo "missing bundled models under models/ — run from repo root" >&2
   exit 1
 fi

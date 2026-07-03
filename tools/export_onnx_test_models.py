@@ -34,14 +34,11 @@ MODEL_NKS = [
     "test_cnn.nk",
     "cnn_4x4_single.nk",
     "cnn_hand.nk",
-    "speech_kws.nk",
     "op_matrix_mlp.nk",
     "op_matrix_cnn.nk",
     "deep_mlp.nk",
     "mnist_mlp.nk",
     "mnist_cnn.nk",
-    "fashion_mnist_mlp.nk",
-    "fashion_mnist_cnn.nk",
 ]
 
 

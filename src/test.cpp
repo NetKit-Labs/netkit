@@ -30,11 +30,6 @@ NkRegression::RunSummary run_all_tests()
     merge(NkRegression::RunModelTests("models/cnn_hand.nk"));
 
     std::cout << "\n============================\n";
-    std::cout << " SPEECH KWS TESTS\n";
-    std::cout << "============================\n";
-    merge(NkRegression::RunModelTests("models/speech_kws.nk"));
-
-    std::cout << "\n============================\n";
     std::cout << " CONVNEXT V2 ATTO BLOCK TESTS\n";
     std::cout << "============================\n";
     merge(NkRegression::RunModelTests("models/convnextv2_atto_block.nk"));
@@ -77,16 +72,6 @@ NkRegression::RunSummary run_all_tests()
     merge(NkRegression::RunModelTests("models/op_matrix_cnn.nk"));
     merge(NkRegression::RunModelTests("models/cnn_extended_ops.nk"));
     merge(NkRegression::RunModelTests("models/deep_mlp.nk"));
-
-    std::cout << "\n============================\n";
-    std::cout << " FASHION-MNIST MLP TESTS\n";
-    std::cout << "============================\n";
-    merge(NkRegression::RunModelTests("models/fashion_mnist_mlp.nk"));
-
-    std::cout << "\n============================\n";
-    std::cout << " FASHION-MNIST CNN TESTS\n";
-    std::cout << "============================\n";
-    merge(NkRegression::RunModelTests("models/fashion_mnist_cnn.nk"));
 
     NkRegression::EndRegressionArena();
 

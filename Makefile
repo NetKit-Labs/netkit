@@ -189,9 +189,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
 .PHONY: all lib clean rebuild test test-cpp test-c test-python run example-c example-cpp examples \
         export-mnist export-mnist-cnn export-mnist-all export-op-matrix \
-        export-fashion-mnist export-fashion-mnist-cnn export-fashion-mnist-all \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
-        export-speech-kws \
         cpu cpu-global mcu mcu-heap mpu mpu-heap embedded-smoke test-embedded-smoke \
         test-embedded-smoke-matrix trim-lib check-trim-lib
 
@@ -347,20 +345,6 @@ export-mnist-all: export-mnist export-mnist-cnn
 
 export-op-matrix:
 	PYTHONPATH=python python3 tools/write_op_matrix_models.py
-	PYTHONPATH=python python3 tools/export_onnx_test_models.py
-
-export-fashion-mnist:
-	PYTHONPATH=python python3 tools/export_fashion_mnist_mlp.py
-	PYTHONPATH=python python3 tools/export_onnx_test_models.py
-
-export-fashion-mnist-cnn:
-	PYTHONPATH=python python3 tools/export_fashion_mnist_cnn.py
-	PYTHONPATH=python python3 tools/export_onnx_test_models.py
-
-export-fashion-mnist-all: export-fashion-mnist export-fashion-mnist-cnn
-
-export-speech-kws:
-	PYTHONPATH=python python3 tools/export_speech_kws.py
 	PYTHONPATH=python python3 tools/export_onnx_test_models.py
 
 export-onnx-test:

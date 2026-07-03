@@ -49,32 +49,3 @@ class TutorialCnn28(nn.Module):
         x = torch.flatten(x, 1)
         x = F.relu(self.fc1(x))
         return self.fc2(x)
-
-
-class SpeechKwsCnn(nn.Module):
-    """16x10 MFCC-like map -> depthwise-separable conv stack -> 12 keyword logits."""
-
-    def __init__(self, num_classes: int = 12) -> None:
-        super().__init__()
-        self.stem = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1)
-        self.dw1 = nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1, groups=8)
-        self.pw1 = nn.Conv2d(8, 16, kernel_size=1, stride=1)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.dw2 = nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, groups=16)
-        self.pw2 = nn.Conv2d(16, 24, kernel_size=1, stride=1)
-        self.fc = nn.Linear(24 * 4 * 2, num_classes)
-        for layer in (self.stem, self.dw1, self.pw1, self.dw2, self.pw2):
-            nn.init.kaiming_normal_(layer.weight, nonlinearity="relu")
-            nn.init.zeros_(layer.bias)
-        nn.init.kaiming_normal_(self.fc.weight, nonlinearity="relu")
-        nn.init.zeros_(self.fc.bias)
-
-    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.stem(x))
-        x = F.relu(self.pw1(F.relu(self.dw1(x))))
-        x = self.pool(x)
-        x = F.relu(self.pw2(F.relu(self.dw2(x))))
-        x = self.pool(x)
-        x = x.permute(0, 2, 3, 1).contiguous()
-        x = torch.flatten(x, 1)
-        return self.fc(x)
