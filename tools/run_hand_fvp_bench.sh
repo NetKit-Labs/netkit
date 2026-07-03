@@ -90,7 +90,6 @@ find_fvp() {
 print_license_help() {
   echo "" >&2
   echo "Arm FVP requires an activated user-based license in ~/.armlm." >&2
-  echo "On GitHub Actions, the fvp-bench workflow uses ARM-software/cmsis-actions/armlm@v1." >&2
   echo "Locally (macOS Docker), activate the free MDK Community license (one-time):" >&2
   echo "  mkdir -p ~/.armlm" >&2
   echo "  docker run --rm -it -u root \\" >&2
@@ -248,7 +247,6 @@ else
   echo "  hand_fvp_bench_ref_{mlp,cnn}.elf"
   echo "  hand_fvp_bench_cmsis_{mlp,cnn}.elf"
   echo ""
-  echo "On Linux CI, use the fvp-bench GitHub Actions workflow."
   echo "On macOS, install FVPs-on-Mac Docker wrappers or set NETKIT_FVP."
   exit 0
 fi

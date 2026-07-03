@@ -324,5 +324,5 @@ netkit/
 | Arena sizing & alignment | [ARENA.md](ARENA.md) |
 | C / C++ API reference | [c-api.md](c-api.md), [cpp-api.md](cpp-api.md) |
 | Regression & CI | [TESTING.md](TESTING.md) |
-| MNIST benchmarks | [MNIST.md](MNIST.md), [MNIST_CNN.md](MNIST_CNN.md) |
+| MNIST regression tests | [MNIST.md](MNIST.md), [MNIST_CNN.md](MNIST_CNN.md) |
 | Planned dtypes | [DATATYPES.md](DATATYPES.md) |

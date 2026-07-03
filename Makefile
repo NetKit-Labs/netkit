@@ -182,7 +182,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
         export-fashion-mnist export-fashion-mnist-cnn export-fashion-mnist-all \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
         cpu cpu-global mcu mcu-heap mpu mpu-heap embedded-smoke test-embedded-smoke \
-        test-embedded-smoke-matrix trim-lib check-trim-lib bench-mnist-kernels bench-hand-fvp
+        test-embedded-smoke-matrix trim-lib check-trim-lib bench-hand-fvp
 
 ifeq ($(BUILD_CLI),1)
 all: $(TARGET)
@@ -361,9 +361,6 @@ export-nk:
 
 embed-tests:
 	PYTHONPATH=python python3 tools/embed_nk_tests.py
-
-bench-mnist-kernels:
-	chmod +x tools/run_mnist_kernel_bench.sh && ./tools/run_mnist_kernel_bench.sh
 
 bench-hand-fvp:
 	chmod +x tools/run_hand_fvp_bench.sh && ./tools/run_hand_fvp_bench.sh
