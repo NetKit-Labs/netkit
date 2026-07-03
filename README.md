@@ -42,7 +42,8 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
 - **Regression tests** — 73 embedded `.nk` cases (C++/C) plus Python ONNX parity (69) and AOT compile tests via `make test`
-- **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness (`make test-embedded-smoke-matrix`)
+- **GitHub Actions CI** — host `build-and-test` on push/PR (no FVP or `arm-none-eabi` cross-compile)
+- **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness (`make test-embedded-smoke-matrix`; in CI)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 - **Optional CMSIS backends** — CMSIS-NN when `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` (flag ignored on cpu/mpu); CMSIS-DSP on any target
 
@@ -102,7 +103,7 @@ netkit/
 ├── tools/
 │   ├── export_mnist_mlp.py
 │   ├── export_mnist_cnn.py
-│   ├── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke
+│   ├── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke (runs in CI)
 │   ├── compile_cm4_cross.sh        # local arm-none-eabi cross-compile
 │   └── compile_hand_fvp_firmware.sh # local FVP benchmark ELFs (compile-only)
 └── docs/                   # Guides and API reference

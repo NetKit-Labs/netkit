@@ -2,6 +2,8 @@
 
 netkit uses **GNU Make** as the primary build and test driver. **CMake** is optional (`cmake -B cmake-build && cmake --build cmake-build`) with the same flags — see [BUILD_TARGETS.md](BUILD_TARGETS.md). C++ regression tests run through `./netkit test` and the C API harness `tests/test_c_api`. ONNX parity runs in Python.
 
+**GitHub Actions** (`.github/workflows/ci.yml`) runs a single host **`build-and-test`** job — see [CI](#ci). FVP timing, `arm-none-eabi` cross-compile, and the removed `bench-mnist-kernels` host benchmark are **local only**.
+
 ## Quick commands
 
 ```bash
@@ -16,7 +18,7 @@ make rebuild      # clean + make
 
 # Optional CMSIS backend parity (after make cmsis-init)
 make NETKIT_CMSIS_DSP=1 test-cpp
-make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles
+make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles (also in CI)
 
 # Optional CMake build + test
 cmake -B cmake-build && cmake --build cmake-build
@@ -65,13 +67,14 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`. With `--optimize` / `optim
 
 ## Hand model coverage (MCU paths)
 
-| Harness | Models | What it checks |
-|---------|--------|----------------|
-| `make test` / `make test-cpp` | `test_mlp.nk`, `mlp_hand.nk`, `test_cnn.nk`, `cnn_4x4_single.nk`, `cnn_hand.nk` (+ MNIST / op-matrix / Fashion-MNIST) | Full `.nk` load + forward vs embedded TCAS expected outputs (**73 cases**) |
-| `make test-c` | same via `nk_run_all_tests()` | C API parity with C++ regression |
-| `tests/embedded_smoke` | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime: parse, load, run on host with `NETKIT_HOST_SMOKE=1` (no CLI / full regression API) |
-| `make test-embedded-smoke-matrix` | same two models × MCU/MPU + CMSIS profiles | Link and inference across arch/backend matrix |
-| `bench-hand-fvp` (optional, local FVP) | `mlp_hand.nk`, `cnn_hand.nk` | Bare-metal CM4F cycle counts (reference vs CMSIS-NN+DSP); see below |
+| Harness | CI? | Models | What it checks |
+|---------|:---:|--------|----------------|
+| `make test` / `make test-cpp` | Yes | `test_mlp.nk`, `mlp_hand.nk`, `test_cnn.nk`, `cnn_4x4_single.nk`, `cnn_hand.nk` (+ MNIST / op-matrix / Fashion-MNIST) | Full `.nk` load + forward vs embedded TCAS expected outputs (**73 cases**) |
+| `make test-c` | Yes | same via `nk_run_all_tests()` | C API parity with C++ regression |
+| `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | Yes | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); CI runs `./tools/run_embedded_smoke.sh` |
+| `bench-hand-fvp` | No | `mlp_hand.nk`, `cnn_hand.nk` | Optional bare-metal CM4F cycle counts (reference vs CMSIS-NN+DSP) |
+| `./tools/compile_cm4_cross.sh` | No | — | Local `arm-none-eabi` cross-compile of `libnetkit.a` |
+| `./tools/compile_hand_fvp_firmware.sh` | No | — | Local cross-compile of hand FVP benchmark ELFs |
 
 Hand-checked models (`mlp_hand`, `cnn_hand`) are fully validated in **`make test`**. Embedded smoke uses the smaller `test_mlp` / `cnn_4x4_single` fixtures for fast firmware bring-up.
 
@@ -134,14 +137,14 @@ Toolchain CPU flags: `-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard`.
 
 ## Local firmware tooling
 
-| Tool | Purpose |
-|------|---------|
-| `make test-embedded-smoke-matrix` | Host smoke for MCU/MPU + CMSIS profiles |
-| `./tools/compile_cm4_cross.sh` | Local `arm-none-eabi-gcc` cross-compile of `libnetkit.a` (CM4 + CMSIS-NN) |
-| `./tools/compile_hand_fvp_firmware.sh` | Local cross-compile of hand FVP benchmark ELFs (reference + CMSIS, mlp + cnn) |
-| `make bench-hand-fvp` | Build + run hand FVP benchmark under `benchmarks/fvp/` (requires FVP binary) |
+| Tool | CI? | Purpose |
+|------|:---:|---------|
+| `make test-embedded-smoke-matrix` / `./tools/run_embedded_smoke.sh` | Yes | Host smoke for MCU/MPU + CMSIS profiles |
+| `./tools/compile_cm4_cross.sh` | No | Local `arm-none-eabi-gcc` cross-compile of `libnetkit.a` (CM4 + CMSIS-NN) |
+| `./tools/compile_hand_fvp_firmware.sh` | No | Local cross-compile of hand FVP benchmark ELFs (reference + CMSIS, mlp + cnn) |
+| `make bench-hand-fvp` | No | Build + run hand FVP benchmark under `benchmarks/fvp/` (requires FVP binary) |
 
-There is **no** host MNIST kernel benchmark (`bench-mnist-kernels` was removed). FVP and `arm-none-eabi` cross-compile are local workflows only.
+There is **no** host MNIST kernel benchmark (`bench-mnist-kernels` was removed). There is **no** `fvp-bench` GitHub workflow.
 
 ## Embedded smoke (MCU/MPU)
 
@@ -159,8 +162,6 @@ make test-embedded-smoke-matrix
 ```
 
 Host execution exercises linking and inference paths before on-device bring-up. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-DSP uses the portable `__GNUC_PYTHON__` path on the host (no CMSIS-Core headers). On hardware, link with your toolchain `-mcpu` flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
-
-This belongs in Python because ONNX is a host-side format only — the C++ runtime loads `.nk` exclusively.
 
 | Doc | Contents |
 |-----|----------|
@@ -263,18 +264,25 @@ GitHub Actions (`.github/workflows/ci.yml`) runs a single **`build-and-test`** j
 7. CMake configure + build smoke test (`./cmake-build/netkit test`)
 8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS host smoke matrix
 
-**Not in CI:** Arm FVP simulation, `arm-none-eabi` cross-compile (`compile_cm4_cross.sh`, `compile_hand_fvp_firmware.sh`), and host MNIST kernel benchmarks. Use those locally — see [Local firmware tooling](#local-firmware-tooling).
+**Not in CI** (removed or local only):
+
+| Removed / local only | Reason |
+|----------------------|--------|
+| `fvp-bench.yml` workflow | Arm FVP + `armlm` licensing failed on GitHub runners |
+| `cm4-cross-compile` job | `arm-none-eabi` cross-build; FVP firmware hit GCC ICE in `nk_loader.cpp` |
+| `bench-mnist-kernels` | Host MNIST timing benchmark removed |
+| `make bench-hand-fvp` | Requires local FVP binary; optional cycle timing only |
 
 Model weights and embedded test cases are in the repo — no training in CI.
 
 ## Recommended local validation
 
-Before committing, run the full desktop suite:
+Match CI locally before pushing:
 
 ```bash
 make cmsis-init
 make test
-make test-embedded-smoke-matrix
+./tools/run_embedded_smoke.sh    # same embedded-smoke matrix as CI
 ```
 
-Model weights and embedded test cases are in the repo — no training required for tests. For FVP timing or `arm-none-eabi` firmware builds, see [Local firmware tooling](#local-firmware-tooling).
+Optional extras (not in CI): `make test-embedded-smoke-matrix` (equivalent to the script above), `./tools/compile_cm4_cross.sh`, `make bench-hand-fvp`.
