@@ -244,6 +244,5 @@ GitHub Actions (`.github/workflows/ci.yml`):
 7. CMake configure + build smoke test
 8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS smoke matrix (last; rebuilds lean profiles)
 9. `./tools/compile_cm4_cross.sh` — compile-only Cortex-M4 + CMSIS-NN lib (`gcc-arm-none-eabi`)
-10. `./tools/compile_hand_fvp_firmware.sh` — compile-only hand FVP benchmark ELFs (reference + CMSIS, mlp + cnn; Arm GNU Toolchain with C++)
 
-Model weights and embedded test cases are in the repo — no training in CI. FVP firmware is **cross-compiled only**; no FVP simulation runs in CI.
+Model weights and embedded test cases are in the repo — no training in CI.
