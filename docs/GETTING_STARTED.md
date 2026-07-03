@@ -135,7 +135,7 @@ make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib   # MCU CMSIS-NN (f
 
 ### Embedded smoke (MCU/MPU bring-up)
 
-Before flashing firmware, validate lean runtime linking on the host:
+Before flashing firmware, validate lean runtime linking on the host. The smoke binary parses and runs **`test_mlp.nk`**, **`cnn_4x4_single.nk`**, and the MCU-sized **`speech_kws.nk`** (silence features → 12 logits) across seven MCU/MPU + CMSIS profiles.
 
 ```bash
 make cmsis-init

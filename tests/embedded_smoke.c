@@ -2,7 +2,8 @@
  * embedded_smoke.c — lean MCU/MPU bring-up smoke (no NETKIT_DESKTOP APIs).
  *
  * Exercises nk_parse_architecture, nk_model_load, and nk_model_run against
- * small hand-checked models using a caller-owned static arena.
+ * small hand-checked models (test_mlp, cnn_4x4_single, speech_kws) using a
+ * caller-owned static arena.
  *
  * Build: make NETKIT_TARGET=mcu embedded-smoke
  * Run:   ./tests/embedded_smoke
@@ -105,6 +106,11 @@ static void TestParseArchitecture(void)
     ExpectTrue(info.kind == NK_NETWORK_CNN, "cnn kind");
     ExpectTrue(info.input_elements == 16, "cnn input elements");
     ExpectTrue(info.output_elements == 4, "cnn output elements");
+
+    ExpectStatus(nk_parse_architecture("models/speech_kws.nk", &info), NK_OK, "parse speech_kws.nk");
+    ExpectTrue(info.kind == NK_NETWORK_CNN, "speech kws kind");
+    ExpectTrue(info.input_elements == 160, "speech kws input elements");
+    ExpectTrue(info.output_elements == 12, "speech kws output elements");
 }
 
 static void TestModelLoadRun(void)
@@ -164,6 +170,36 @@ static void TestModelLoadRun(void)
         char label[32];
         snprintf(label, sizeof(label), "cnn output[%u]", i);
         ExpectFloatEq(cnn_output[i], 4.0f, label);
+    }
+
+    nk_arena_reset(&arena);
+
+    nk_model_t kws_model;
+    ExpectStatus(nk_model_load("models/speech_kws.nk", &arena, &kws_model), NK_OK, "model load speech_kws");
+
+    static const float kws_expected[12] = {
+        0.208571f, -0.150000f, 0.110286f, -0.075571f, 0.073786f, -0.033929f,
+        0.159000f, -0.078857f, 0.088571f, -0.080000f, 0.010286f, -0.175571f,
+    };
+    float kws_input[160] = {0.0f};
+    float kws_output[12] = {0.0f};
+    output_count = 0;
+
+    ExpectStatus(nk_model_run(&kws_model,
+                            &arena,
+                            kws_input,
+                            160,
+                            kws_output,
+                            12,
+                            &output_count),
+                 NK_OK,
+                 "model run speech_kws (silence features)");
+    ExpectTrue(output_count == 12, "speech kws output count");
+    for (uint32_t i = 0; i < 12; ++i)
+    {
+        char label[40];
+        snprintf(label, sizeof(label), "speech kws output[%u]", i);
+        ExpectFloatEq(kws_output[i], kws_expected[i], label);
     }
 }
 

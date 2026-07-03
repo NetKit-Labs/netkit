@@ -37,5 +37,8 @@ python3 tools/export_onnx_test_models.py   # writes speech_kws.onnx for ONNX par
 | `make test-cpp` / `make test-c` | 8 embedded TCAS cases |
 | `make test-python` (ONNX parity) | 8 (vs `speech_kws.onnx`) |
 | `make test-python` (AOT compile) | included in `test_aot_compile.py` |
+| `make test-embedded-smoke-matrix` | load/run silence features (160 inputs → 12 logits) on 7 MCU/MPU profiles |
 
-See [TESTING.md](TESTING.md).
+Embedded smoke uses the **silence** TCAS case: all-zero MFCC-like features and hand-checked logits — a realistic MCU workload without pulling in MNIST-sized weights.
+
+See [TESTING.md](TESTING.md#embedded-smoke-mcupu).

@@ -146,7 +146,7 @@ On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` prints a Make warning and is ignored 
 
 ## Testing
 
-Both API test suites run **81 embedded `.nk` regression cases** on CPU builds — [TESTING.md](TESTING.md). Python ONNX parity covers **77** embedded inputs (`make test-python`). MCU/MPU bring-up: `make test-embedded-smoke-matrix`.
+Both API test suites run **81 embedded `.nk` regression cases** on CPU builds — [TESTING.md](TESTING.md). Python ONNX parity covers **77** embedded inputs (`make test-python`). MCU/MPU bring-up: `make test-embedded-smoke-matrix` (`test_mlp`, `cnn_4x4_single`, `speech_kws` on seven host profiles).
 
 ```bash
 make test       # C++ then C then Python ONNX parity (cpu only)

@@ -112,7 +112,7 @@ make mcu-heap         # NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
 make mpu              # NETKIT_TARGET=mpu lib
 make mpu-heap         # NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
 make cmsis-init       # fetch CMSIS-Core + CMSIS-NN + CMSIS-DSP
-make embedded-smoke   # lean MCU/MPU smoke binary (current NETKIT_TARGET)
+make embedded-smoke   # lean MCU/MPU smoke binary (test_mlp, cnn_4x4_single, speech_kws)
 make test-embedded-smoke-matrix   # 7-profile host smoke (see TESTING.md)
 ```
 
@@ -302,7 +302,7 @@ Full architecture: [KERNELS.md](KERNELS.md).
 
 ## Testing
 
-Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`). The same smoke matrix is included when you run the **manual** GitHub Actions CI job (`gh workflow run ci.yml`).
+Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`), which exercises `test_mlp`, `cnn_4x4_single`, and `speech_kws` on seven MCU/MPU profiles. The same smoke matrix is included when you run the **manual** GitHub Actions CI job (`gh workflow run ci.yml`).
 
 ```bash
 make cmsis-init

@@ -32,6 +32,7 @@ python -m netkit aot models/test_mlp.nk -o build/aot
 python -m netkit aot models/test_mlp.nk -o build/aot --language c
 python -m netkit aot models/test_mlp.nk -o build/aot --main   # optional smoke main
 python -m netkit aot models/mlp_hand.nk -o build/aot --arena-headroom 15   # MCU arena sizing
+python -m netkit aot models/speech_kws.nk -o build/aot --arena-headroom 15   # KWS firmware probe
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize   # fewer runtime ops
 
 # Convert all bundled regression models (from repo root)
