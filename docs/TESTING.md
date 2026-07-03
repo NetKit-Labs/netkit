@@ -2,7 +2,7 @@
 
 netkit uses **GNU Make** as the primary build and test driver. **CMake** is optional (`cmake -B cmake-build && cmake --build cmake-build`) with the same flags — see [BUILD_TARGETS.md](BUILD_TARGETS.md). C++ regression tests run through `./netkit test` and the C API harness `tests/test_c_api`. ONNX parity runs in Python.
 
-**GitHub Actions** (`.github/workflows/ci.yml`) runs a single host **`build-and-test`** job — see [CI](#ci).
+**GitHub Actions** (`.github/workflows/ci.yml`) is **manual only** (`workflow_dispatch`) — see [CI](#ci). Run locally with `make test` before pushing.
 
 ## Quick commands
 
@@ -182,7 +182,14 @@ Requires **PyTorch** for training scripts (`pip install -e "python[train]"`). Nu
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs a single **`build-and-test`** job on `ubuntu-latest` with **host Clang** only:
+GitHub Actions does **not** run on push or pull request. Trigger manually from the repo **Actions** tab (**CI** → **Run workflow**), or from the CLI:
+
+```bash
+gh workflow run ci.yml
+gh run watch    # optional: wait for the run you just started
+```
+
+The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only:
 
 1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP
 2. `make` — default desktop build

@@ -42,7 +42,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
 - **Regression tests** — 73 embedded `.nk` cases (C++/C) plus Python ONNX parity (69) and AOT compile tests via `make test`
-- **GitHub Actions CI** — host `build-and-test` on push/PR
+- **GitHub Actions CI** — manual `workflow_dispatch` only (`gh workflow run ci.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness (`make test-embedded-smoke-matrix`; in CI)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 - **Optional CMSIS backends** — CMSIS-NN when `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` (flag ignored on cpu/mpu); CMSIS-DSP on any target
@@ -200,7 +200,7 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
 | Embedded smoke | C23 | `tests/embedded_smoke.c` | MCU/MPU load/run on host (`make test-embedded-smoke-matrix`; in CI) |
 
-CI runs **`build-and-test`** on GitHub Actions (host Clang). See [TESTING.md](docs/TESTING.md).
+CI is **manual only** on GitHub Actions (`gh workflow run ci.yml`). See [TESTING.md](docs/TESTING.md).
 
 Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
 MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.md).
