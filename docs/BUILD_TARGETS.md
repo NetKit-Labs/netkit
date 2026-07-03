@@ -298,18 +298,13 @@ Full architecture: [KERNELS.md](KERNELS.md).
 
 ## Testing
 
-Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated in **CI** and locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`). **Cross-compiling** with `arm-none-eabi-gcc` is local only.
+Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated in **CI** and locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`).
 
 ```bash
 make cmsis-init
 make NETKIT_CMSIS_DSP=1 test-cpp
 make test-embedded-smoke-matrix          # host MCU/MPU + CMSIS profiles (also in CI)
 make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib
-
-# Local arm-none-eabi cross-compile (requires gcc-arm-none-eabi)
-./tools/compile_cm4_cross.sh
-./tools/compile_hand_fvp_firmware.sh     # hand FVP benchmark ELFs (compile-only)
-make bench-hand-fvp                      # optional FVP cycle timing (see TESTING.md)
 ```
 
 See [TESTING.md](TESTING.md) and [ARENA.md](ARENA.md).

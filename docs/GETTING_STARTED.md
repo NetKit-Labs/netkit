@@ -310,8 +310,6 @@ netkit/
 | Size firmware RAM | `./netkit inspect model.nk --full` |
 | Ship on MCU | `make NETKIT_TARGET=mcu lib`, link into firmware, static arena |
 | Smoke MCU/MPU + CMSIS on host | `make test-embedded-smoke-matrix` |
-| Cross-compile CM4 lib locally | `./tools/compile_cm4_cross.sh` (requires `gcc-arm-none-eabi`) |
-| Optional FVP cycle timing | `make bench-hand-fvp` (local; see [TESTING.md](TESTING.md)) |
 | Add regression case | Edit `python/netkit/regression_data.py`, `make embed-tests`, register in `src/test.cpp` |
 
 ---
