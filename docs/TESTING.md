@@ -209,7 +209,7 @@ The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only:
 
 **CI build notes**
 
-- When `GITHUB_ACTIONS=true`, the Makefile adds `-O2` so full-backbone C++ regression (ResNet-18, MobileNetV4, ConvNeXt V2-Atto) finishes in reasonable time on Linux runners. Local `make test` stays debug-oriented (`-g`, no default `-O2`).
+- When `GITHUB_ACTIONS=true`, the Makefile adds `-O2` for **`NETKIT_TARGET=cpu` only** so full-backbone C++ regression (ResNet-18, MobileNetV4, ConvNeXt V2-Atto) finishes in reasonable time on Linux runners. MCU/MPU embedded smoke stays at `-g` (no `-O2`). Local `make test` stays debug-oriented (`-g`, no default `-O2`).
 - The job timeout is 45 minutes.
 - C++ regression truncates large embedded-case input dumps to 256 values and prints load/forward progress lines so long-running cases stay visible in logs.
 

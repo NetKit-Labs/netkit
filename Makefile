@@ -148,10 +148,12 @@ endif
 CFLAGS += $(TARGET_CPPFLAGS)
 CXXFLAGS += $(TARGET_CPPFLAGS)
 
-# GitHub Actions: unoptimized debug builds make full-backbone regression very slow.
+# GitHub Actions: unoptimized debug CPU builds make full-backbone regression very slow.
 ifeq ($(GITHUB_ACTIONS),true)
-  CFLAGS += -O2
-  CXXFLAGS += -O2
+  ifeq ($(NETKIT_TARGET),cpu)
+    CFLAGS += -O2
+    CXXFLAGS += -O2
+  endif
 endif
 
 CLI_SOURCES = src/main.cpp
