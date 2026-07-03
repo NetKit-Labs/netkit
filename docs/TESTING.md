@@ -250,6 +250,23 @@ make embed-tests        # re-embed hand tests from regression_data.py
 
 Requires **PyTorch** for training scripts (`pip install -e "python[train]"`). NumPy is used for IDX I/O and packing only. MNIST data from CSV sibling path or IDX download into `data/mnist/`.
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs a single **`build-and-test`** job on `ubuntu-latest` with **host Clang** only:
+
+1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP
+2. `make` — default desktop build
+3. `make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib` — CMSIS MCU link smoke (host)
+4. `make NETKIT_CMSIS_DSP=1 test-cpp` — CMSIS-DSP parity
+5. `make test` — full C++ embedded + C API + Python ONNX parity + AOT compile + convert ops + trim-lib check
+6. Example and CLI smoke tests
+7. CMake configure + build smoke test (`./cmake-build/netkit test`)
+8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS host smoke matrix
+
+**Not in CI:** Arm FVP simulation, `arm-none-eabi` cross-compile (`compile_cm4_cross.sh`, `compile_hand_fvp_firmware.sh`), and host MNIST kernel benchmarks. Use those locally — see [Local firmware tooling](#local-firmware-tooling).
+
+Model weights and embedded test cases are in the repo — no training in CI.
+
 ## Recommended local validation
 
 Before committing, run the full desktop suite:
