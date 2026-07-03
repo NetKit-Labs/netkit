@@ -295,7 +295,7 @@ netkit/
 ├── examples/          infer_c.c, infer_cpp.cpp
 ├── tests/             test_c_api.c, embedded_smoke.c
 ├── models/            bundled .nk + .onnx
-├── tools/             export scripts, embedded smoke, local FVP/cross-compile helpers
+├── tools/             export scripts, run_embedded_smoke.sh
 └── docs/              guides (start with this file)
 ```
 
