@@ -18,7 +18,7 @@ Requires **numpy** and **onnx**. Training/export scripts additionally need PyTor
 pip install -e "python[train]"
 ```
 
-The `[train]` extra installs `torch` and `timm` (used by `python -m netkit pack` and MNIST export scripts).
+The `[train]` extra installs `torch`, `timm`, and `onnxscript` (used by `python -m netkit pack`, MNIST export scripts, and ONNX fuse tests).
 
 ## Usage
 
