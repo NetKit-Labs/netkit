@@ -28,6 +28,8 @@ libnetkit_trim.a
 
 # Python (package source under python/netkit/ is tracked)
 python/netkit_tools.egg-info/
+__pycache__/
+*.py[cod]
 
 # clangd index cache
 .cache/
