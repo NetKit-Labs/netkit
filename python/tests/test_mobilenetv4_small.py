@@ -25,8 +25,7 @@ class MobilenetV4SmallTests(unittest.TestCase):
         case = suite.cases[0]
         out = forward_cnn(np.asarray(case.input, dtype=np.float32), arch, weights)
         self.assertEqual(len(out), len(case.expected))
-        for i, (actual, expected) in enumerate(zip(out, case.expected)):
-            self.assertAlmostEqual(actual, expected, places=5, msg=f"out[{i}]")
+        np.testing.assert_allclose(out, case.expected, rtol=0.0, atol=suite.tolerance)
 
 
 if __name__ == "__main__":
