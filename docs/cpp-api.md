@@ -43,7 +43,7 @@ See [BUILD_TARGETS.md](BUILD_TARGETS.md).
 | `cli.hpp` | CLI dispatch (`Cli::Run`) |
 | `test.hpp` | Test suite entry (`run_all_tests`) |
 
-For a stable C interface from C++ projects or embedded firmware, use [`netkit.h`](c-api.md). Every C++ public symbol has a C equivalent — see [`API_PARITY.md`](API_PARITY.md).
+For a stable C interface from C++ projects or embedded firmware, use [`netkit.h`](c-api.md). Core runtime symbols are mapped in [`API_PARITY.md`](API_PARITY.md); a few C++ helpers remain C++-only.
 
 ---
 

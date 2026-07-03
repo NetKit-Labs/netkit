@@ -108,16 +108,18 @@ Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. **Only `NK_DT
 | Value | C++ `CnnBlockType` |
 |-------|---------------------|
 | `NK_CNN_BLOCK_CONV2D` | `Conv2D` |
+| `NK_CNN_BLOCK_DEPTHWISE_CONV2D` | `DepthwiseConv2D` |
 | `NK_CNN_BLOCK_MAX_POOL2D` | `MaxPool2D` |
-| `NK_CNN_BLOCK_FLATTEN` | `Flatten` |
-| `NK_CNN_BLOCK_DENSE` | `Dense` |
 | `NK_CNN_BLOCK_AVG_POOL2D` | `AvgPool2D` |
 | `NK_CNN_BLOCK_BATCH_NORM2D` | `BatchNorm2d` |
-| `NK_CNN_BLOCK_DEPTHWISE_CONV2D` | `DepthwiseConv2D` |
 | `NK_CNN_BLOCK_LAYERNORM2D` | `LayerNorm2d` |
+| `NK_CNN_BLOCK_FLATTEN` | `Flatten` |
+| `NK_CNN_BLOCK_DENSE` | `Dense` |
 | `NK_CNN_BLOCK_CONVNEXTV2_BLOCK` | `ConvNeXtV2Block` |
 | `NK_CNN_BLOCK_MOBILENETV4_UIB` | `MobilenetV4Uib` |
 | `NK_CNN_BLOCK_RESNET_BASIC_BLOCK` | `ResNetBasicBlock` |
+
+Numeric values match C++ `CnnBlockType` member order (starting at 0).
 
 Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from the `.nk` layer list.
 

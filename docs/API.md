@@ -15,7 +15,7 @@ Both APIs share:
 - **NHWC** tensor layout for convolutions
 - **Float32 only (today)** — float16, int16, int8, int4 planned ([DATATYPES.md](DATATYPES.md))
 
-Every stable C++ public symbol has a documented C equivalent except desktop-only diagnostics — see [API_PARITY.md](API_PARITY.md).
+Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (network introspection, op trimming, detailed header dumps) remain C++-only.
 
 ## Documentation map
 

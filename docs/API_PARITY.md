@@ -11,7 +11,7 @@ C source in this repository is limited to `tests/test_c_api.c` and `examples/inf
 
 ## Policy
 
-1. **Every new stable C++ public symbol** in `include/*.hpp` must have a documented C equivalent in `netkit.h` before the feature is considered complete.
+1. **Core runtime parity:** arena, tensor, ops, MLP/CNN construction, `.nk` loading, high-level model run, regression, and CLI entry points must have documented C equivalents in `netkit.h` before the feature is considered complete.
 2. **Naming:** C functions use the `nk_` prefix and snake_case (`nk_model_load`, `nk_ops_relu`).
 3. **Errors:** C functions return `nk_status_t`; details are available via `nk_last_error()`.
 4. **Memory:** C handles (`nk_arena_t`, `nk_model_t`, `nk_mlp_t`, `nk_cnn_t`) use fixed-size opaque storage for stack allocation — no heap in the handle itself.
@@ -125,7 +125,7 @@ Both suites exercise the same **59 embedded `.nk` inference cases** (19 hand-che
 
 | C++ | C |
 |-----|---|
-| `CnnBlockType` | `nk_cnn_block_type_t` |
+| `CnnBlockType` | `nk_cnn_block_type_t` (same member order and numeric values) |
 | `ConvActivationType` | `nk_conv_activation_t` |
 | `CNNNetwork` | `nk_cnn_t` |
 | `CNNNetwork::IsValid` | `nk_cnn_is_valid` |
@@ -177,7 +177,12 @@ High-level combined handle (C convenience):
 |-----|--------|
 | `PrintHeader` | Detailed `.nk` header dump |
 | `NkOpsResolver`, `NkOpList`, `CNNNetwork::SetOpsResolver` | Firmware op trimming — compile-time `NkOpList<Ops...>::View()` in C++ only; file load uses default resolver internally |
-| `ArenaUtil` | CLI/regression sizing helpers |
+| `ArenaUtil`, `BeginRegressionArena`, `EndRegressionArena` | CLI/regression sizing helpers |
+| `TensorFactory::ViewND` | ND tensor views — use `nk_tensor_view_2d` or load from `.nk` |
+| `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput` | In-memory network introspection after manual construction |
+| `NkLoader::IsNkPath`, `ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
+| `Conv2D::forward(..., fuse_activation)` | C `nk_conv2d_forward` uses default activation fusion |
+| `TensorFactory::PrintLabeled(..., max_values)` | C `nk_tensor_print_labeled` omits truncation control |
 
 ### Regression tests
 
