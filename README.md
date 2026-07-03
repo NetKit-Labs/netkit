@@ -46,7 +46,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
 - **Regression tests** — 59 embedded `.nk` cases (C++/C) plus Python ONNX parity (49) and AOT compile tests via `make test`
 - **GitHub Actions CI** — manual `workflow_dispatch` only (`gh workflow run ci.yml`)
-- **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; in manual CI job)
+- **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 - **Optional CMSIS backends** — CMSIS-NN when `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` (flag ignored on cpu/mpu); CMSIS-DSP on any target
 
@@ -106,7 +106,7 @@ netkit/
 ├── tools/
 │   ├── export_mnist_mlp.py
 │   ├── export_mnist_cnn.py
-│   └── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke (manual CI job)
+│   └── run_embedded_smoke.sh       # MCU/MPU + CMSIS host smoke (local)
 └── docs/                   # Guides and API reference
     ├── TESTING.md
     ├── GETTING_STARTED.md
@@ -147,7 +147,7 @@ make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # C++ embedded .nk cases only (59)
 make test-c       # C API regression only
 make test-python  # ONNX parity (49) + AOT compile tests (requires libnetkit.a)
-make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; manual CI job)
+make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; local only)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
 make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
@@ -201,7 +201,7 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 | C API | C23 | `tests/test_c_api.c` | Same 59 + API smoke tests |
 | ONNX parity | Python | `python/tests/test_onnx_parity.py` | 49 (.nk vs ONNX Runtime on bundled sidecars) |
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
-| Embedded smoke | C23 | `tests/embedded_smoke.c` | `test_mlp`, `cnn_4x4_single` load/run on 7 MCU/MPU host profiles (`make test-embedded-smoke-matrix`; in manual CI job) |
+| Embedded smoke | C23 | `tests/embedded_smoke.c` | `test_mlp`, `cnn_4x4_single` load/run on 7 MCU/MPU host profiles (`make test-embedded-smoke-matrix`; local only) |
 
 CI is **manual only** (`gh workflow run ci.yml`). See [TESTING.md](docs/TESTING.md).
 

@@ -302,7 +302,7 @@ Full architecture: [KERNELS.md](KERNELS.md).
 
 ## Testing
 
-Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`), which exercises `test_mlp` and `cnn_4x4_single` on seven MCU/MPU profiles. The same smoke matrix is included when you run the **manual** GitHub Actions CI job (`gh workflow run ci.yml`).
+Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`), which exercises `test_mlp` and `cnn_4x4_single` on seven MCU/MPU profiles.
 
 ```bash
 make cmsis-init

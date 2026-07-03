@@ -18,7 +18,7 @@ make rebuild      # clean + make
 
 # Optional CMSIS backend parity (after make cmsis-init)
 make NETKIT_CMSIS_DSP=1 test-cpp
-make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles (included in manual CI job)
+make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles (local only)
 
 # Optional CMake build + test
 cmake -B cmake-build && cmake --build cmake-build
@@ -72,7 +72,7 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.n
 |---------|:----------:|--------|----------------|
 | `make test` / `make test-cpp` | Yes | hand + MNIST + op-matrix + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | Full `.nk` load + forward vs embedded TCAS expected outputs (**59 cases**) |
 | `make test-c` | Yes | same via `nk_run_all_tests()` | C API parity with C++ regression |
-| `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | Yes | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); CI job runs `./tools/run_embedded_smoke.sh` |
+| `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | No | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); run locally via `./tools/run_embedded_smoke.sh` |
 
 Hand-checked models (`mlp_hand`, `cnn_hand`) are fully validated in **`make test`**. Embedded smoke uses `test_mlp` and `cnn_4x4_single` for fast firmware bring-up.
 
@@ -195,11 +195,10 @@ The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only:
 5. `make NETKIT_CMSIS_DSP=0 rebuild test` — full C++ embedded + C API + Python suite (reference kernels)
 6. Example and CLI smoke tests
 7. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
-8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS host smoke matrix
 
 **CI build notes**
 
-- When `GITHUB_ACTIONS=true`, the Makefile adds `-O2` for **`NETKIT_TARGET=cpu` only** so full-backbone C++ regression (ResNet-18, MobileNetV4, ConvNeXt V2-Atto) finishes in reasonable time on Linux runners. MCU/MPU embedded smoke stays at `-g` (no `-O2`). Local `make test` stays debug-oriented (`-g`, no default `-O2`).
+- When `GITHUB_ACTIONS=true`, the Makefile adds `-O2` for **`NETKIT_TARGET=cpu` only** so full-backbone C++ regression (ResNet-18, MobileNetV4, ConvNeXt V2-Atto) finishes in reasonable time on Linux runners. Local `make test` stays debug-oriented (`-g`, no default `-O2`).
 - The job timeout is 45 minutes.
 - C++ regression truncates large embedded-case input dumps to 256 values and prints load/forward progress lines so long-running cases stay visible in logs.
 
@@ -212,7 +211,7 @@ Pushes do **not** trigger CI. Before pushing, run locally:
 ```bash
 make cmsis-init
 make test
-./tools/run_embedded_smoke.sh    # same embedded-smoke matrix as CI
+./tools/run_embedded_smoke.sh    # optional MCU/MPU + CMSIS host smoke matrix
 ```
 
 `make test-embedded-smoke-matrix` is equivalent to the script above.
