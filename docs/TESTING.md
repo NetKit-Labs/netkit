@@ -18,7 +18,7 @@ make rebuild      # clean + make
 
 # Optional CMSIS backend parity (after make cmsis-init)
 make NETKIT_CMSIS_DSP=1 test-cpp
-make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles (also in CI)
+make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profiles (included in manual CI job)
 
 # Optional CMake build + test
 cmake -B cmake-build && cmake --build cmake-build
@@ -67,11 +67,11 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`. With `--optimize` / `optim
 
 ## Hand model coverage (MCU paths)
 
-| Harness | CI? | Models | What it checks |
-|---------|:---:|--------|----------------|
+| Harness | In CI job? | Models | What it checks |
+|---------|:----------:|--------|----------------|
 | `make test` / `make test-cpp` | Yes | `test_mlp.nk`, `mlp_hand.nk`, `test_cnn.nk`, `cnn_4x4_single.nk`, `cnn_hand.nk` (+ MNIST / op-matrix / Fashion-MNIST) | Full `.nk` load + forward vs embedded TCAS expected outputs (**73 cases**) |
 | `make test-c` | Yes | same via `nk_run_all_tests()` | C API parity with C++ regression |
-| `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | Yes | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); CI runs `./tools/run_embedded_smoke.sh` |
+| `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | Yes | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); CI job runs `./tools/run_embedded_smoke.sh` |
 
 Hand-checked models (`mlp_hand`, `cnn_hand`) are fully validated in **`make test`**. Embedded smoke uses the smaller `test_mlp` / `cnn_4x4_single` fixtures for fast firmware bring-up.
 
@@ -204,7 +204,7 @@ Model weights and embedded test cases are in the repo — no training in CI.
 
 ## Recommended local validation
 
-Match CI locally before pushing:
+Pushes do **not** trigger CI. Before pushing, run locally:
 
 ```bash
 make cmsis-init

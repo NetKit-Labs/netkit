@@ -305,7 +305,8 @@ netkit/
 
 | Goal | Steps |
 |------|-------|
-| Validate a change (match CI) | `make cmsis-init && make test && ./tools/run_embedded_smoke.sh` |
+| Validate before push | `make cmsis-init && make test && ./tools/run_embedded_smoke.sh` |
+| Run GitHub Actions CI | `gh workflow run ci.yml` (manual only; not on push) |
 | Try a model quickly | `./netkit run model.nk --input ...` |
 | Size firmware RAM | `./netkit inspect model.nk --full` |
 | Ship on MCU | `make NETKIT_TARGET=mcu lib`, link into firmware, static arena |

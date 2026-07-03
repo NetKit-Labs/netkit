@@ -12,7 +12,7 @@ netkit builds for three deployment profiles. Select one with **`NETKIT_TARGET`**
 
 | System | Primary? | Notes |
 |--------|----------|-------|
-| **GNU Make** | Yes | `make`, `make test` (primary; CI default) |
+| **GNU Make** | Yes | `make`, `make test` (primary; local + manual CI) |
 | **CMake** | Optional | `cmake -B cmake-build && cmake --build cmake-build` — same flags, auto-detects desktop vs embedded via `NETKIT_ARCH` |
 
 Both use the same optional CMSIS backends and `NETKIT_ARCH` → `ARM_MATH_*` mapping (`third_party/netkit_arch.mk`, `cmake/netkit_arch.cmake`).
@@ -298,12 +298,12 @@ Full architecture: [KERNELS.md](KERNELS.md).
 
 ## Testing
 
-Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated in **CI** and locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`).
+Full regression (`make test`) requires **`NETKIT_TARGET=cpu`**. CMSIS backends are validated locally via host smoke (`make test-embedded-smoke-matrix` with `NETKIT_HOST_SMOKE=1`). The same smoke matrix is included when you run the **manual** GitHub Actions CI job (`gh workflow run ci.yml`).
 
 ```bash
 make cmsis-init
 make NETKIT_CMSIS_DSP=1 test-cpp
-make test-embedded-smoke-matrix          # host MCU/MPU + CMSIS profiles (also in CI)
+make test-embedded-smoke-matrix          # host MCU/MPU + CMSIS profiles
 make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib
 ```
 
