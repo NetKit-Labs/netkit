@@ -243,6 +243,5 @@ GitHub Actions (`.github/workflows/ci.yml`):
 6. Example and CLI smoke tests
 7. CMake configure + build smoke test
 8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS smoke matrix (last; rebuilds lean profiles)
-9. `./tools/compile_cm4_cross.sh` — compile-only Cortex-M4 + CMSIS-NN lib (`gcc-arm-none-eabi`)
 
 Model weights and embedded test cases are in the repo — no training in CI.
