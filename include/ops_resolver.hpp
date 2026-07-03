@@ -24,9 +24,10 @@ enum class NkOpCode : uint8_t
     Flatten = static_cast<uint8_t>(NkFormat::LayerKind::Flatten),
     AvgPool2D = static_cast<uint8_t>(NkFormat::LayerKind::AvgPool2D),
     BatchNorm2d = static_cast<uint8_t>(NkFormat::LayerKind::BatchNorm2d),
+    DepthwiseConv2D = static_cast<uint8_t>(NkFormat::LayerKind::DepthwiseConv2D),
 };
 
-constexpr uint8_t kNkOpCodeCount = 7;
+constexpr uint8_t kNkOpCodeCount = 8;
 
 struct NkCnnSpatialPlan
 {

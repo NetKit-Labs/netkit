@@ -29,7 +29,7 @@ PARITY_PAIRS = [
     ("fashion_mnist_cnn.nk", "fashion_mnist_cnn.onnx"),
 ]
 
-EXPECTED_CASES = 77
+EXPECTED_CASES = 81
 
 
 def _nk_infer_bin() -> Path:

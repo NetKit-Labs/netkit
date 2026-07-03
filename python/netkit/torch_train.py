@@ -172,3 +172,54 @@ def select_digit_cases(
     if len(cases) < num_cases:
         raise RuntimeError(f"only found {len(cases)} test cases; train longer or relax selection")
     return cases
+
+
+def select_keyword_cases(
+    predict_logits: Callable[[np.ndarray], np.ndarray],
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    *,
+    keyword_names: list[str],
+    num_cases: int,
+    name_fmt: str,
+    x_train: np.ndarray | None = None,
+    y_train: np.ndarray | None = None,
+) -> list[RegressionCase]:
+    """Pick one correctly-classified example per keyword when possible."""
+
+    def collect(pool_x: np.ndarray, pool_y: np.ndarray) -> list[RegressionCase]:
+        logits = predict_logits(pool_x)
+        pred = logits.argmax(axis=1)
+        cases: list[RegressionCase] = []
+        used_labels: set[int] = set()
+        for i in range(pool_x.shape[0]):
+            if pred[i] != pool_y[i]:
+                continue
+            label = int(pool_y[i])
+            if label in used_labels:
+                continue
+            cases.append(
+                RegressionCase(
+                    name=name_fmt.format(keyword=keyword_names[label], i=i),
+                    input=pool_x[i],
+                    expected=logits[i],
+                    label=label,
+                )
+            )
+            used_labels.add(label)
+            if len(cases) >= num_cases:
+                break
+        return cases
+
+    cases = collect(x_test, y_test)
+    if len(cases) < num_cases and x_train is not None and y_train is not None:
+        for case in collect(x_train, y_train):
+            if any(existing.label == case.label for existing in cases):
+                continue
+            cases.append(case)
+            if len(cases) >= num_cases:
+                break
+
+    if len(cases) < num_cases:
+        raise RuntimeError(f"only found {len(cases)} keyword test cases; train longer or relax selection")
+    return cases

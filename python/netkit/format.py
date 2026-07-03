@@ -28,6 +28,7 @@ class LayerKind(IntEnum):
     FLATTEN = 4
     AVG_POOL2D = 5
     BATCH_NORM2D = 6
+    DEPTHWISE_CONV2D = 7
 
 
 class DType(IntEnum):
@@ -110,6 +111,21 @@ def pack_conv_layer(
 ) -> bytes:
     return pack_layer_kind(LayerKind.CONV2D) + struct.pack(
         "<III", kernel_size, stride, filters
+    ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, 0, alpha)
+
+
+def pack_depthwise_conv_layer(
+    *,
+    kernel_size: int,
+    stride: int,
+    channels: int,
+    activation: Activation,
+    alpha: float,
+    pad_h: int = 0,
+    pad_w: int = 0,
+) -> bytes:
+    return pack_layer_kind(LayerKind.DEPTHWISE_CONV2D) + struct.pack(
+        "<III", kernel_size, stride, channels
     ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, 0, alpha)
 
 

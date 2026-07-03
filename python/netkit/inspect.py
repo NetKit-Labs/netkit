@@ -38,6 +38,19 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
             "activation": Activation(activation).name.lower(),
             "alpha": alpha,
         }
+    if kind == LayerKind.DEPTHWISE_CONV2D:
+        kernel, stride, channels = struct.unpack("<III", stream.read(12))
+        activation, pad_h, pad_w, _reserved, alpha = struct.unpack("<BBBBf", stream.read(8))
+        return {
+            "kind": "depthwise_conv2d",
+            "kernel_size": kernel,
+            "stride": stride,
+            "filters": channels,
+            "pad_h": pad_h,
+            "pad_w": pad_w,
+            "activation": Activation(activation).name.lower(),
+            "alpha": alpha,
+        }
     if kind == LayerKind.MAX_POOL2D:
         pool, stride = struct.unpack("<II", stream.read(8))
         pad_h, pad_w, _reserved = struct.unpack("<BBH", stream.read(4))
@@ -70,6 +83,8 @@ def _layer_body_bytes(kind: int) -> int:
     if kind == LayerKind.DENSE:
         return 12
     if kind == LayerKind.CONV2D:
+        return 20
+    if kind == LayerKind.DEPTHWISE_CONV2D:
         return 20
     if kind in (LayerKind.MAX_POOL2D, LayerKind.AVG_POOL2D):
         return 12

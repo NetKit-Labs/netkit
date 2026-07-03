@@ -2,6 +2,7 @@
 #include "tensor.hpp"
 #include "arena.hpp"
 #include "conv2d.hpp"
+#include "depthwise_conv2d.hpp"
 #include "mlp.hpp"
 #include "ops_resolver.hpp"
 
@@ -19,6 +20,7 @@ enum class ConvActivationType
 enum class CnnBlockType
 {
     Conv2D,
+    DepthwiseConv2D,
     MaxPool2D,
     AvgPool2D,
     BatchNorm2d,
@@ -29,6 +31,15 @@ enum class CnnBlockType
 struct Conv2DLayer
 {
     Conv2D conv;
+    ConvActivationType activation;
+    float leaky_alpha = 0.01f;
+
+    void forward(const Tensor& input, Tensor& output);
+};
+
+struct DepthwiseConv2DLayer
+{
+    DepthwiseConv2D depthwise;
     ConvActivationType activation;
     float leaky_alpha = 0.01f;
 
@@ -68,6 +79,7 @@ struct CnnBlock
 {
     CnnBlockType type = CnnBlockType::Conv2D;
     Conv2DLayer conv;
+    DepthwiseConv2DLayer depthwise_conv;
     MaxPool2DLayer pool;
     AvgPool2DLayer avg_pool;
     BatchNorm2DLayer batch_norm;
@@ -120,6 +132,17 @@ public:
                        float leaky_alpha = 0.01f,
                        int pad_h = 0,
                        int pad_w = 0);
+
+    void InitDepthwiseConvLayer(uint32_t layer_idx,
+                                int kernel_size,
+                                int stride,
+                                int channels,
+                                float* weights,
+                                float* bias,
+                                ConvActivationType activation,
+                                float leaky_alpha = 0.01f,
+                                int pad_h = 0,
+                                int pad_w = 0);
 
     void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
 

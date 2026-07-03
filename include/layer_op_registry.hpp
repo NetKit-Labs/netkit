@@ -10,12 +10,14 @@
 #include "layer_ops/nk_avg_pool2d_op.hpp"
 #include "layer_ops/nk_batch_norm2d_op.hpp"
 #include "layer_ops/nk_conv2d_op.hpp"
+#include "layer_ops/nk_depthwise_conv2d_op.hpp"
 #include "layer_ops/nk_dense_op.hpp"
 #include "layer_ops/nk_flatten_op.hpp"
 #include "layer_ops/nk_max_pool2d_op.hpp"
 
 using NkAllLayerOps = NkOpList<NkDenseOpDescriptor,
                                  NkConv2DOpDescriptor,
+                                 NkDepthwiseConv2DOpDescriptor,
                                  NkMaxPool2DOpDescriptor,
                                  NkFlattenOpDescriptor,
                                  NkAvgPool2DOpDescriptor,

@@ -56,6 +56,12 @@ def _onnx_conv_to_netkit(weight: np.ndarray) -> np.ndarray:
     return np.transpose(w, (0, 2, 3, 1)).copy()
 
 
+def _onnx_depthwise_conv_to_netkit(weight: np.ndarray) -> np.ndarray:
+    # ONNX depthwise [C, 1, Kh, Kw] -> netkit [C, Kh, Kw]
+    out_c, _, kh, kw = weight.shape
+    return weight.reshape(out_c, kh, kw).astype(np.float32).copy()
+
+
 def _attr_int(node, name: str, default: int = 0) -> int:
     for attr in node.attribute:
         if attr.name == name:
@@ -209,31 +215,51 @@ def onnx_to_spec(onnx_path: str | Path) -> ModelSpec:
         if node.op_type == "Conv":
             weight = initializers[node.input[1]]
             bias = initializers[node.input[2]] if len(node.input) >= 3 else None
+            group = _attr_int(node, "group", 1)
             kernel_shape = _attr_ints(node, "kernel_shape")
             strides = _attr_ints(node, "strides")
             kernel = int(kernel_shape[0]) if kernel_shape else int(weight.shape[2])
             stride = int(strides[0]) if strides else 1
             pad_h, pad_w = _symmetric_conv_pads(node)
-            out_c = weight.shape[0]
-            layers.append(
-                LayerSpec(
-                    kind="conv2d",
-                    kernel_size=kernel,
-                    stride=stride,
-                    filters=out_c,
-                    activation=activation,
-                    alpha=alpha,
-                    pad_h=pad_h,
-                    pad_w=pad_w,
+            out_c = int(weight.shape[0])
+            in_c = int(channels)
+            if group == in_c and out_c == in_c:
+                layers.append(
+                    LayerSpec(
+                        kind="depthwise_conv2d",
+                        kernel_size=kernel,
+                        stride=stride,
+                        filters=out_c,
+                        activation=activation,
+                        alpha=alpha,
+                        pad_h=pad_h,
+                        pad_w=pad_w,
+                    )
                 )
-            )
-            weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
+                weight_tensors.append(_onnx_depthwise_conv_to_netkit(weight.astype(np.float32)))
+            elif group == 1:
+                layers.append(
+                    LayerSpec(
+                        kind="conv2d",
+                        kernel_size=kernel,
+                        stride=stride,
+                        filters=out_c,
+                        activation=activation,
+                        alpha=alpha,
+                        pad_h=pad_h,
+                        pad_w=pad_w,
+                    )
+                )
+                weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
+            else:
+                raise ValueError("grouped conv (non-depthwise) is not supported")
             bias_tensors.append(
                 (bias.astype(np.float32) if bias is not None else np.zeros(out_c, dtype=np.float32))
             )
             spatial_h = _conv_output_dim(spatial_h, kernel, stride, pad_h)
             spatial_w = _conv_output_dim(spatial_w, kernel, stride, pad_w)
-            channels = out_c
+            if group == 1:
+                channels = out_c
             i += 1 + skip
             continue
 

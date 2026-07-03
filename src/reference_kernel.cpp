@@ -264,6 +264,62 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
     return false;
 }
 
+bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
+                                                 float* weights,
+                                                 float* bias,
+                                                 int kernel_size,
+                                                 int stride,
+                                                 int pad_h,
+                                                 int pad_w,
+                                                 int channels,
+                                                 NetkitKernelActivation /*fuse_activation*/,
+                                                 Tensor& output)
+{
+    float* in = tensor_data_f32(const_cast<Tensor&>(input));
+    float* out = tensor_data_f32(output);
+
+    const uint32_t out_h = output.shape[0];
+    const uint32_t out_w = output.shape[1];
+
+    for (int c = 0; c < channels; ++c)
+    {
+        for (uint32_t oh = 0; oh < out_h; ++oh)
+        {
+            for (uint32_t ow = 0; ow < out_w; ++ow)
+            {
+                float sum = bias ? bias[c] : 0.0f;
+
+                for (int kh = 0; kh < kernel_size; ++kh)
+                {
+                    for (int kw = 0; kw < kernel_size; ++kw)
+                    {
+                        const int ih = static_cast<int>(oh) * stride + kh - pad_h;
+                        const int iw = static_cast<int>(ow) * stride + kw - pad_w;
+                        if (ih < 0 || iw < 0 || ih >= static_cast<int>(input.shape[0]) ||
+                            iw >= static_cast<int>(input.shape[1]))
+                            continue;
+
+                        const uint32_t in_idx =
+                            index_nhwc(input, static_cast<uint32_t>(ih), static_cast<uint32_t>(iw), c);
+                        const uint32_t w_idx =
+                            (static_cast<uint32_t>(c) * static_cast<uint32_t>(kernel_size) +
+                             static_cast<uint32_t>(kh)) *
+                                static_cast<uint32_t>(kernel_size) +
+                            static_cast<uint32_t>(kw);
+                        sum += in[in_idx] * weights[w_idx];
+                    }
+                }
+
+                const uint32_t out_idx = (oh * out_w + ow) * static_cast<uint32_t>(channels) +
+                                         static_cast<uint32_t>(c);
+                out[out_idx] = sum;
+            }
+        }
+    }
+
+    return false;
+}
+
 void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
                                           int pool_size,
                                           int stride,

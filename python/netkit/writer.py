@@ -15,6 +15,7 @@ from .format import (
     pack_avg_pool_layer,
     pack_batch_norm_layer,
     pack_conv_layer,
+    pack_depthwise_conv_layer,
     pack_dense_layer,
     pack_flatten_layer,
     pack_header,
@@ -102,6 +103,16 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
                 kernel_size=layer.kernel_size,
                 stride=layer.stride,
                 filters=layer.filters,
+                activation=layer.activation,
+                alpha=layer.alpha,
+                pad_h=layer.pad_h,
+                pad_w=layer.pad_w,
+            )
+        elif layer.kind == "depthwise_conv2d":
+            layer_bytes += pack_depthwise_conv_layer(
+                kernel_size=layer.kernel_size,
+                stride=layer.stride,
+                channels=layer.filters,
                 activation=layer.activation,
                 alpha=layer.alpha,
                 pad_h=layer.pad_h,

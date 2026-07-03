@@ -6,6 +6,8 @@ NkOpCode ToOpCode(CnnBlockType block_type)
     {
         case CnnBlockType::Conv2D:
             return NkOpCode::Conv2D;
+        case CnnBlockType::DepthwiseConv2D:
+            return NkOpCode::DepthwiseConv2D;
         case CnnBlockType::MaxPool2D:
             return NkOpCode::MaxPool2D;
         case CnnBlockType::AvgPool2D:

@@ -52,6 +52,16 @@ def netkit_conv_to_onnx(
     return np.transpose(w, (0, 3, 1, 2)).copy()
 
 
+def netkit_depthwise_conv_to_onnx(w_flat: np.ndarray, channels: int, kh: int, kw: int) -> np.ndarray:
+    """Netkit [C, Kh, Kw] -> ONNX depthwise [C, 1, Kh, Kw]."""
+    w = w_flat.reshape(channels, kh, kw)
+    return w.reshape(channels, 1, kh, kw).astype(np.float32)
+
+
+def _spatial_out(size: int, kernel: int, stride: int, pad: int = 0) -> int:
+    return (size + 2 * pad - kernel) // stride + 1
+
+
 def append_activation(
     nodes: list,
     tensor_in: str,
@@ -174,6 +184,8 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
         if layer_type == "conv2d":
             kernel = layer["kernel_size"]
             stride = layer.get("stride", 1)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
             out_c = layer["filters"]
             in_c = channels
             kernel_elems = kernel * kernel * in_c
@@ -198,6 +210,7 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
                     [gemm_out],
                     kernel_shape=[kernel, kernel],
                     strides=[stride, stride],
+                    pads=[pad_h, pad_w, pad_h, pad_w],
                 )
             )
             tensor = append_activation(
@@ -208,9 +221,52 @@ def export_cnn(arch: dict, weights: np.ndarray, graph_name: str) -> onnx.ModelPr
                 alpha=float(layer.get("alpha", 0.01)),
                 initializers=initializers,
             )
-            spatial_h = (spatial_h - kernel) // stride + 1
-            spatial_w = (spatial_w - kernel) // stride + 1
+            spatial_h = _spatial_out(spatial_h, kernel, stride, pad_h)
+            spatial_w = _spatial_out(spatial_w, kernel, stride, pad_w)
             channels = out_c
+            layer_idx += 1
+            continue
+
+        if layer_type == "depthwise_conv2d":
+            kernel = layer["kernel_size"]
+            stride = layer.get("stride", 1)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            ch = layer["filters"]
+            kernel_elems = kernel * kernel * ch
+            w_flat = weights[offset : offset + kernel_elems]
+            offset += kernel_elems
+            b = weights[offset : offset + ch]
+            offset += ch
+
+            w_name = f"dwconv{layer_idx}_W"
+            b_name = f"dwconv{layer_idx}_B"
+            w_onnx = netkit_depthwise_conv_to_onnx(w_flat, ch, kernel, kernel)
+            initializers.append(numpy_helper.from_array(w_onnx, w_name))
+            initializers.append(numpy_helper.from_array(b.astype(np.float32), b_name))
+
+            gemm_out = "output" if is_final and layer.get("activation", "none") == "none" else f"dwconv{layer_idx}"
+            nodes.append(
+                helper.make_node(
+                    "Conv",
+                    [tensor, w_name, b_name],
+                    [gemm_out],
+                    kernel_shape=[kernel, kernel],
+                    strides=[stride, stride],
+                    pads=[pad_h, pad_w, pad_h, pad_w],
+                    group=ch,
+                )
+            )
+            tensor = append_activation(
+                nodes,
+                gemm_out,
+                layer.get("activation", "none"),
+                False,
+                alpha=float(layer.get("alpha", 0.01)),
+                initializers=initializers,
+            )
+            spatial_h = _spatial_out(spatial_h, kernel, stride, pad_h)
+            spatial_w = _spatial_out(spatial_w, kernel, stride, pad_w)
             layer_idx += 1
             continue
 
@@ -339,11 +395,22 @@ def expected_weight_floats(arch: dict) -> int:
         if layer["type"] == "conv2d":
             k = layer["kernel_size"]
             f = layer["filters"]
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
             total += k * k * channels * f + f
             stride = layer.get("stride", 1)
-            h = (h - k) // stride + 1
-            w = (w - k) // stride + 1
+            h = _spatial_out(h, k, stride, pad_h)
+            w = _spatial_out(w, k, stride, pad_w)
             channels = f
+        elif layer["type"] == "depthwise_conv2d":
+            k = layer["kernel_size"]
+            ch = layer["filters"]
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            total += k * k * ch + ch
+            stride = layer.get("stride", 1)
+            h = _spatial_out(h, k, stride, pad_h)
+            w = _spatial_out(w, k, stride, pad_w)
         elif layer["type"] == "max_pool2d":
             pool = layer["pool_size"]
             stride = layer.get("stride", pool)

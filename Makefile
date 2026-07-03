@@ -67,8 +67,9 @@ TARGET = netkit
 LIB = libnetkit.a
 
 RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/ops.cpp \
-                    src/conv2d.cpp src/mlp.cpp src/cnn.cpp \
-                    src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_max_pool2d.cpp \
+                    src/conv2d.cpp src/depthwise_conv2d.cpp src/mlp.cpp src/cnn.cpp \
+                    src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_depthwise_conv2d.cpp \
+                    src/layer_ops/nk_op_max_pool2d.cpp \
                     src/layer_ops/nk_op_avg_pool2d.cpp src/layer_ops/nk_op_batch_norm2d.cpp \
                     src/layer_ops/nk_op_flatten.cpp src/layer_ops/nk_op_dense.cpp \
                     src/ops_resolver.cpp src/ops_resolver_default.cpp \
@@ -350,7 +351,7 @@ export-fashion-mnist-cnn:
 export-fashion-mnist-all: export-fashion-mnist export-fashion-mnist-cnn
 
 export-speech-kws:
-	PYTHONPATH=python python3 tools/write_speech_kws_model.py
+	PYTHONPATH=python python3 tools/export_speech_kws.py
 	PYTHONPATH=python python3 tools/export_onnx_test_models.py
 
 export-onnx-test:

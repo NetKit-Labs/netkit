@@ -178,8 +178,8 @@ static void TestModelLoadRun(void)
     ExpectStatus(nk_model_load("models/speech_kws.nk", &arena, &kws_model), NK_OK, "model load speech_kws");
 
     static const float kws_expected[12] = {
-        0.208571f, -0.150000f, 0.110286f, -0.075571f, 0.073786f, -0.033929f,
-        0.159000f, -0.078857f, 0.088571f, -0.080000f, 0.010286f, -0.175571f,
+        -1.676773f, -2.929835f, -6.366699f, 2.335148f, -0.294078f, -3.397527f,
+        -2.113084f, -1.246136f, -1.533025f, -2.261145f, -0.606314f, 2.559004f,
     };
     float kws_input[160] = {0.0f};
     float kws_output[12] = {0.0f};

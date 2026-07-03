@@ -24,6 +24,7 @@ namespace NkFormat
             case LayerKind::Flatten: return "flatten";
             case LayerKind::AvgPool2D: return "avg_pool2d";
             case LayerKind::BatchNorm2d: return "batch_norm2d";
+            case LayerKind::DepthwiseConv2D: return "depthwise_conv2d";
         }
         return "unknown";
     }

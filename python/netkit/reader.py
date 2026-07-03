@@ -41,6 +41,21 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
             if layer.get("activation") == "leaky_relu":
                 entry["alpha"] = float(layer.get("alpha", 0.01))
             arch_layers.append(entry)
+        elif kind == "depthwise_conv2d":
+            entry = {
+                "type": "depthwise_conv2d",
+                "kernel_size": layer["kernel_size"],
+                "stride": layer["stride"],
+                "filters": layer["filters"],
+                "activation": layer["activation"],
+            }
+            if layer.get("pad_h", 0):
+                entry["pad_h"] = layer["pad_h"]
+            if layer.get("pad_w", 0):
+                entry["pad_w"] = layer["pad_w"]
+            if layer.get("activation") == "leaky_relu":
+                entry["alpha"] = float(layer.get("alpha", 0.01))
+            arch_layers.append(entry)
         elif kind == "max_pool2d":
             entry = {
                 "type": "max_pool2d",

@@ -21,6 +21,13 @@ void Conv2DLayer::forward(const Tensor& input, Tensor& output)
     ApplyFusedOutputActivation(kernel_activation, fused_in_kernel, output, leaky_alpha);
 }
 
+void DepthwiseConv2DLayer::forward(const Tensor& input, Tensor& output)
+{
+    const NetkitKernelActivation kernel_activation = ToKernelActivation(activation);
+    const bool fused_in_kernel = depthwise.forward(input, output, kernel_activation);
+    ApplyFusedOutputActivation(kernel_activation, fused_in_kernel, output, leaky_alpha);
+}
+
 void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
     Kernels::MaxPool2dForward(input, pool_size, stride, pad_h, pad_w, output);
@@ -101,6 +108,32 @@ void CNNNetwork::InitConvLayer(uint32_t layer_idx,
     blocks[layer_idx].conv.conv.bias = bias;
     blocks[layer_idx].conv.activation = activation;
     blocks[layer_idx].conv.leaky_alpha = leaky_alpha;
+}
+
+void CNNNetwork::InitDepthwiseConvLayer(uint32_t layer_idx,
+                                        int kernel_size,
+                                        int stride,
+                                        int channels,
+                                        float* weights,
+                                        float* bias,
+                                        ConvActivationType activation,
+                                        float leaky_alpha,
+                                        int pad_h,
+                                        int pad_w)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::DepthwiseConv2D;
+    blocks[layer_idx].depthwise_conv.depthwise.kernel_size = kernel_size;
+    blocks[layer_idx].depthwise_conv.depthwise.stride = stride;
+    blocks[layer_idx].depthwise_conv.depthwise.pad_h = pad_h;
+    blocks[layer_idx].depthwise_conv.depthwise.pad_w = pad_w;
+    blocks[layer_idx].depthwise_conv.depthwise.channels = channels;
+    blocks[layer_idx].depthwise_conv.depthwise.weights = weights;
+    blocks[layer_idx].depthwise_conv.depthwise.bias = bias;
+    blocks[layer_idx].depthwise_conv.activation = activation;
+    blocks[layer_idx].depthwise_conv.leaky_alpha = leaky_alpha;
 }
 
 void CNNNetwork::InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h, int pad_w)

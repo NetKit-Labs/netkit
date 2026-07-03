@@ -79,6 +79,36 @@ def _conv_nhwc(
     return out
 
 
+def _depthwise_conv_nhwc(
+    inp: np.ndarray,
+    kernel: np.ndarray,
+    bias: np.ndarray,
+    *,
+    stride: int,
+    pad_h: int = 0,
+    pad_w: int = 0,
+) -> np.ndarray:
+    """kernel shape (channels, k, k); inp (H, W, C)."""
+    h, w, channels = inp.shape
+    _, k, _ = kernel.shape
+    out_h = _out_dim(h, k, stride, pad_h)
+    out_w = _out_dim(w, k, stride, pad_w)
+    out = np.zeros((out_h, out_w, channels), dtype=np.float32)
+    for c in range(channels):
+        for oh in range(out_h):
+            for ow in range(out_w):
+                total = float(bias[c])
+                for kh in range(k):
+                    for kw in range(k):
+                        ih = oh * stride + kh - pad_h
+                        iw = ow * stride + kw - pad_w
+                        if ih < 0 or iw < 0 or ih >= h or iw >= w:
+                            continue
+                        total += inp[ih, iw, c] * kernel[c, kh, kw]
+                out[oh, ow, c] = total
+    return out
+
+
 def _max_pool_nhwc(
     inp: np.ndarray,
     *,
@@ -184,6 +214,20 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
             bias = weights[offset : offset + out_c]
             offset += out_c
             x = _conv_nhwc(x, kernel, bias, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
+            h, w, channels = x.shape
+        elif layer_type == "depthwise_conv2d":
+            k = layer["kernel_size"]
+            stride = layer.get("stride", 1)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            ch = layer["filters"]
+            kernel_elems = k * k * ch
+            kernel = weights[offset : offset + kernel_elems].reshape(ch, k, k)
+            offset += kernel_elems
+            bias = weights[offset : offset + ch]
+            offset += ch
+            x = _depthwise_conv_nhwc(x, kernel, bias, stride=stride, pad_h=pad_h, pad_w=pad_w)
             x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
             h, w, channels = x.shape
         elif layer_type == "max_pool2d":

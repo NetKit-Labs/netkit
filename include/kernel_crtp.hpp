@@ -95,6 +95,29 @@ struct KernelBase
                                           output);
     }
 
+    static bool DepthwiseConv2dForward(const Tensor& input,
+                                       float* weights,
+                                       float* bias,
+                                       int kernel_size,
+                                       int stride,
+                                       int pad_h,
+                                       int pad_w,
+                                       int channels,
+                                       NetkitKernelActivation fuse_activation,
+                                       Tensor& output)
+    {
+        return Derived::DepthwiseConv2dForwardImpl(input,
+                                                   weights,
+                                                   bias,
+                                                   kernel_size,
+                                                   stride,
+                                                   pad_h,
+                                                   pad_w,
+                                                   channels,
+                                                   fuse_activation,
+                                                   output);
+    }
+
     static void MaxPool2dForward(const Tensor& input,
                                  int pool_size,
                                  int stride,

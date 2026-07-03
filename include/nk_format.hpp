@@ -43,7 +43,8 @@ namespace NkFormat
         MaxPool2D = 3,
         Flatten = 4,
         AvgPool2D = 5,
-        BatchNorm2d = 6
+        BatchNorm2d = 6,
+        DepthwiseConv2D = 7
     };
 
     enum class DType : uint8_t

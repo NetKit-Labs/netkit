@@ -30,6 +30,17 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
                                   NetkitKernelActivation fuse_activation,
                                   Tensor& output);
 
+    static bool DepthwiseConv2dForwardImpl(const Tensor& input,
+                                          float* weights,
+                                          float* bias,
+                                          int kernel_size,
+                                          int stride,
+                                          int pad_h,
+                                          int pad_w,
+                                          int channels,
+                                          NetkitKernelActivation fuse_activation,
+                                          Tensor& output);
+
     static void MaxPool2dForwardImpl(const Tensor& input,
                                      int pool_size,
                                      int stride,

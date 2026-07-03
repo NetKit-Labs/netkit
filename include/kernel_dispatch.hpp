@@ -186,6 +186,31 @@ namespace detail
                                             output);
     }
 
+    template<typename LayerFast>
+    bool TryLayerDepthwiseConv(const Tensor& input,
+                               float* weights,
+                               float* bias,
+                               int kernel_size,
+                               int stride,
+                               int pad_h,
+                               int pad_w,
+                               int channels,
+                               NetkitKernelActivation fuse_activation,
+                               Tensor& output)
+    {
+        (void)LayerFast{};
+        return ReferenceKernel::DepthwiseConv2dForwardImpl(input,
+                                                           weights,
+                                                           bias,
+                                                           kernel_size,
+                                                           stride,
+                                                           pad_h,
+                                                           pad_w,
+                                                           channels,
+                                                           fuse_activation,
+                                                           output);
+    }
+
     template<typename LayerFast, typename VectorFast>
     bool TryFullyConnected(const Tensor& input,
                            const Tensor& weights,
@@ -302,6 +327,29 @@ namespace detail
                                              out_channels,
                                              fuse_activation,
                                              output);
+        }
+
+        static bool DepthwiseConv2dForwardImpl(const Tensor& input,
+                                               float* weights,
+                                               float* bias,
+                                               int kernel_size,
+                                               int stride,
+                                               int pad_h,
+                                               int pad_w,
+                                               int channels,
+                                               NetkitKernelActivation fuse_activation,
+                                               Tensor& output)
+        {
+            return TryLayerDepthwiseConv<LayerFast>(input,
+                                                    weights,
+                                                    bias,
+                                                    kernel_size,
+                                                    stride,
+                                                    pad_h,
+                                                    pad_w,
+                                                    channels,
+                                                    fuse_activation,
+                                                    output);
         }
 
         static void MaxPool2dForwardImpl(const Tensor& input,

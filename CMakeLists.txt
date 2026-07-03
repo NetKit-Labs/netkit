@@ -29,6 +29,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 set(NETKIT_LAYER_OP_SOURCES
     src/layer_ops/nk_op_conv2d.cpp
+    src/layer_ops/nk_op_depthwise_conv2d.cpp
     src/layer_ops/nk_op_max_pool2d.cpp
     src/layer_ops/nk_op_avg_pool2d.cpp
     src/layer_ops/nk_op_batch_norm2d.cpp
@@ -43,6 +44,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/reference_kernel.cpp
     src/ops.cpp
     src/conv2d.cpp
+    src/depthwise_conv2d.cpp
     src/mlp.cpp
     src/cnn.cpp
     ${NETKIT_LAYER_OP_SOURCES}
