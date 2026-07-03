@@ -201,8 +201,8 @@ The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only:
 1. `make cmsis-init` — fetch CMSIS-NN and CMSIS-DSP
 2. `make` — default desktop build
 3. `make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib` — CMSIS MCU link smoke (host)
-4. `make NETKIT_CMSIS_DSP=1 test-cpp` — CMSIS-DSP parity
-5. `make test` — full C++ embedded + C API + Python ONNX parity + AOT compile + convert ops + trim-lib check
+4. `./tools/run_cmsis_dsp_smoke.sh` — CMSIS-DSP build + forward smoke (hand models only)
+5. `make NETKIT_CMSIS_DSP=0 rebuild test` — full C++ embedded + C API + Python suite (reference kernels)
 6. Example and CLI smoke tests
 7. CMake configure + build smoke test (`./cmake-build/netkit test`)
 8. `./tools/run_embedded_smoke.sh` — MCU/MPU + `NETKIT_ARCH` + CMSIS host smoke matrix

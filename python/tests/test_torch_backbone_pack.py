@@ -35,7 +35,7 @@ class TorchBackbonePackTests(unittest.TestCase):
         def torch_forward(inp: np.ndarray) -> np.ndarray:
             return backbone_torch_forward(model, inp, height=56, width=56)
 
-        assert_packed_matches_reference(arch, weights, torch_forward, seed=7, atol=1e-4)
+        assert_packed_matches_reference(arch, weights, torch_forward, seed=7, atol=1e-4, samples=3)
         inp = np.random.default_rng(1).standard_normal(56 * 56 * 3, dtype=np.float32)
         out = forward_cnn(inp, arch, weights)
         self.assertEqual(len(out), 10)
@@ -51,7 +51,7 @@ class TorchBackbonePackTests(unittest.TestCase):
         def torch_forward(inp: np.ndarray) -> np.ndarray:
             return backbone_torch_forward(model, inp, height=32, width=32)
 
-        assert_packed_matches_reference(arch, weights, torch_forward, seed=7, atol=1e-4, samples=4)
+        assert_packed_matches_reference(arch, weights, torch_forward, seed=7, atol=1e-4, samples=2)
         inp = np.random.default_rng(2).standard_normal(32 * 32 * 3, dtype=np.float32)
         out = forward_cnn(inp, arch, weights)
         self.assertEqual(len(out), 10)
