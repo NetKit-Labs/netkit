@@ -12,11 +12,13 @@ Supported ONNX ops: `Gemm`, `Conv` (symmetric padding), `MaxPool` / `AveragePool
 pip install -e python
 ```
 
-Requires **numpy** and **onnx**. Training/export scripts additionally need PyTorch:
+Requires **numpy** and **onnx**. Training/export scripts additionally need PyTorch and timm (backbone packing):
 
 ```bash
 pip install -e "python[train]"
 ```
+
+The `[train]` extra installs `torch` and `timm` (used by `python -m netkit pack` and MNIST export scripts).
 
 ## Usage
 
@@ -37,6 +39,11 @@ python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize   # fewe
 
 # Convert all bundled regression models (from repo root)
 make export-nk
+
+# Pack timm backbone checkpoints to .nk (ResNet-18, ConvNeXt V2-Atto, MobileNetV4 Small)
+python -m netkit pack --arch resnet18 -o models/my_resnet18.nk --height 56 --width 56 --num-classes 10
+python -m netkit pack --arch convnextv2_atto -o models/my_convnextv2_atto.nk --height 32 --width 32 --num-classes 10
+python -m netkit pack --arch mobilenetv4_small -o models/my_mobilenetv4_small.nk --height 56 --width 56 --num-classes 10
 ```
 
 Typical pipeline:

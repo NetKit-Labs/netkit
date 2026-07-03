@@ -15,7 +15,7 @@ Welcome to netkit. This guide takes you from clone to your first inference in a 
 | Compiler (engine) | **C++26** — clang++ 17+, g++ 14+ |
 | Compiler (C API) | **C23** — clang 17+ or gcc 14+ |
 | Build | GNU **Make** (primary); **CMake** 3.16+ optional |
-| Python packager (optional) | Python 3 + numpy + onnx — `pip install -e python`; training scripts also need `pip install -e "python[train]"` (PyTorch) |
+| Python packager (optional) | Python 3 + numpy + onnx — `pip install -e python`; training/backbone pack also need `pip install -e "python[train]"` (torch + timm) |
 
 Inference is **float32-only** today. float16, int16, int8, and int4 are on the roadmap — [DATATYPES.md](DATATYPES.md).
 

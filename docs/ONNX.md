@@ -62,11 +62,15 @@ Disable with:
 python -m netkit convert model.onnx --no-fuse
 ```
 
-Pack a torchvision checkpoint directly (no ONNX round-trip):
+Pack timm checkpoints directly (no ONNX round-trip):
 
 ```bash
 python -m netkit pack --arch resnet18 -o models/my_resnet18.nk --height 56 --width 56 --num-classes 10
+python -m netkit pack --arch convnextv2_atto -o models/my_convnextv2_atto.nk --height 32 --width 32 --num-classes 10
+python -m netkit pack --arch mobilenetv4_small -o models/my_mobilenetv4_small.nk --height 56 --width 56 --num-classes 10
 ```
+
+Requires `pip install -e "python[train]"` (torch + timm).
 
 ## Testing
 

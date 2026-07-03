@@ -154,6 +154,15 @@ def _optional_bias(initializers: dict[str, np.ndarray], node) -> np.ndarray | No
     return _optional_initializer(initializers, node.input[2])
 
 
+def _optional_bias_graph(graph, node) -> np.ndarray | None:
+    from .onnx_graph import OnnxGraph, resolve_initializer_name
+
+    if not isinstance(graph, OnnxGraph) or len(node.input) < 3:
+        return None
+    name = resolve_initializer_name(graph, node.input[2])
+    return graph.initializers.get(name)
+
+
 def _symmetric_conv_pads(node) -> tuple[int, int]:
     pads = _attr_ints(node, "pads", [0, 0, 0, 0])
     if len(pads) < 2:
@@ -205,7 +214,7 @@ def _emit_cnn_primitive(
     consumed: set[int],
 ) -> tuple[list[LayerSpec], list[np.ndarray], list[np.ndarray], int, int, int, set[int]] | None:
     """Emit one primitive layer from an ONNX node index."""
-    from .onnx_graph import OnnxGraph
+    from .onnx_graph import OnnxGraph, get_initializer
 
     assert isinstance(graph, OnnxGraph)
     node = graph.node(node_index)
@@ -224,8 +233,8 @@ def _emit_cnn_primitive(
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
     if node.op_type == "Conv":
-        weight = initializers[node.input[1]]
-        bias = _optional_bias(initializers, node)
+        weight = get_initializer(graph, node.input[1])
+        bias = _optional_bias_graph(graph, node)
         group = _attr_int(node, "group", 1)
         kernel_shape = _attr_ints(node, "kernel_shape")
         strides = _attr_ints(node, "strides")
@@ -373,7 +382,9 @@ def _primitive_shape_delta(
     if node.op_type in _STANDALONE_ACTIVATIONS or node.op_type in {"Identity", "Dropout", "Add"}:
         return spatial_h, spatial_w, channels
     if node.op_type == "Conv":
-        weight = initializers[node.input[1]]
+        from .onnx_graph import get_initializer
+
+        weight = get_initializer(graph, node.input[1])
         group = _attr_int(node, "group", 1)
         kernel_shape = _attr_ints(node, "kernel_shape")
         strides = _attr_ints(node, "strides")

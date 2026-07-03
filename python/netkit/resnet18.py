@@ -1,4 +1,4 @@
-"""ResNet-18 architecture (BasicBlock stages, torchvision-compatible topology)."""
+"""ResNet-18 architecture (BasicBlock stages, standard ResNet-18 topology)."""
 
 from __future__ import annotations
 

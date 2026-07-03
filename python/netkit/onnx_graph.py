@@ -109,6 +109,29 @@ def trace_through_activations(graph: OnnxGraph, tensor: str) -> str:
         tensor = node.input[0]
 
 
+def resolve_initializer_name(graph: OnnxGraph, name: str) -> str:
+    """Follow Identity chains to the initializer tensor name."""
+    seen: set[str] = set()
+    while name not in graph.initializers:
+        if name in seen:
+            return name
+        seen.add(name)
+        node = graph.producer_node(name)
+        if node is None or node.op_type != "Identity" or not node.input:
+            return name
+        name = node.input[0]
+    return name
+
+
+def get_initializer(graph: OnnxGraph, name: str) -> np.ndarray:
+    """Load an initializer, tracing through Identity aliases used by some exporters."""
+    resolved = resolve_initializer_name(graph, name)
+    try:
+        return graph.initializers[resolved]
+    except KeyError as exc:
+        raise KeyError(name) from exc
+
+
 def trace_batch_norm(graph: OnnxGraph, tensor: str) -> tuple[int, str] | None:
     tensor = trace_through_activations(graph, tensor)
     node = graph.producer_node(tensor)
@@ -123,9 +146,11 @@ def trace_conv(graph: OnnxGraph, tensor: str) -> tuple[int, str, np.ndarray, np.
     node = graph.producer_node(tensor)
     if node is None or node.op_type != "Conv":
         return None
-    weight = graph.initializers[node.input[1]]
+    weight = get_initializer(graph, node.input[1])
     bias = None
-    if len(node.input) >= 3 and node.input[2] in graph.initializers:
-        bias = graph.initializers[node.input[2]]
+    if len(node.input) >= 3:
+        bias_name = resolve_initializer_name(graph, node.input[2])
+        if bias_name in graph.initializers:
+            bias = graph.initializers[bias_name]
     idx = graph.producers[node.output[0]]
     return idx, node.input[0], weight, bias

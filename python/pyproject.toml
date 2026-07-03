@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-train = ["torch>=2.0"]
+train = ["torch>=2.0", "timm>=0.9"]
 
 [project.scripts]
 netkit-pack = "netkit.__main__:main"

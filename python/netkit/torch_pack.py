@@ -43,7 +43,10 @@ def pack_depthwise_conv2d(conv: nn.Conv2d) -> tuple[np.ndarray, np.ndarray]:
     if w.shape[1] != 1:
         raise ValueError("pack_depthwise_conv2d expects groups == in_channels")
     w_nk = w.reshape(w.shape[0], w.shape[2], w.shape[3]).astype(np.float32)
-    b = conv.bias.detach().cpu().numpy().astype(np.float32)
+    if conv.bias is not None:
+        b = conv.bias.detach().cpu().numpy().astype(np.float32)
+    else:
+        b = np.zeros(conv.out_channels, dtype=np.float32)
     return w_nk, b
 
 

@@ -59,6 +59,18 @@ python tools/write_convnextv2_atto_fixture.py
 
 Builder: `python/netkit/convnextv2_atto.py` (`build_convnextv2_atto_arch`). Uses `layernorm2d` (kind `11`) between stem/stage convs and before the classifier pool.
 
+### Pack PyTorch checkpoint
+
+Requires `pip install -e "python[train]"` (torch + timm):
+
+```bash
+python -m netkit pack --arch convnextv2_atto -o models/my_convnextv2_atto.nk --height 32 --width 32 --num-classes 10
+# or
+python tools/pack_convnextv2_atto_checkpoint.py -o models/my_convnextv2_atto.nk
+```
+
+Uses `python/netkit/torch_backbone_pack.py` to map timm `convnextv2_atto` weights into composite block tensors (LayerNorm2d, ConvNeXt V2 blocks, classifier head).
+
 ## Python
 
 ```python

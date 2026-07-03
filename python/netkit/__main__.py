@@ -25,10 +25,14 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     pack = sub.add_parser("pack", help="Pack PyTorch backbone checkpoint to .nk")
-    pack.add_argument("--arch", choices=("resnet18",), required=True)
+    pack.add_argument(
+        "--arch",
+        choices=("resnet18", "convnextv2_atto", "mobilenetv4_small"),
+        required=True,
+    )
     pack.add_argument("-o", "--output", required=True, help="Output .nk path")
-    pack.add_argument("--height", type=int, default=56)
-    pack.add_argument("--width", type=int, default=56)
+    pack.add_argument("--height", type=int, default=None, help="Input height (arch default if omitted)")
+    pack.add_argument("--width", type=int, default=None, help="Input width (arch default if omitted)")
     pack.add_argument("--num-classes", type=int, default=10)
 
     inspect = sub.add_parser("inspect", help="Print .nk header and tensor catalog")
@@ -69,9 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    input_path = Path(args.input)
 
     if args.command == "convert":
+        input_path = Path(args.input)
         if input_path.suffix.lower() != ".onnx":
             print(f"Unsupported input type: {input_path.suffix} (expected .onnx)", file=sys.stderr)
             return 1
@@ -81,44 +85,46 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "pack":
         try:
-            import torch
-            from torchvision.models import resnet18
+            import torch  # noqa: F401
         except ImportError:
-            print('pack requires torch/torchvision: pip install -e "python[train]" torchvision', file=sys.stderr)
+            print('pack requires torch: pip install -e "python[train]"', file=sys.stderr)
             return 1
         import numpy as np
         from .arch_writer import write_nk_from_arch
         from .reference_forward import forward_cnn
-        from .torch_backbone_pack import pack_resnet18_from_torch
+        from .torch_backbone_pack import (
+            PACK_ARCH_DEFAULTS,
+            backbone_torch_forward,
+            load_backbone_model,
+            pack_backbone_from_torch,
+        )
         from .torch_pack import assert_packed_matches_reference
         from .writer import RegressionCase, RegressionSuite
 
-        if args.arch != "resnet18":
-            print(f"unsupported arch: {args.arch}", file=sys.stderr)
-            return 1
-        model = resnet18(weights=None)
-        model.eval()
-        if args.num_classes != model.fc.out_features:
-            model.fc = torch.nn.Linear(model.fc.in_features, args.num_classes)
-        arch, weights = pack_resnet18_from_torch(
+        default_h, default_w = PACK_ARCH_DEFAULTS[args.arch]
+        height = args.height if args.height is not None else default_h
+        width = args.width if args.width is not None else default_w
+
+        model = load_backbone_model(args.arch, num_classes=args.num_classes)
+        arch, weights = pack_backbone_from_torch(
+            args.arch,
             model,
-            height=args.height,
-            width=args.width,
+            height=height,
+            width=width,
             num_classes=args.num_classes,
         )
 
         def torch_forward(inp: np.ndarray) -> np.ndarray:
-            x = torch.from_numpy(
-                inp.reshape(1, args.height, args.width, 3).transpose(0, 3, 1, 2).copy()
-            )
-            with torch.no_grad():
-                logits = model(x)
-            return logits.cpu().numpy().reshape(-1)
+            return backbone_torch_forward(model, inp, height=height, width=width)
 
-        assert_packed_matches_reference(arch, weights, torch_forward, seed=42, atol=1e-4)
+        parity_samples = 4 if args.arch == "mobilenetv4_small" else 8
+        assert_packed_matches_reference(
+            arch, weights, torch_forward, seed=42, atol=1e-4, samples=parity_samples
+        )
         rng = np.random.default_rng(0)
-        inp = rng.standard_normal(args.height * args.width * 3, dtype=np.float32) * 0.1
+        inp = rng.standard_normal(height * width * 3, dtype=np.float32) * 0.1
         expected = forward_cnn(inp, arch, weights)
+        label = args.arch.replace("_", " ").title()
         out = Path(args.output)
         write_nk_from_arch(
             arch,
@@ -126,17 +132,21 @@ def main(argv: list[str] | None = None) -> int:
             out,
             RegressionSuite(
                 tolerance=1e-4,
-                cases=[RegressionCase(name="ResNet-18 packed checkpoint", input=inp, expected=expected)],
+                cases=[RegressionCase(name=f"{label} packed checkpoint", input=inp, expected=expected)],
             ),
         )
-        print(f"Wrote {out} ({len(arch['layers'])} layers, {weights.nbytes} bytes)")
+        print(
+            f"Wrote {out} (timm, {len(arch['layers'])} layers, {weights.nbytes} bytes, "
+            f"{height}x{width}x3)"
+        )
         return 0
 
     if args.command == "inspect":
-        inspect_nk(input_path)
+        inspect_nk(Path(args.input))
         return 0
 
     if args.command == "aot":
+        input_path = Path(args.input)
         if input_path.suffix.lower() != ".nk":
             print(f"Unsupported input type: {input_path.suffix} (expected .nk)", file=sys.stderr)
             return 1

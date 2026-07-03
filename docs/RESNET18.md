@@ -6,7 +6,7 @@ Layer kind **`10`**. A full ResNet-18 backbone (stem + 8 blocks + classifier) ca
 
 ## Block math (NHWC)
 
-Matches the standard torchvision ResNet block (inference BN folded into scale/bias):
+Matches the standard ResNet BasicBlock (inference BN folded into scale/bias):
 
 1. **Conv 3×3** — `in_channels → out_channels`, stride `s`, pad 1
 2. **BatchNorm** + **ReLU**
@@ -61,7 +61,7 @@ python -m netkit pack --arch resnet18 -o models/my_resnet18.nk --height 56 --wid
 python tools/pack_resnet18_checkpoint.py -o models/my_resnet18.nk
 ```
 
-Uses `python/netkit/torch_backbone_pack.py` to fold BatchNorm and map torchvision weights into composite BasicBlock tensors.
+Uses `python/netkit/torch_backbone_pack.py` to fold BatchNorm and map timm `resnet18` weights into composite BasicBlock tensors.
 
 ## Python
 

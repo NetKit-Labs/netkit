@@ -63,11 +63,13 @@ class _ConvBnChain:
 
 
 def _fold_bn_node(graph: OnnxGraph, bn_index: int) -> tuple[np.ndarray, np.ndarray]:
+    from .onnx_graph import get_initializer
+
     node = graph.node(bn_index)
-    scale = graph.initializers[node.input[1]]
-    beta = graph.initializers[node.input[2]]
-    mean = graph.initializers[node.input[3]]
-    var = graph.initializers[node.input[4]]
+    scale = get_initializer(graph, node.input[1])
+    beta = get_initializer(graph, node.input[2])
+    mean = get_initializer(graph, node.input[3])
+    var = get_initializer(graph, node.input[4])
     eps = _attr_float(node, "epsilon", 1e-5)
     return fold_batch_norm_params(scale, beta, mean, var, eps=eps)
 

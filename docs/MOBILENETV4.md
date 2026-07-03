@@ -77,6 +77,18 @@ python tools/write_mobilenetv4_small_fixture.py
 
 Builder: `python/netkit/mobilenetv4_small.py` (`build_mobilenetv4_small_arch`). Block specs match [mobilenetv4.pytorch](https://github.com/d-li14/mobilenetv4.pytorch).
 
+### Pack PyTorch checkpoint
+
+Requires `pip install -e "python[train]"` (torch + timm):
+
+```bash
+python -m netkit pack --arch mobilenetv4_small -o models/my_mobilenetv4_small.nk --height 56 --width 56 --num-classes 10
+# or
+python tools/pack_mobilenetv4_small_checkpoint.py -o models/my_mobilenetv4_small.nk
+```
+
+Uses `python/netkit/torch_backbone_pack.py` to fold BatchNorm and map timm `mobilenetv4_conv_small` weights into composite UIB blocks and the 1×1 conv classifier head.
+
 ## Python
 
 ```python

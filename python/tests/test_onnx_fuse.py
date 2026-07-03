@@ -6,25 +6,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import numpy as np
-
 try:
     import onnx
+    import timm
     import torch
-    from torchvision.models import resnet18
 except ImportError:
     onnx = None
+    timm = None
     torch = None
 
 from netkit.onnx_convert import onnx_to_spec
 
 
-@unittest.skipIf(torch is None or onnx is None, "torch/onnx required")
+@unittest.skipIf(torch is None or onnx is None or timm is None, "torch/timm/onnx required")
 class OnnxFuseTests(unittest.TestCase):
     def test_resnet18_onnx_fuses_basic_blocks(self) -> None:
-        model = resnet18(weights=None)
+        model = timm.create_model("resnet18", pretrained=False, num_classes=10)
         model.eval()
-        model.fc = torch.nn.Linear(model.fc.in_features, 10)
         dummy = torch.randn(1, 3, 56, 56)
         onnx_path = Path(tempfile.gettempdir()) / "netkit_resnet18_fuse_test.onnx"
         torch.onnx.export(
