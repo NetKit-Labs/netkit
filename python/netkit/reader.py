@@ -39,6 +39,10 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
                 entry["pad_h"] = layer["pad_h"]
             if layer.get("pad_w", 0):
                 entry["pad_w"] = layer["pad_w"]
+            if layer.get("pad_h_end", layer.get("pad_h", 0)) != layer.get("pad_h", 0):
+                entry["pad_h_end"] = layer["pad_h_end"]
+            if layer.get("pad_w_end", layer.get("pad_w", 0)) != layer.get("pad_w", 0):
+                entry["pad_w_end"] = layer["pad_w_end"]
             if layer.get("activation") == "leaky_relu":
                 entry["alpha"] = float(layer.get("alpha", 0.01))
             arch_layers.append(entry)
@@ -54,6 +58,12 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
                 entry["pad_h"] = layer["pad_h"]
             if layer.get("pad_w", 0):
                 entry["pad_w"] = layer["pad_w"]
+            if layer.get("pool_w", layer["pool_size"]) != layer["pool_size"]:
+                entry["pool_w"] = layer["pool_w"]
+            if layer.get("pad_h_end", layer.get("pad_h", 0)) != layer.get("pad_h", 0):
+                entry["pad_h_end"] = layer["pad_h_end"]
+            if layer.get("pad_w_end", layer.get("pad_w", 0)) != layer.get("pad_w", 0):
+                entry["pad_w_end"] = layer["pad_w_end"]
             arch_layers.append(entry)
         elif kind == "avg_pool2d":
             entry = {
@@ -65,6 +75,12 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
                 entry["pad_h"] = layer["pad_h"]
             if layer.get("pad_w", 0):
                 entry["pad_w"] = layer["pad_w"]
+            if layer.get("pool_w", layer["pool_size"]) != layer["pool_size"]:
+                entry["pool_w"] = layer["pool_w"]
+            if layer.get("pad_h_end", layer.get("pad_h", 0)) != layer.get("pad_h", 0):
+                entry["pad_h_end"] = layer["pad_h_end"]
+            if layer.get("pad_w_end", layer.get("pad_w", 0)) != layer.get("pad_w", 0):
+                entry["pad_w_end"] = layer["pad_w_end"]
             arch_layers.append(entry)
         elif kind == "batch_norm2d":
             arch_layers.append({"type": "batch_norm2d", "channels": layer["channels"]})
@@ -114,10 +130,18 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
     return {"network": network, "input": input_shape, "layers": arch_layers}
 
 
+def read_nk_bytes(data: bytes) -> tuple[dict, np.ndarray]:
+    """Return architecture dict and interleaved flat weights from in-memory .nk bytes."""
+    return _read_nk_stream(io.BytesIO(data))
+
+
 def read_nk(path: str | Path) -> tuple[dict, np.ndarray]:
     """Return architecture dict and interleaved flat weights (W,B per layer)."""
     path = Path(path)
-    stream = io.BytesIO(path.read_bytes())
+    return _read_nk_stream(io.BytesIO(path.read_bytes()))
+
+
+def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     header = unpack_header(stream.read(HEADER_BYTES))
 
     network = header["network_kind"].name.lower()
@@ -135,7 +159,7 @@ def read_nk(path: str | Path) -> tuple[dict, np.ndarray]:
     weights_blob = stream.read(header["weights_bytes"])
     biases_blob = stream.read(header["biases_bytes"])
     if len(weights_blob) != header["weights_bytes"] or len(biases_blob) != header["biases_bytes"]:
-        raise ValueError(f"truncated weight payload in {path}")
+        raise ValueError("truncated weight payload in .nk bytes")
 
     weight_arrays: list[np.ndarray] = []
     offset = 0

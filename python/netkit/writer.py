@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .pad_encoding import encode_pad_extra, encode_pool_reserved
 from .format import (
     FLAG_HAS_TESTS,
     Activation,
@@ -42,7 +43,10 @@ class LayerSpec:
     filters: int = 0
     pad_h: int = 0
     pad_w: int = 0
+    pad_h_end: int = 0
+    pad_w_end: int = 0
     pool_size: int = 2
+    pool_w: int = 0
     channels: int = 0
     eps: float = 1e-6
     in_channels: int = 0
@@ -112,6 +116,9 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
                 units=layer.units, activation=layer.activation, alpha=layer.alpha
             )
         elif layer.kind == "conv2d":
+            pad_h_end = layer.pad_h_end or layer.pad_h
+            pad_w_end = layer.pad_w_end or layer.pad_w
+            pad_extra = encode_pad_extra(layer.pad_h, layer.pad_w, pad_h_end, pad_w_end)
             layer_bytes += pack_conv_layer(
                 kernel_size=layer.kernel_size,
                 stride=layer.stride,
@@ -120,6 +127,7 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
                 alpha=layer.alpha,
                 pad_h=layer.pad_h,
                 pad_w=layer.pad_w,
+                pad_extra=pad_extra,
             )
         elif layer.kind == "depthwise_conv2d":
             layer_bytes += pack_depthwise_conv_layer(
@@ -133,18 +141,42 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
                 pad_w=layer.pad_w,
             )
         elif layer.kind == "max_pool2d":
+            pool_w = layer.pool_w or layer.pool_size
+            pad_h_end = layer.pad_h_end or layer.pad_h
+            pad_w_end = layer.pad_w_end or layer.pad_w
+            reserved = encode_pool_reserved(
+                pool_h=layer.pool_size,
+                pool_w=pool_w,
+                top=layer.pad_h,
+                left=layer.pad_w,
+                bottom=pad_h_end,
+                right=pad_w_end,
+            )
             layer_bytes += pack_pool_layer(
                 pool_size=layer.pool_size,
                 stride=layer.stride,
                 pad_h=layer.pad_h,
                 pad_w=layer.pad_w,
+                reserved=reserved,
             )
         elif layer.kind == "avg_pool2d":
+            pool_w = layer.pool_w or layer.pool_size
+            pad_h_end = layer.pad_h_end or layer.pad_h
+            pad_w_end = layer.pad_w_end or layer.pad_w
+            reserved = encode_pool_reserved(
+                pool_h=layer.pool_size,
+                pool_w=pool_w,
+                top=layer.pad_h,
+                left=layer.pad_w,
+                bottom=pad_h_end,
+                right=pad_w_end,
+            )
             layer_bytes += pack_avg_pool_layer(
                 pool_size=layer.pool_size,
                 stride=layer.stride,
                 pad_h=layer.pad_h,
                 pad_w=layer.pad_w,
+                reserved=reserved,
             )
         elif layer.kind == "batch_norm2d":
             layer_bytes += pack_batch_norm_layer(channels=layer.channels)

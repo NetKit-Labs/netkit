@@ -2,6 +2,7 @@
 #include "mobilenetv4_uib.hpp"
 #include "resnet_basic_block.hpp"
 #include "tensor_factory.hpp"
+#include "nk_op_detail.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -791,6 +792,11 @@ namespace NkLoader
                         if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.filters)
                             return Fail(LoadStatus::SizeMismatch, "CNN conv tensor shape mismatch in .nk catalog");
 
+                        int pad_h_end = static_cast<int>(layer.pad_h);
+                        int pad_w_end = static_cast<int>(layer.pad_w);
+                        nk_op_detail::DecodeConvPadExtra(
+                            layer.pad_h, layer.pad_w, layer.kernel_w, pad_h_end, pad_w_end);
+
                         network->InitConvLayer(i,
                                                static_cast<int>(layer.kernel_size),
                                                static_cast<int>(layer.stride),
@@ -801,11 +807,23 @@ namespace NkLoader
                                                ToConvActivation(layer.activation),
                                                layer.alpha,
                                                static_cast<int>(layer.pad_h),
-                                               static_cast<int>(layer.pad_w));
+                                               static_cast<int>(layer.pad_w),
+                                               pad_h_end,
+                                               pad_w_end);
                         weight_offset += weight_elems;
                         bias_offset += layer.filters;
-                        h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
+                        h = static_cast<int>(nk_op_detail::CalcOutputDimAsymmetric(
+                            static_cast<uint32_t>(h),
+                            static_cast<int>(layer.kernel_size),
+                            static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_h),
+                            pad_h_end));
+                        w = static_cast<int>(nk_op_detail::CalcOutputDimAsymmetric(
+                            static_cast<uint32_t>(w),
+                            static_cast<int>(layer.kernel_size),
+                            static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_w),
+                            pad_w_end));
                         in_channels = layer.filters;
                         break;
                     }
@@ -852,25 +870,53 @@ namespace NkLoader
                     case NkFormat::LayerKind::MaxPool2D:
                     {
                         const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
+                        const nk_op_detail::PoolMeta pool_meta = nk_op_detail::DecodePoolMeta(layer);
                         network->InitPoolLayer(i,
-                                               static_cast<int>(layer.pool_size),
+                                               pool_meta.pool_h,
+                                               pool_meta.pool_w,
                                                static_cast<int>(layer.stride),
-                                               static_cast<int>(layer.pad_h),
-                                               static_cast<int>(layer.pad_w));
-                        h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
+                                               pool_meta.pad_h,
+                                               pool_meta.pad_w,
+                                               pool_meta.pad_h_end,
+                                               pool_meta.pad_w_end);
+                        h = static_cast<int>(nk_op_detail::CalcOutputDimAsymmetric(
+                            static_cast<uint32_t>(h),
+                            pool_meta.pool_h,
+                            static_cast<int>(layer.stride),
+                            pool_meta.pad_h,
+                            pool_meta.pad_h_end));
+                        w = static_cast<int>(nk_op_detail::CalcOutputDimAsymmetric(
+                            static_cast<uint32_t>(w),
+                            pool_meta.pool_w,
+                            static_cast<int>(layer.stride),
+                            pool_meta.pad_w,
+                            pool_meta.pad_w_end));
                         break;
                     }
                     case NkFormat::LayerKind::AvgPool2D:
                     {
                         const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
+                        const nk_op_detail::PoolMeta pool_meta = nk_op_detail::DecodePoolMeta(layer);
                         network->InitAvgPoolLayer(i,
-                                                  static_cast<int>(layer.pool_size),
+                                                  pool_meta.pool_h,
+                                                  pool_meta.pool_w,
                                                   static_cast<int>(layer.stride),
-                                                  static_cast<int>(layer.pad_h),
-                                                  static_cast<int>(layer.pad_w));
-                        h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
+                                                  pool_meta.pad_h,
+                                                  pool_meta.pad_w,
+                                                  pool_meta.pad_h_end,
+                                                  pool_meta.pad_w_end);
+                        h = static_cast<int>(nk_op_detail::CalcOutputDimAsymmetric(
+                            static_cast<uint32_t>(h),
+                            pool_meta.pool_h,
+                            static_cast<int>(layer.stride),
+                            pool_meta.pad_h,
+                            pool_meta.pad_h_end));
+                        w = static_cast<int>(nk_op_detail::CalcOutputDimAsymmetric(
+                            static_cast<uint32_t>(w),
+                            pool_meta.pool_w,
+                            static_cast<int>(layer.stride),
+                            pool_meta.pad_w,
+                            pool_meta.pad_w_end));
                         break;
                     }
                     case NkFormat::LayerKind::BatchNorm2d:

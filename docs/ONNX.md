@@ -9,6 +9,7 @@ There is **no ONNX reader in C++**. Parity between converted models and their so
 ```bash
 pip install -e python
 python -m netkit convert models/my_model.onnx -o models/my_model.nk
+python -m netkit convert models/my_model.onnx --no-optimize   # skip BN fold / dense merge
 python -m netkit aot models/my_model.nk -o build/aot   # optional: embed .nk in C/C++ for firmware
 make export-nk    # all bundled regression models
 
@@ -22,6 +23,7 @@ See [python/README.md](../python/README.md) and [NK_FORMAT.md](NK_FORMAT.md).
 | ONNX op | netkit layer | Notes |
 |---------|--------------|-------|
 | `Gemm` | `dense` | float32 weights/bias initializers; `transB` supported |
+| `MatMul` (+ optional `Add` bias) | `dense` | MLP graphs; weight initializer `[in, out]` |
 | `Conv` | `conv2d` or `depthwise_conv2d` | NCHW weights → netkit `[O,Kh,Kw,I]` or depthwise `[C,Kh,Kw]` when `group == in_channels`; per-side symmetric `pads` on import (see [Limitations](#limitations-v1)); fuses trailing activations |
 | `MaxPool` | `max_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
 | `AveragePool` / `AvgPool` | `avg_pool2d` | square kernel from `kernel_shape`; symmetric `pads` |
@@ -47,8 +49,8 @@ At inference time, feed CNN inputs in **NHWC flatten order** (same as existing n
 - **Float32 only** — other ONNX `TensorProto` types are rejected
 - **No external data** — weights must be embedded in the `.onnx` file (`raw_data` or `float_data`)
 - **Sequential primitive graphs** — no generic `Add` / skip branches unless **composite fusion** recognizes them (ResNet BasicBlock on `convert`; see below). Full ResNet / MobileNet / ConvNeXt backbones are best packed from timm via `python -m netkit pack`
-- **ONNX padding import** — `pads` must be per-side symmetric (top = bottom, left = right). The runtime supports independent `pad_h` and `pad_w` (including non-square depthwise kernels); ONNX import rejects per-side asymmetric pads (e.g. top ≠ bottom)
-- **Square pool kernels** — `MaxPool` / `AvgPool` use one `kernel_shape` value for height and width on import (runtime `.nk` layers can specify non-square depthwise kernels)
+- **ONNX padding import** — `pads` may be per-side asymmetric (top ≠ bottom); encoded in `.nk` and executed by the runtime. Depthwise import still requires symmetric pads
+- **Square pool kernels on import** — `MaxPool` / `AvgPool` accept non-square `kernel_shape`; encoded in pool `reserved` metadata
 
 PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `Pad` nodes — re-export or simplify the graph (e.g. `torch.onnx.export` on an `nn.Sequential`), enable composite fusion, or use `netkit pack` for supported timm backbones.
 

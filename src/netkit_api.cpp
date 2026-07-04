@@ -646,7 +646,7 @@ nk_status_t nk_cnn_init_pool_layer(nk_cnn_t* cnn,
 {
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
-    CnnPtr(cnn)->net->InitPoolLayer(layer_idx, pool_size, stride, pad_h, pad_w);
+    CnnPtr(cnn)->net->InitPoolLayer(layer_idx, pool_size, pool_size, stride, pad_h, pad_w);
     return NK_OK;
 }
 
@@ -659,7 +659,7 @@ nk_status_t nk_cnn_init_avg_pool_layer(nk_cnn_t* cnn,
 {
     if (!nk_cnn_is_valid(cnn))
         return NK_ERR_NOT_INITIALIZED;
-    CnnPtr(cnn)->net->InitAvgPoolLayer(layer_idx, pool_size, stride, pad_h, pad_w);
+    CnnPtr(cnn)->net->InitAvgPoolLayer(layer_idx, pool_size, pool_size, stride, pad_h, pad_w);
     return NK_OK;
 }
 

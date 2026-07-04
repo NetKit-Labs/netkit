@@ -9,6 +9,8 @@ struct Conv2D
     int stride = 1;
     int pad_h = 0;
     int pad_w = 0;
+    int pad_h_end = 0;
+    int pad_w_end = 0;
     int in_channels;
     int out_channels;
 

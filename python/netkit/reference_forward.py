@@ -27,8 +27,10 @@ def _activate(x: np.ndarray, activation: str, *, alpha: float = 0.01) -> np.ndar
     return x
 
 
-def _out_dim(in_dim: int, kernel: int, stride: int, pad: int = 0) -> int:
-    return (in_dim + 2 * pad - kernel) // stride + 1
+def _out_dim(in_dim: int, kernel: int, stride: int, pad_before: int = 0, pad_after: int | None = None) -> int:
+    if pad_after is None:
+        pad_after = pad_before
+    return (in_dim + pad_before + pad_after - kernel) // stride + 1
 
 
 def pack_mlp_weights(layers: list[tuple[np.ndarray, np.ndarray]]) -> np.ndarray:
@@ -58,12 +60,18 @@ def _conv_nhwc(
     stride: int,
     pad_h: int = 0,
     pad_w: int = 0,
+    pad_h_end: int | None = None,
+    pad_w_end: int | None = None,
 ) -> np.ndarray:
     """kernel shape (out_c, k, k, in_c); inp (H, W, C)."""
+    if pad_h_end is None:
+        pad_h_end = pad_h
+    if pad_w_end is None:
+        pad_w_end = pad_w
     h, w, in_c = inp.shape
     out_c, k, _, _ = kernel.shape
-    out_h = _out_dim(h, k, stride, pad_h)
-    out_w = _out_dim(w, k, stride, pad_w)
+    out_h = _out_dim(h, k, stride, pad_h, pad_h_end)
+    out_w = _out_dim(w, k, stride, pad_w, pad_w_end)
     out = np.zeros((out_h, out_w, out_c), dtype=np.float32)
     for oc in range(out_c):
         for oh in range(out_h):
@@ -114,21 +122,30 @@ def _depthwise_conv_nhwc(
 def _max_pool_nhwc(
     inp: np.ndarray,
     *,
-    pool_size: int,
+    pool_h: int,
+    pool_w: int | None = None,
     stride: int,
     pad_h: int = 0,
     pad_w: int = 0,
+    pad_h_end: int | None = None,
+    pad_w_end: int | None = None,
 ) -> np.ndarray:
+    if pool_w is None:
+        pool_w = pool_h
+    if pad_h_end is None:
+        pad_h_end = pad_h
+    if pad_w_end is None:
+        pad_w_end = pad_w
     h, w, channels = inp.shape
-    out_h = _out_dim(h, pool_size, stride, pad_h)
-    out_w = _out_dim(w, pool_size, stride, pad_w)
+    out_h = _out_dim(h, pool_h, stride, pad_h, pad_h_end)
+    out_w = _out_dim(w, pool_w, stride, pad_w, pad_w_end)
     out = np.full((out_h, out_w, channels), -np.finfo(np.float32).max, dtype=np.float32)
     for c in range(channels):
         for oh in range(out_h):
             for ow in range(out_w):
                 max_val = -np.finfo(np.float32).max
-                for kh in range(pool_size):
-                    for kw in range(pool_size):
+                for kh in range(pool_h):
+                    for kw in range(pool_w):
                         ih = oh * stride + kh - pad_h
                         iw = ow * stride + kw - pad_w
                         if ih < 0 or iw < 0 or ih >= h or iw >= w:
@@ -141,22 +158,31 @@ def _max_pool_nhwc(
 def _avg_pool_nhwc(
     inp: np.ndarray,
     *,
-    pool_size: int,
+    pool_h: int,
+    pool_w: int | None = None,
     stride: int,
     pad_h: int = 0,
     pad_w: int = 0,
+    pad_h_end: int | None = None,
+    pad_w_end: int | None = None,
 ) -> np.ndarray:
+    if pool_w is None:
+        pool_w = pool_h
+    if pad_h_end is None:
+        pad_h_end = pad_h
+    if pad_w_end is None:
+        pad_w_end = pad_w
     h, w, channels = inp.shape
-    out_h = _out_dim(h, pool_size, stride, pad_h)
-    out_w = _out_dim(w, pool_size, stride, pad_w)
+    out_h = _out_dim(h, pool_h, stride, pad_h, pad_h_end)
+    out_w = _out_dim(w, pool_w, stride, pad_w, pad_w_end)
     out = np.zeros((out_h, out_w, channels), dtype=np.float32)
     for c in range(channels):
         for oh in range(out_h):
             for ow in range(out_w):
                 total = 0.0
                 count = 0
-                for kh in range(pool_size):
-                    for kw in range(pool_size):
+                for kh in range(pool_h):
+                    for kw in range(pool_w):
                         ih = oh * stride + kh - pad_h
                         iw = ow * stride + kw - pad_w
                         if ih < 0 or iw < 0 or ih >= h or iw >= w:
@@ -403,7 +429,18 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
             offset += kernel_elems * out_c
             bias = weights[offset : offset + out_c]
             offset += out_c
-            x = _conv_nhwc(x, kernel, bias, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            pad_h_end = layer.get("pad_h_end", pad_h)
+            pad_w_end = layer.get("pad_w_end", pad_w)
+            x = _conv_nhwc(
+                x,
+                kernel,
+                bias,
+                stride=stride,
+                pad_h=pad_h,
+                pad_w=pad_w,
+                pad_h_end=pad_h_end,
+                pad_w_end=pad_w_end,
+            )
             x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
             h, w, channels = x.shape
         elif layer_type == "depthwise_conv2d":
@@ -421,18 +458,42 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
             x = _activate(x, layer.get("activation", "none"), alpha=float(layer.get("alpha", 0.01)))
             h, w, channels = x.shape
         elif layer_type == "max_pool2d":
-            pool = layer["pool_size"]
-            stride = layer.get("stride", pool)
+            pool_h = layer["pool_size"]
+            pool_w = layer.get("pool_w", pool_h)
+            stride = layer.get("stride", pool_h)
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
-            x = _max_pool_nhwc(x, pool_size=pool, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            pad_h_end = layer.get("pad_h_end", pad_h)
+            pad_w_end = layer.get("pad_w_end", pad_w)
+            x = _max_pool_nhwc(
+                x,
+                pool_h=pool_h,
+                pool_w=pool_w,
+                stride=stride,
+                pad_h=pad_h,
+                pad_w=pad_w,
+                pad_h_end=pad_h_end,
+                pad_w_end=pad_w_end,
+            )
             h, w, channels = x.shape
         elif layer_type == "avg_pool2d":
-            pool = layer["pool_size"]
-            stride = layer.get("stride", pool)
+            pool_h = layer["pool_size"]
+            pool_w = layer.get("pool_w", pool_h)
+            stride = layer.get("stride", pool_h)
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
-            x = _avg_pool_nhwc(x, pool_size=pool, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            pad_h_end = layer.get("pad_h_end", pad_h)
+            pad_w_end = layer.get("pad_w_end", pad_w)
+            x = _avg_pool_nhwc(
+                x,
+                pool_h=pool_h,
+                pool_w=pool_w,
+                stride=stride,
+                pad_h=pad_h,
+                pad_w=pad_w,
+                pad_h_end=pad_h_end,
+                pad_w_end=pad_w_end,
+            )
             h, w, channels = x.shape
         elif layer_type == "batch_norm2d":
             ch = layer["channels"]

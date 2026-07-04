@@ -2,6 +2,7 @@
 #include "active_kernel.hpp"
 #include "activation_followup.hpp"
 #include "ops_resolver.hpp"
+#include "reference_kernel.hpp"
 #include "tensor_factory.hpp"
 #include <cstring>
 
@@ -30,12 +31,24 @@ void DepthwiseConv2DLayer::forward(const Tensor& input, Tensor& output)
 
 void MaxPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    Kernels::MaxPool2dForward(input, pool_size, stride, pad_h, pad_w, output);
+    const int pad_h_end = this->pad_h_end;
+    const int pad_w_end = this->pad_w_end;
+    if (pool_h == pool_w && pad_h == pad_h_end && pad_w == pad_w_end)
+        Kernels::MaxPool2dForward(input, pool_h, stride, pad_h, pad_w, output);
+    else
+        ReferenceKernel::MaxPool2dForwardImpl(
+            input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
 }
 
 void AvgPool2DLayer::forward(const Tensor& input, Tensor& output)
 {
-    Kernels::AvgPool2dForward(input, pool_size, stride, pad_h, pad_w, output);
+    const int pad_h_end = this->pad_h_end;
+    const int pad_w_end = this->pad_w_end;
+    if (pool_h == pool_w && pad_h == pad_h_end && pad_w == pad_w_end)
+        Kernels::AvgPool2dForward(input, pool_h, stride, pad_h, pad_w, output);
+    else
+        ReferenceKernel::AvgPool2dForwardImpl(
+            input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
 }
 
 void BatchNorm2DLayer::forward(const Tensor& input, Tensor& output)
@@ -112,7 +125,9 @@ void CNNNetwork::InitConvLayer(uint32_t layer_idx,
                                ConvActivationType activation,
                                float leaky_alpha,
                                int pad_h,
-                               int pad_w)
+                               int pad_w,
+                               int pad_h_end,
+                               int pad_w_end)
 {
     if (!blocks || layer_idx >= num_layers)
         return;
@@ -122,6 +137,8 @@ void CNNNetwork::InitConvLayer(uint32_t layer_idx,
     blocks[layer_idx].conv.conv.stride = stride;
     blocks[layer_idx].conv.conv.pad_h = pad_h;
     blocks[layer_idx].conv.conv.pad_w = pad_w;
+    blocks[layer_idx].conv.conv.pad_h_end = pad_h_end >= 0 ? pad_h_end : pad_h;
+    blocks[layer_idx].conv.conv.pad_w_end = pad_w_end >= 0 ? pad_w_end : pad_w;
     blocks[layer_idx].conv.conv.in_channels = in_channels;
     blocks[layer_idx].conv.conv.out_channels = out_channels;
     blocks[layer_idx].conv.conv.weights = weights;
@@ -158,28 +175,48 @@ void CNNNetwork::InitDepthwiseConvLayer(uint32_t layer_idx,
     blocks[layer_idx].depthwise_conv.leaky_alpha = leaky_alpha;
 }
 
-void CNNNetwork::InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h, int pad_w)
+void CNNNetwork::InitPoolLayer(uint32_t layer_idx,
+                               int pool_h,
+                               int pool_w,
+                               int stride,
+                               int pad_h,
+                               int pad_w,
+                               int pad_h_end,
+                               int pad_w_end)
 {
     if (!blocks || layer_idx >= num_layers)
         return;
 
     blocks[layer_idx].type = CnnBlockType::MaxPool2D;
-    blocks[layer_idx].pool.pool_size = pool_size;
+    blocks[layer_idx].pool.pool_h = pool_h;
+    blocks[layer_idx].pool.pool_w = pool_w;
     blocks[layer_idx].pool.stride = stride;
     blocks[layer_idx].pool.pad_h = pad_h;
     blocks[layer_idx].pool.pad_w = pad_w;
+    blocks[layer_idx].pool.pad_h_end = pad_h_end >= 0 ? pad_h_end : pad_h;
+    blocks[layer_idx].pool.pad_w_end = pad_w_end >= 0 ? pad_w_end : pad_w;
 }
 
-void CNNNetwork::InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h, int pad_w)
+void CNNNetwork::InitAvgPoolLayer(uint32_t layer_idx,
+                                  int pool_h,
+                                  int pool_w,
+                                  int stride,
+                                  int pad_h,
+                                  int pad_w,
+                                  int pad_h_end,
+                                  int pad_w_end)
 {
     if (!blocks || layer_idx >= num_layers)
         return;
 
     blocks[layer_idx].type = CnnBlockType::AvgPool2D;
-    blocks[layer_idx].avg_pool.pool_size = pool_size;
+    blocks[layer_idx].avg_pool.pool_h = pool_h;
+    blocks[layer_idx].avg_pool.pool_w = pool_w;
     blocks[layer_idx].avg_pool.stride = stride;
     blocks[layer_idx].avg_pool.pad_h = pad_h;
     blocks[layer_idx].avg_pool.pad_w = pad_w;
+    blocks[layer_idx].avg_pool.pad_h_end = pad_h_end >= 0 ? pad_h_end : pad_h;
+    blocks[layer_idx].avg_pool.pad_w_end = pad_w_end >= 0 ? pad_w_end : pad_w;
 }
 
 void CNNNetwork::InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias)

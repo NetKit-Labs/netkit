@@ -282,6 +282,8 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
                                         int stride,
                                         int pad_h,
                                         int pad_w,
+                                        int pad_h_end,
+                                        int pad_w_end,
                                         int in_channels,
                                         int out_channels,
                                         NetkitKernelActivation /*fuse_activation*/,
@@ -390,10 +392,13 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
 }
 
 void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
-                                          int pool_size,
+                                          int pool_h,
+                                          int pool_w,
                                           int stride,
                                           int pad_h,
                                           int pad_w,
+                                          int /*pad_h_end*/,
+                                          int /*pad_w_end*/,
                                           Tensor& output)
 {
     const float* in = tensor_data_f32(const_cast<Tensor&>(input));
@@ -412,9 +417,9 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
             for (uint32_t ow = 0; ow < out_w; ++ow)
             {
                 float max_val = -FLT_MAX;
-                for (int kh = 0; kh < pool_size; ++kh)
+                for (int kh = 0; kh < pool_h; ++kh)
                 {
-                    for (int kw = 0; kw < pool_size; ++kw)
+                    for (int kw = 0; kw < pool_w; ++kw)
                     {
                         const int ih = static_cast<int>(oh) * stride + kh - pad_h;
                         const int iw = static_cast<int>(ow) * stride + kw - pad_w;
@@ -437,10 +442,13 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
 }
 
 void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input,
-                                           int pool_size,
+                                           int pool_h,
+                                           int pool_w,
                                            int stride,
                                            int pad_h,
                                            int pad_w,
+                                           int /*pad_h_end*/,
+                                           int /*pad_w_end*/,
                                            Tensor& output)
 {
     const float* in = tensor_data_f32(const_cast<Tensor&>(input));
@@ -460,9 +468,9 @@ void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input,
             {
                 float sum = 0.0f;
                 uint32_t count = 0;
-                for (int kh = 0; kh < pool_size; ++kh)
+                for (int kh = 0; kh < pool_h; ++kh)
                 {
-                    for (int kw = 0; kw < pool_size; ++kw)
+                    for (int kw = 0; kw < pool_w; ++kw)
                     {
                         const int ih = static_cast<int>(oh) * stride + kh - pad_h;
                         const int iw = static_cast<int>(ow) * stride + kw - pad_w;

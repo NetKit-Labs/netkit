@@ -55,20 +55,26 @@ struct DepthwiseConv2DLayer
 
 struct MaxPool2DLayer
 {
-    int pool_size = 2;
+    int pool_h = 2;
+    int pool_w = 2;
     int stride = 2;
     int pad_h = 0;
     int pad_w = 0;
+    int pad_h_end = 0;
+    int pad_w_end = 0;
 
     void forward(const Tensor& input, Tensor& output);
 };
 
 struct AvgPool2DLayer
 {
-    int pool_size = 2;
+    int pool_h = 2;
+    int pool_w = 2;
     int stride = 2;
     int pad_h = 0;
     int pad_w = 0;
+    int pad_h_end = 0;
+    int pad_w_end = 0;
 
     void forward(const Tensor& input, Tensor& output);
 };
@@ -173,7 +179,9 @@ public:
                        ConvActivationType activation,
                        float leaky_alpha = 0.01f,
                        int pad_h = 0,
-                       int pad_w = 0);
+                       int pad_w = 0,
+                       int pad_h_end = -1,
+                       int pad_w_end = -1);
 
     void InitDepthwiseConvLayer(uint32_t layer_idx,
                                 int kernel_h,
@@ -187,9 +195,23 @@ public:
                                 int pad_h = 0,
                                 int pad_w = 0);
 
-    void InitPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
+    void InitPoolLayer(uint32_t layer_idx,
+                       int pool_h,
+                       int pool_w,
+                       int stride,
+                       int pad_h = 0,
+                       int pad_w = 0,
+                       int pad_h_end = -1,
+                       int pad_w_end = -1);
 
-    void InitAvgPoolLayer(uint32_t layer_idx, int pool_size, int stride, int pad_h = 0, int pad_w = 0);
+    void InitAvgPoolLayer(uint32_t layer_idx,
+                          int pool_h,
+                          int pool_w,
+                          int stride,
+                          int pad_h = 0,
+                          int pad_w = 0,
+                          int pad_h_end = -1,
+                          int pad_w_end = -1);
 
     void InitBatchNormLayer(uint32_t layer_idx, int channels, float* scale, float* bias);
 

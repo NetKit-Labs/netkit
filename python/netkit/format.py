@@ -115,10 +115,11 @@ def pack_conv_layer(
     alpha: float,
     pad_h: int = 0,
     pad_w: int = 0,
+    pad_extra: int = 0,
 ) -> bytes:
     return pack_layer_kind(LayerKind.CONV2D) + struct.pack(
         "<III", kernel_size, stride, filters
-    ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, 0, alpha)
+    ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, pad_extra, alpha)
 
 
 def pack_depthwise_conv_layer(
@@ -141,16 +142,30 @@ def pack_depthwise_conv_layer(
     ) + struct.pack("<BBBBf", int(activation), pad_h, pad_w, kernel_w, alpha)
 
 
-def pack_pool_layer(*, pool_size: int, stride: int, pad_h: int = 0, pad_w: int = 0) -> bytes:
+def pack_pool_layer(
+    *,
+    pool_size: int,
+    stride: int,
+    pad_h: int = 0,
+    pad_w: int = 0,
+    reserved: int = 0,
+) -> bytes:
     return pack_layer_kind(LayerKind.MAX_POOL2D) + struct.pack(
         "<II", pool_size, stride
-    ) + struct.pack("<BBH", pad_h, pad_w, 0)
+    ) + struct.pack("<BBH", pad_h, pad_w, reserved)
 
 
-def pack_avg_pool_layer(*, pool_size: int, stride: int, pad_h: int = 0, pad_w: int = 0) -> bytes:
+def pack_avg_pool_layer(
+    *,
+    pool_size: int,
+    stride: int,
+    pad_h: int = 0,
+    pad_w: int = 0,
+    reserved: int = 0,
+) -> bytes:
     return pack_layer_kind(LayerKind.AVG_POOL2D) + struct.pack(
         "<II", pool_size, stride
-    ) + struct.pack("<BBH", pad_h, pad_w, 0)
+    ) + struct.pack("<BBH", pad_h, pad_w, reserved)
 
 
 def pack_batch_norm_layer(*, channels: int) -> bytes:

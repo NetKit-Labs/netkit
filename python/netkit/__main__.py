@@ -23,6 +23,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable composite block fusion (ResNet BasicBlock from Add nodes)",
     )
+    convert.add_argument(
+        "--no-optimize",
+        action="store_true",
+        help="Disable packager graph optimizations (BN fold, conv+BN merge, linear dense merge)",
+    )
 
     pack = sub.add_parser("pack", help="Pack PyTorch backbone checkpoint to .nk")
     pack.add_argument(
@@ -79,7 +84,12 @@ def main(argv: list[str] | None = None) -> int:
         if input_path.suffix.lower() != ".onnx":
             print(f"Unsupported input type: {input_path.suffix} (expected .onnx)", file=sys.stderr)
             return 1
-        out = convert_onnx_to_nk(input_path, args.output, fuse_composite=not args.no_fuse)
+        out = convert_onnx_to_nk(
+            input_path,
+            args.output,
+            fuse_composite=not args.no_fuse,
+            optimize=not args.no_optimize,
+        )
         print(f"Wrote {out}")
         return 0
 

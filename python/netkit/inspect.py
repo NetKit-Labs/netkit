@@ -14,6 +14,7 @@ from .format import (
     LayerKind,
     unpack_header,
 )
+from .pad_encoding import decode_pad_extra, decode_pool_reserved
 
 
 def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
@@ -27,17 +28,23 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
         }
     if kind == LayerKind.CONV2D:
         kernel, stride, filters = struct.unpack("<III", stream.read(12))
-        activation, pad_h, pad_w, _reserved, alpha = struct.unpack("<BBBBf", stream.read(8))
-        return {
+        activation, pad_h, pad_w, pad_extra, alpha = struct.unpack("<BBBBf", stream.read(8))
+        top, left, bottom, right = decode_pad_extra(pad_h, pad_w, pad_extra)
+        entry = {
             "kind": "conv2d",
             "kernel_size": kernel,
             "stride": stride,
             "filters": filters,
-            "pad_h": pad_h,
-            "pad_w": pad_w,
+            "pad_h": top,
+            "pad_w": left,
             "activation": Activation(activation).name.lower(),
             "alpha": alpha,
         }
+        if bottom != top:
+            entry["pad_h_end"] = bottom
+        if right != left:
+            entry["pad_w_end"] = right
+        return entry
     if kind == LayerKind.DEPTHWISE_CONV2D:
         kernel_h, stride, channels = struct.unpack("<III", stream.read(12))
         activation, pad_h, pad_w, kernel_w, alpha = struct.unpack("<BBBBf", stream.read(8))
@@ -54,24 +61,40 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
         }
     if kind == LayerKind.MAX_POOL2D:
         pool, stride = struct.unpack("<II", stream.read(8))
-        pad_h, pad_w, _reserved = struct.unpack("<BBH", stream.read(4))
-        return {
+        pad_h, pad_w, reserved = struct.unpack("<BBH", stream.read(4))
+        pool_h, pool_w, top, left, bottom, right = decode_pool_reserved(pool, pad_h, pad_w, reserved)
+        entry = {
             "kind": "max_pool2d",
-            "pool_size": pool,
+            "pool_size": pool_h,
             "stride": stride,
-            "pad_h": pad_h,
-            "pad_w": pad_w,
+            "pad_h": top,
+            "pad_w": left,
         }
+        if pool_w != pool_h:
+            entry["pool_w"] = pool_w
+        if bottom != top:
+            entry["pad_h_end"] = bottom
+        if right != left:
+            entry["pad_w_end"] = right
+        return entry
     if kind == LayerKind.AVG_POOL2D:
         pool, stride = struct.unpack("<II", stream.read(8))
-        pad_h, pad_w, _reserved = struct.unpack("<BBH", stream.read(4))
-        return {
+        pad_h, pad_w, reserved = struct.unpack("<BBH", stream.read(4))
+        pool_h, pool_w, top, left, bottom, right = decode_pool_reserved(pool, pad_h, pad_w, reserved)
+        entry = {
             "kind": "avg_pool2d",
-            "pool_size": pool,
+            "pool_size": pool_h,
             "stride": stride,
-            "pad_h": pad_h,
-            "pad_w": pad_w,
+            "pad_h": top,
+            "pad_w": left,
         }
+        if pool_w != pool_h:
+            entry["pool_w"] = pool_w
+        if bottom != top:
+            entry["pad_h_end"] = bottom
+        if right != left:
+            entry["pad_w_end"] = right
+        return entry
     if kind == LayerKind.BATCH_NORM2D:
         channels, _reserved = struct.unpack("<II", stream.read(8))
         return {"kind": "batch_norm2d", "channels": channels}

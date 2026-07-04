@@ -8,6 +8,7 @@ import numpy as np
 
 from .batch_norm_fold import fold_batch_norm_params
 from .onnx_graph import OnnxGraph, trace_batch_norm, trace_conv, trace_through_activations
+from .pad_encoding import onnx_spatial_pads
 from .writer import LayerSpec
 
 
@@ -26,14 +27,10 @@ def _attr_ints(node, name: str, default: list[int] | None = None) -> list[int]:
 
 
 def _symmetric_conv_pads(node) -> tuple[int, int]:
-    pads = _attr_ints(node, "pads", [0, 0, 0, 0])
-    if len(pads) < 2:
-        return 0, 0
-    pad_h = int(pads[0])
-    pad_w = int(pads[1])
-    if len(pads) >= 4 and (pads[0] != pads[2] or pads[1] != pads[3]):
-        raise ValueError("asymmetric conv padding is not supported")
-    return pad_h, pad_w
+    top, left, bottom, right = onnx_spatial_pads(node)
+    if top != bottom or left != right:
+        raise ValueError("ResNet fusion requires symmetric conv padding")
+    return top, left
 
 
 def _onnx_conv_to_netkit(weight: np.ndarray) -> np.ndarray:

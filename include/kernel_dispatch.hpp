@@ -180,6 +180,8 @@ namespace detail
                                             stride,
                                             pad_h,
                                             pad_w,
+                                            pad_h,
+                                            pad_w,
                                             in_channels,
                                             out_channels,
                                             fuse_activation,
@@ -432,10 +434,12 @@ namespace detail
             {
                 if (!LayerFast::TryMaxPool2dForward(
                         input, pool_size, stride, pad_h, pad_w, NetkitKernelActivation::None, output))
-                    ReferenceKernel::MaxPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
+                    ReferenceKernel::MaxPool2dForwardImpl(
+                        input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
             }
             else
-                ReferenceKernel::MaxPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
+                ReferenceKernel::MaxPool2dForwardImpl(
+                    input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
         }
 
         static void AvgPool2dForwardImpl(const Tensor& input,
@@ -448,10 +452,12 @@ namespace detail
             if constexpr (NkAcceleratedKernel<LayerFast>)
             {
                 if (!LayerFast::TryAvgPool2dForward(input, pool_size, stride, pad_h, pad_w, output))
-                    ReferenceKernel::AvgPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
+                    ReferenceKernel::AvgPool2dForwardImpl(
+                        input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
             }
             else
-                ReferenceKernel::AvgPool2dForwardImpl(input, pool_size, stride, pad_h, pad_w, output);
+                ReferenceKernel::AvgPool2dForwardImpl(
+                    input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
         }
 
         static void BatchNorm2dForwardImpl(const Tensor& input,

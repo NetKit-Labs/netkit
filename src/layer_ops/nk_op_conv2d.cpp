@@ -10,10 +10,10 @@ using namespace nk_op_detail;
 
 bool NkPlanConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
 {
-    const uint32_t out_h =
-        CalcOutputDim(plan.h, block.conv.conv.kernel_size, block.conv.conv.stride, block.conv.conv.pad_h);
-    const uint32_t out_w =
-        CalcOutputDim(plan.w, block.conv.conv.kernel_size, block.conv.conv.stride, block.conv.conv.pad_w);
+    const uint32_t out_h = CalcOutputDimAsymmetric(
+        plan.h, block.conv.conv.kernel_size, block.conv.conv.stride, block.conv.conv.pad_h, block.conv.conv.pad_h_end);
+    const uint32_t out_w = CalcOutputDimAsymmetric(
+        plan.w, block.conv.conv.kernel_size, block.conv.conv.stride, block.conv.conv.pad_w, block.conv.conv.pad_w_end);
     const uint32_t out_c = static_cast<uint32_t>(block.conv.conv.out_channels);
     BumpMaxActivation(plan, out_h * out_w * out_c);
     plan.h = out_h;
@@ -24,14 +24,16 @@ bool NkPlanConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
 
 bool NkPrepareConv2D(const NkCnnOpContext& ctx)
 {
-    const uint32_t out_h = CalcOutputDim(ctx.input.shape[0],
-                                         ctx.block.conv.conv.kernel_size,
-                                         ctx.block.conv.conv.stride,
-                                         ctx.block.conv.conv.pad_h);
-    const uint32_t out_w = CalcOutputDim(ctx.input.shape[1],
-                                         ctx.block.conv.conv.kernel_size,
-                                         ctx.block.conv.conv.stride,
-                                         ctx.block.conv.conv.pad_w);
+    const uint32_t out_h = CalcOutputDimAsymmetric(ctx.input.shape[0],
+                                                   ctx.block.conv.conv.kernel_size,
+                                                   ctx.block.conv.conv.stride,
+                                                   ctx.block.conv.conv.pad_h,
+                                                   ctx.block.conv.conv.pad_h_end);
+    const uint32_t out_w = CalcOutputDimAsymmetric(ctx.input.shape[1],
+                                                   ctx.block.conv.conv.kernel_size,
+                                                   ctx.block.conv.conv.stride,
+                                                   ctx.block.conv.conv.pad_w,
+                                                   ctx.block.conv.conv.pad_w_end);
     const uint32_t out_c = static_cast<uint32_t>(ctx.block.conv.conv.out_channels);
     const std::array<uint32_t, 3> shape = {out_h, out_w, out_c};
     ctx.output = ViewND(ctx.write_buffer, 3, shape);

@@ -3,14 +3,57 @@
 #include "ops_resolver.hpp"
 #include "tensor.hpp"
 #include "tensor_access.hpp"
+#include "nk_format.hpp"
 #include <cstdint>
 #include <cstring>
 
 namespace nk_op_detail
 {
+    inline uint32_t CalcOutputDimAsymmetric(uint32_t input_dim,
+                                            int kernel_size,
+                                            int stride,
+                                            int pad_before,
+                                            int pad_after)
+    {
+        return static_cast<uint32_t>(
+            (static_cast<int>(input_dim) + pad_before + pad_after - kernel_size) / stride + 1);
+    }
+
     inline uint32_t CalcOutputDim(uint32_t input_dim, int kernel_size, int stride, int pad = 0)
     {
-        return static_cast<uint32_t>((static_cast<int>(input_dim) + 2 * pad - kernel_size) / stride + 1);
+        return CalcOutputDimAsymmetric(input_dim, kernel_size, stride, pad, pad);
+    }
+
+    inline void DecodeConvPadExtra(uint8_t pad_h,
+                                   uint8_t pad_w,
+                                   uint8_t pad_extra,
+                                   int& pad_h_end,
+                                   int& pad_w_end)
+    {
+        pad_h_end = static_cast<int>(pad_h) + static_cast<int>(pad_extra & 0xFU);
+        pad_w_end = static_cast<int>(pad_w) + static_cast<int>((pad_extra >> 4) & 0xFU);
+    }
+
+    struct PoolMeta
+    {
+        int pool_h;
+        int pool_w;
+        int pad_h;
+        int pad_w;
+        int pad_h_end;
+        int pad_w_end;
+    };
+
+    inline PoolMeta DecodePoolMeta(const NkFormat::PoolLayerDesc& layer)
+    {
+        const uint16_t reserved = layer.reserved;
+        const int pool_h = static_cast<int>(layer.pool_size);
+        const int pool_w = (reserved & 0xFFU) ? static_cast<int>(reserved & 0xFFU) : pool_h;
+        const int extra_h = static_cast<int>((reserved >> 8) & 0xFU);
+        const int extra_w = static_cast<int>((reserved >> 12) & 0xFU);
+        const int pad_h = static_cast<int>(layer.pad_h);
+        const int pad_w = static_cast<int>(layer.pad_w);
+        return {pool_h, pool_w, pad_h, pad_w, pad_h + extra_h, pad_w + extra_w};
     }
 
     inline void FlattenNhwc(const Tensor& input, Tensor& output)

@@ -12,7 +12,8 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit("Requires onnx: pip install onnx numpy") from exc
 
 from .format import Activation, activation_from_name
-from .writer import LayerSpec, ModelSpec, write_nk
+from .pad_encoding import onnx_spatial_pads, spatial_output_dim
+from .writer import LayerSpec, ModelSpec, write_nk, write_nk_bytes
 
 _STANDALONE_ACTIVATIONS = {
     "Relu",
@@ -90,23 +91,47 @@ def _attr_ints(node, name: str, default: list[int] | None = None) -> list[int]:
     return default or []
 
 
-def _conv_output_dim(size: int, kernel: int, stride: int, pad: int) -> int:
-    return (size + 2 * pad - kernel) // stride + 1
+def _conv_output_dim(size: int, kernel: int, stride: int, pad_top: int, pad_bottom: int) -> int:
+    return spatial_output_dim(size, kernel, stride, pad_top, pad_bottom)
+
+
+def _pool_output_dim(size: int, kernel: int, stride: int, pad_top: int, pad_bottom: int) -> int:
+    return spatial_output_dim(size, kernel, stride, pad_top, pad_bottom)
+
+
+def _pool_kernel_shape(node) -> tuple[int, int]:
+    kernel_shape = _attr_ints(node, "kernel_shape")
+    if not kernel_shape:
+        return 2, 2
+    kh = int(kernel_shape[0])
+    kw = int(kernel_shape[1]) if len(kernel_shape) > 1 else kh
+    return kh, kw
+
+
+def _pool_stride(node, *, default: int) -> int:
+    strides = _attr_ints(node, "strides")
+    if not strides:
+        return default
+    return int(strides[0])
+
+
+def _layer_pad_fields(node) -> tuple[int, int, int, int]:
+    top, left, bottom, right = onnx_spatial_pads(node)
+    return top, left, bottom, right
 
 
 def _symmetric_pool_pads(node) -> tuple[int, int]:
-    pads = _attr_ints(node, "pads", [0, 0, 0, 0])
-    if len(pads) < 2:
-        return 0, 0
-    pad_h = int(pads[0])
-    pad_w = int(pads[1])
-    if len(pads) >= 4 and (pads[0] != pads[2] or pads[1] != pads[3]):
-        raise ValueError("asymmetric pool padding is not supported")
-    return pad_h, pad_w
+    top, left, bottom, right = onnx_spatial_pads(node)
+    if top != bottom or left != right:
+        raise ValueError("legacy symmetric pool padding helper requires equal top/bottom and left/right")
+    return top, left
 
 
-def _pool_output_dim(size: int, kernel: int, stride: int, pad: int) -> int:
-    return (size + 2 * pad - kernel) // stride + 1
+def _symmetric_conv_pads(node) -> tuple[int, int]:
+    top, left, bottom, right = onnx_spatial_pads(node)
+    if top != bottom or left != right:
+        raise ValueError("legacy symmetric conv padding helper requires equal top/bottom and left/right")
+    return top, left
 
 
 def _clip_is_relu6(node, initializers: dict[str, np.ndarray]) -> bool:
@@ -161,17 +186,6 @@ def _optional_bias_graph(graph, node) -> np.ndarray | None:
         return None
     name = resolve_initializer_name(graph, node.input[2])
     return graph.initializers.get(name)
-
-
-def _symmetric_conv_pads(node) -> tuple[int, int]:
-    pads = _attr_ints(node, "pads", [0, 0, 0, 0])
-    if len(pads) < 2:
-        return 0, 0
-    pad_h = int(pads[0])
-    pad_w = int(pads[1])
-    if len(pads) >= 4 and (pads[0] != pads[2] or pads[1] != pads[3]):
-        raise ValueError("asymmetric conv padding is not supported")
-    return pad_h, pad_w
 
 
 def _has_graph_branches(nodes) -> bool:
@@ -241,10 +255,12 @@ def _emit_cnn_primitive(
         kh = int(kernel_shape[0]) if kernel_shape else int(weight.shape[2])
         kw = int(kernel_shape[1]) if len(kernel_shape) > 1 else int(weight.shape[3])
         stride = int(strides[0]) if strides else 1
-        pad_h, pad_w = _symmetric_conv_pads(node)
+        pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
         out_c = int(weight.shape[0])
         in_c = int(channels)
-        if group == in_c and out_c == in_c:
+        if group > 1 and group == in_c and out_c == in_c:
+            if pad_top != pad_bottom or pad_left != pad_right:
+                raise ValueError("asymmetric padding is not supported for depthwise conv import")
             layers.append(
                 LayerSpec(
                     kind="depthwise_conv2d",
@@ -254,8 +270,8 @@ def _emit_cnn_primitive(
                     filters=out_c,
                     activation=activation,
                     alpha=alpha,
-                    pad_h=pad_h,
-                    pad_w=pad_w,
+                    pad_h=pad_top,
+                    pad_w=pad_left,
                 )
             )
             weight_tensors.append(_onnx_depthwise_conv_to_netkit(weight.astype(np.float32)))
@@ -268,8 +284,10 @@ def _emit_cnn_primitive(
                     filters=out_c,
                     activation=activation,
                     alpha=alpha,
-                    pad_h=pad_h,
-                    pad_w=pad_w,
+                    pad_h=pad_top,
+                    pad_w=pad_left,
+                    pad_h_end=pad_bottom,
+                    pad_w_end=pad_right,
                 )
             )
             weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
@@ -278,38 +296,52 @@ def _emit_cnn_primitive(
         bias_tensors.append(
             bias.astype(np.float32) if bias is not None else np.zeros(out_c, dtype=np.float32)
         )
-        spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_h)
-        spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_w)
+        spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
+        spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
         if group == 1:
             channels = out_c
         consumed.add(node_index)
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
     if node.op_type == "MaxPool":
-        kernel_shape = _attr_ints(node, "kernel_shape")
-        strides = _attr_ints(node, "strides")
-        kernel = int(kernel_shape[0]) if kernel_shape else 2
-        stride = int(strides[0]) if strides else kernel
-        pad_h, pad_w = _symmetric_pool_pads(node)
+        pool_h, pool_w = _pool_kernel_shape(node)
+        stride = _pool_stride(node, default=pool_h)
+        pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
         layers.append(
-            LayerSpec(kind="max_pool2d", pool_size=kernel, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            LayerSpec(
+                kind="max_pool2d",
+                pool_size=pool_h,
+                pool_w=pool_w,
+                stride=stride,
+                pad_h=pad_top,
+                pad_w=pad_left,
+                pad_h_end=pad_bottom,
+                pad_w_end=pad_right,
+            )
         )
-        spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
-        spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
+        spatial_h = _pool_output_dim(spatial_h, pool_h, stride, pad_top, pad_bottom)
+        spatial_w = _pool_output_dim(spatial_w, pool_w, stride, pad_left, pad_right)
         consumed.add(node_index)
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
     if node.op_type in {"AveragePool", "AvgPool"}:
-        kernel_shape = _attr_ints(node, "kernel_shape")
-        strides = _attr_ints(node, "strides")
-        kernel = int(kernel_shape[0]) if kernel_shape else 2
-        stride = int(strides[0]) if strides else kernel
-        pad_h, pad_w = _symmetric_pool_pads(node)
+        pool_h, pool_w = _pool_kernel_shape(node)
+        stride = _pool_stride(node, default=pool_h)
+        pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
         layers.append(
-            LayerSpec(kind="avg_pool2d", pool_size=kernel, stride=stride, pad_h=pad_h, pad_w=pad_w)
+            LayerSpec(
+                kind="avg_pool2d",
+                pool_size=pool_h,
+                pool_w=pool_w,
+                stride=stride,
+                pad_h=pad_top,
+                pad_w=pad_left,
+                pad_h_end=pad_bottom,
+                pad_w_end=pad_right,
+            )
         )
-        spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
-        spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
+        spatial_h = _pool_output_dim(spatial_h, pool_h, stride, pad_top, pad_bottom)
+        spatial_w = _pool_output_dim(spatial_w, pool_w, stride, pad_left, pad_right)
         consumed.add(node_index)
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
@@ -391,34 +423,30 @@ def _primitive_shape_delta(
         kh = int(kernel_shape[0]) if kernel_shape else int(weight.shape[2])
         kw = int(kernel_shape[1]) if len(kernel_shape) > 1 else int(weight.shape[3])
         stride = int(strides[0]) if strides else 1
-        pad_h, pad_w = _symmetric_conv_pads(node)
+        pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
         out_c = int(weight.shape[0])
-        spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_h)
-        spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_w)
+        spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
+        spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
         if group == 1:
             channels = out_c
         return spatial_h, spatial_w, channels
     if node.op_type == "MaxPool":
-        kernel_shape = _attr_ints(node, "kernel_shape")
-        strides = _attr_ints(node, "strides")
-        kernel = int(kernel_shape[0]) if kernel_shape else 2
-        stride = int(strides[0]) if strides else kernel
-        pad_h, pad_w = _symmetric_pool_pads(node)
-        spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
-        spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
+        pool_h, pool_w = _pool_kernel_shape(node)
+        stride = _pool_stride(node, default=pool_h)
+        pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
+        spatial_h = _pool_output_dim(spatial_h, pool_h, stride, pad_top, pad_bottom)
+        spatial_w = _pool_output_dim(spatial_w, pool_w, stride, pad_left, pad_right)
         return spatial_h, spatial_w, channels
     if node.op_type in {"AveragePool", "AvgPool"}:
-        kernel_shape = _attr_ints(node, "kernel_shape")
-        strides = _attr_ints(node, "strides")
-        kernel = int(kernel_shape[0]) if kernel_shape else 2
-        stride = int(strides[0]) if strides else kernel
-        pad_h, pad_w = _symmetric_pool_pads(node)
-        spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
-        spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
+        pool_h, pool_w = _pool_kernel_shape(node)
+        stride = _pool_stride(node, default=pool_h)
+        pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
+        spatial_h = _pool_output_dim(spatial_h, pool_h, stride, pad_top, pad_bottom)
+        spatial_w = _pool_output_dim(spatial_w, pool_w, stride, pad_left, pad_right)
         return spatial_h, spatial_w, channels
     if node.op_type == "GlobalAveragePool":
         return 1, 1, channels
-    if node.op_type in {"BatchNormalization", "Flatten", "Gemm"}:
+    if node.op_type in {"BatchNormalization", "Flatten", "Gemm", "Reshape", "Squeeze", "Unsqueeze"}:
         return spatial_h, spatial_w, channels
     return None
 
@@ -504,6 +532,26 @@ def _onnx_to_spec_cnn_fused(model) -> ModelSpec:
     )
 
 
+def _matmul_weight_to_netkit(weight: np.ndarray) -> tuple[np.ndarray, int]:
+    if weight.ndim != 2:
+        raise ValueError("MatMul weight initializer must be rank-2")
+    return weight.T.astype(np.float32), int(weight.shape[1])
+
+
+def _peek_fused_bias_add(
+    nodes, index: int, initializers: dict[str, np.ndarray]
+) -> tuple[np.ndarray | None, int]:
+    if index + 1 >= len(nodes):
+        return None, 0
+    nxt = nodes[index + 1]
+    if nxt.op_type != "Add" or len(nxt.input) < 2:
+        return None, 0
+    bias_name = nxt.input[1]
+    if bias_name not in initializers:
+        return None, 0
+    return initializers[bias_name].astype(np.float32).reshape(-1), 1
+
+
 def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> ModelSpec:
     model = onnx.load(onnx_path)
     network, input_shape = _resolve_input_shape(model)
@@ -522,25 +570,36 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             if node.op_type in _STANDALONE_ACTIVATIONS:
                 i += 1
                 continue
+            if node.op_type in {"Reshape", "Squeeze", "Unsqueeze", "Identity", "Dropout"}:
+                i += 1
+                continue
 
-            if node.op_type != "Gemm":
+            activation, alpha, act_skip = _peek_fused_activation(nodes, i, initializers)
+
+            if node.op_type == "Gemm":
+                weight = initializers[node.input[1]]
+                bias = _optional_bias(initializers, node)
+                trans_b = _attr_int(node, "transB", 0)
+                packed_w, out_features = _onnx_gemm_weight_to_netkit(weight, trans_b=trans_b)
+                i += 1 + act_skip
+            elif node.op_type == "MatMul":
+                if node.input[1] not in initializers:
+                    raise ValueError("MatMul weight must be an initializer for MLP import")
+                weight = initializers[node.input[1]]
+                packed_w, out_features = _matmul_weight_to_netkit(weight)
+                bias, bias_skip = _peek_fused_bias_add(nodes, i + act_skip, initializers)
+                i += 1 + act_skip + bias_skip
+            else:
                 raise ValueError(f"unsupported ONNX op for MLP: {node.op_type}")
 
-            activation, alpha, skip = _peek_fused_activation(nodes, i, initializers)
-
-            weight = initializers[node.input[1]]
-            bias = _optional_bias(initializers, node)
-            trans_b = _attr_int(node, "transB", 0)
-            packed_w, out_features = _onnx_gemm_weight_to_netkit(weight, trans_b=trans_b)
             layers.append(
                 LayerSpec(kind="dense", units=out_features, activation=activation, alpha=alpha)
             )
             weight_tensors.append(packed_w)
             bias_tensors.append(
-                (bias.astype(np.float32) if bias is not None else np.zeros(out_features, dtype=np.float32))
+                bias.astype(np.float32) if bias is not None else np.zeros(out_features, dtype=np.float32)
             )
             in_features = out_features
-            i += 1 + skip
 
         return ModelSpec(
             network="mlp",
@@ -564,6 +623,10 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             i += 1
             continue
 
+        if node.op_type in {"Reshape", "Squeeze", "Unsqueeze", "Identity", "Dropout"}:
+            i += 1
+            continue
+
         activation, alpha, skip = _peek_fused_activation(nodes, i, initializers)
 
         if node.op_type == "Conv":
@@ -575,10 +638,12 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             kh = int(kernel_shape[0]) if kernel_shape else int(weight.shape[2])
             kw = int(kernel_shape[1]) if len(kernel_shape) > 1 else int(weight.shape[3])
             stride = int(strides[0]) if strides else 1
-            pad_h, pad_w = _symmetric_conv_pads(node)
+            pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
             out_c = int(weight.shape[0])
             in_c = int(channels)
-            if group == in_c and out_c == in_c:
+            if group > 1 and group == in_c and out_c == in_c:
+                if pad_top != pad_bottom or pad_left != pad_right:
+                    raise ValueError("asymmetric padding is not supported for depthwise conv import")
                 layers.append(
                     LayerSpec(
                         kind="depthwise_conv2d",
@@ -588,8 +653,8 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
                         filters=out_c,
                         activation=activation,
                         alpha=alpha,
-                        pad_h=pad_h,
-                        pad_w=pad_w,
+                        pad_h=pad_top,
+                        pad_w=pad_left,
                     )
                 )
                 weight_tensors.append(_onnx_depthwise_conv_to_netkit(weight.astype(np.float32)))
@@ -602,8 +667,10 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
                         filters=out_c,
                         activation=activation,
                         alpha=alpha,
-                        pad_h=pad_h,
-                        pad_w=pad_w,
+                        pad_h=pad_top,
+                        pad_w=pad_left,
+                        pad_h_end=pad_bottom,
+                        pad_w_end=pad_right,
                     )
                 )
                 weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
@@ -612,38 +679,52 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             bias_tensors.append(
                 (bias.astype(np.float32) if bias is not None else np.zeros(out_c, dtype=np.float32))
             )
-            spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_h)
-            spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_w)
+            spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
+            spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
             if group == 1:
                 channels = out_c
             i += 1 + skip
             continue
 
         if node.op_type == "MaxPool":
-            kernel_shape = _attr_ints(node, "kernel_shape")
-            strides = _attr_ints(node, "strides")
-            kernel = int(kernel_shape[0]) if kernel_shape else 2
-            stride = int(strides[0]) if strides else kernel
-            pad_h, pad_w = _symmetric_pool_pads(node)
+            pool_h, pool_w = _pool_kernel_shape(node)
+            stride = _pool_stride(node, default=pool_h)
+            pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
             layers.append(
-                LayerSpec(kind="max_pool2d", pool_size=kernel, stride=stride, pad_h=pad_h, pad_w=pad_w)
+                LayerSpec(
+                    kind="max_pool2d",
+                    pool_size=pool_h,
+                    pool_w=pool_w,
+                    stride=stride,
+                    pad_h=pad_top,
+                    pad_w=pad_left,
+                    pad_h_end=pad_bottom,
+                    pad_w_end=pad_right,
+                )
             )
-            spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
-            spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
+            spatial_h = _pool_output_dim(spatial_h, pool_h, stride, pad_top, pad_bottom)
+            spatial_w = _pool_output_dim(spatial_w, pool_w, stride, pad_left, pad_right)
             i += 1
             continue
 
         if node.op_type == "AveragePool" or node.op_type == "AvgPool":
-            kernel_shape = _attr_ints(node, "kernel_shape")
-            strides = _attr_ints(node, "strides")
-            kernel = int(kernel_shape[0]) if kernel_shape else 2
-            stride = int(strides[0]) if strides else kernel
-            pad_h, pad_w = _symmetric_pool_pads(node)
+            pool_h, pool_w = _pool_kernel_shape(node)
+            stride = _pool_stride(node, default=pool_h)
+            pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
             layers.append(
-                LayerSpec(kind="avg_pool2d", pool_size=kernel, stride=stride, pad_h=pad_h, pad_w=pad_w)
+                LayerSpec(
+                    kind="avg_pool2d",
+                    pool_size=pool_h,
+                    pool_w=pool_w,
+                    stride=stride,
+                    pad_h=pad_top,
+                    pad_w=pad_left,
+                    pad_h_end=pad_bottom,
+                    pad_w_end=pad_right,
+                )
             )
-            spatial_h = _pool_output_dim(spatial_h, kernel, stride, pad_h)
-            spatial_w = _pool_output_dim(spatial_w, kernel, stride, pad_w)
+            spatial_h = _pool_output_dim(spatial_h, pool_h, stride, pad_top, pad_bottom)
+            spatial_w = _pool_output_dim(spatial_w, pool_w, stride, pad_left, pad_right)
             i += 1
             continue
 
@@ -720,9 +801,18 @@ def convert_onnx_to_nk(
     output_path: str | Path | None = None,
     *,
     fuse_composite: bool = True,
+    optimize: bool = True,
 ) -> Path:
+    from .arch_writer import _arch_to_spec
+    from .nk_optimize import optimize_nk
+    from .reader import read_nk_bytes
+
     onnx_path = Path(onnx_path)
     output_path = Path(output_path) if output_path else onnx_path.with_suffix(".nk")
     spec = onnx_to_spec(onnx_path, fuse_composite=fuse_composite)
+    if optimize:
+        arch, weights = read_nk_bytes(write_nk_bytes(spec))
+        opt = optimize_nk(arch, weights)
+        spec = _arch_to_spec(opt.arch, opt.weights)
     write_nk(output_path, spec)
     return output_path
