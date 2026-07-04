@@ -18,7 +18,7 @@ Models are loaded from binary **`.nk`** files (single-file architecture + weight
 | **[ONNX Import](docs/ONNX.md)** | Python packager (ONNX → `.nk`); parity tests in Python |
 | **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — Python packager + C++ loader |
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
-| **[Testing](docs/TESTING.md)** | Regression suites, Make targets, manual CI (`workflow_dispatch`) |
+| **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
@@ -45,7 +45,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
 - **Regression tests** — 86 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
-- **GitHub Actions CI** — manual `workflow_dispatch` only (`gh workflow run ci.yml`)
+- **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
 - **Optional CMSIS backends** — CMSIS-NN (MCU + Cortex-M): conv, depthwise, pool, FC, BN, activations, GELU; CMSIS-DSP: MatMul, add/mul, LayerNorm, GRN; reference fallback always linked ([KERNELS.md](docs/KERNELS.md))
@@ -209,7 +209,7 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
 | Embedded smoke | C23 | `tests/embedded_smoke.c` | `test_mlp`, `cnn_4x4_single` load/run on 7 MCU/MPU host profiles (`make test-embedded-smoke-matrix`; local only) |
 
-CI is **manual only** (`gh workflow run ci.yml`). See [TESTING.md](docs/TESTING.md).
+CI runs the fast suite on **push to `main`** and **pull requests**; full regression is manual (`gh workflow run test-full.yml`). See [TESTING.md](docs/TESTING.md).
 
 Regression cases are embedded in each bundled `.nk` file ([NK_FORMAT.md](docs/NK_FORMAT.md)).  
 MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.md).

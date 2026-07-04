@@ -327,7 +327,8 @@ netkit/
 |------|-------|
 | Validate before push | `make cmsis-init && make test` |
 | Full ONNX/backbone regression | `make test-full` |
-| Run GitHub Actions CI | `gh workflow run ci.yml` (manual only; not on push) |
+| Run GitHub Actions CI (fast) | Automatic on push/PR; or `gh workflow run ci.yml` |
+| Run full regression in CI | `gh workflow run test-full.yml` (manual only) |
 | Try a model quickly | `./netkit run model.nk --input ...` |
 | Size firmware RAM | `./netkit inspect model.nk --full` |
 | Ship on MCU | `make NETKIT_TARGET=mcu lib`, link into firmware, static arena |

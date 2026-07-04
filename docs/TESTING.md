@@ -2,7 +2,7 @@
 
 netkit uses **GNU Make** as the primary build and test driver. **CMake** is optional (`cmake -B cmake-build && cmake --build cmake-build`) with the same flags — see [BUILD_TARGETS.md](BUILD_TARGETS.md). C++ regression tests run through `./netkit test` and the C API harness `tests/test_c_api`. ONNX parity runs in Python.
 
-**GitHub Actions** (`.github/workflows/ci.yml`) is **manual only** (`workflow_dispatch`) — see [CI](#ci). Run locally with `make test` before pushing; run `make test-full` before release or when changing ONNX import/fusion.
+**GitHub Actions** — fast **`CI`** workflow on push to `main` and pull requests (`make test`); full suite via manual **`Test full`** workflow only — see [CI](#ci). Run `make test-full` locally before release or when changing ONNX import/fusion.
 
 ## Quick commands
 
@@ -194,11 +194,19 @@ Requires **PyTorch** for training scripts (`pip install -e "python[train]"`). Nu
 
 ## CI
 
-GitHub Actions does **not** run on push or pull request. Trigger manually from the repo **Actions** tab (**CI** → **Run workflow**), or from the CLI:
+**CI** (`.github/workflows/ci.yml`) runs on **push to `main`**, **pull requests**, and manual dispatch. It runs the default fast suite (`make test`).
+
+**Test full** (`.github/workflows/test-full.yml`) is **manual only** — use before release or when changing ONNX import/fusion:
+
+```bash
+gh workflow run test-full.yml
+gh run watch    # optional: wait for the run you just started
+```
+
+Re-run the fast workflow manually if needed:
 
 ```bash
 gh workflow run ci.yml
-gh run watch    # optional: wait for the run you just started
 ```
 
 The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only (reference kernels — no CMSIS compile smoke):
@@ -220,7 +228,7 @@ Model weights and embedded test cases are in the repo — no training in CI.
 
 ## Recommended local validation
 
-Pushes do **not** trigger CI. Before pushing, run locally:
+Pushes to `main` and pull requests run **CI** automatically. Before pushing, you can also run locally:
 
 ```bash
 make cmsis-init
