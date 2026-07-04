@@ -129,6 +129,8 @@ No virtual functions; the compiler inlines the selected path for each translatio
 Optional **4× manual loop unroll** for netkit reference kernels only. **Off by default** (`NETKIT_LOOP_UNROLL=0`). Independent of CMSIS-DSP `ARM_MATH_LOOPUNROLL` — CMSIS translation units never receive this flag.
 
 > **Experimental:** Duplicating loop bodies increases **`.text` / flash size**. On tight MCUs, enabling this can push the firmware image over available program memory even when RAM (arena) is sized correctly. Measure `.text` before shipping; prefer CMSIS backends on production firmware unless you have flash headroom.
+>
+> **Where it might help:** In practice this is most likely something to consider on an **MPU** — more program memory than a typical MCU, and reference kernels are often the primary path when CMSIS-NN is unavailable. **Avoid on flash-constrained MCUs**; on desktop CPU, CMSIS-DSP or default reference builds are usually sufficient.
 
 ```bash
 make NETKIT_LOOP_UNROLL=1 lib
@@ -141,7 +143,7 @@ When enabled, hot loops in `reference_kernel.cpp` use helpers from `include/netk
 
 ## Cache-friendly reference kernels (default build)
 
-Without enabling `NETKIT_LOOP_UNROLL`, reference spatial ops follow a few low-cost conventions for NHWC tensors:
+Without enabling `NETKIT_LOOP_UNROLL`, reference spatial ops follow a few low-cost conventions for NHWC tensors. **More reference-kernel optimizations are planned** (same goals: better cache/line use and fewer branches, without a separate code-size toggle unless noted).
 
 | Pattern | Where | Why |
 |---------|-------|-----|
