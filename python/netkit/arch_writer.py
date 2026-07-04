@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .cnn_layers import depthwise_arch_entry, depthwise_kernel_hw
+from .cnn_layers import conv2d_input_channels, depthwise_arch_entry, depthwise_kernel_hw
 from .format import MAX_LAYERS, activation_from_name
 from .writer import LayerSpec, ModelSpec, RegressionCase, RegressionSuite, write_nk, write_nk_bytes
 
@@ -114,12 +114,13 @@ def _split_cnn_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
             out_c = layer["filters"]
-            kernel_elems = k * k * channels
+            in_c = conv2d_input_channels(layer, channels)
+            kernel_elems = k * k * in_c
             w_flat = weights[offset : offset + kernel_elems * out_c]
             offset += kernel_elems * out_c
             b = weights[offset : offset + out_c]
             offset += out_c
-            kernel = w_flat.reshape(out_c, k, k, channels)
+            kernel = w_flat.reshape(out_c, k, k, in_c)
             weight_tensors.append(kernel.astype(np.float32))
             bias_tensors.append(b.astype(np.float32))
             height = _out_dim(height, k, stride, pad_h)
@@ -336,7 +337,8 @@ def pack_random_cnn_weights(arch: dict, rng: np.random.Generator, scale: float =
         if layer_type == "conv2d":
             k = layer["kernel_size"]
             out_c = layer["filters"]
-            kernel_elems = k * k * channels
+            in_c = conv2d_input_channels(layer, channels)
+            kernel_elems = k * k * in_c
             parts.append(rng.standard_normal(kernel_elems * out_c, dtype=np.float32) * scale)
             parts.append(rng.standard_normal(out_c, dtype=np.float32) * 0.01)
             pad_h = layer.get("pad_h", 0)

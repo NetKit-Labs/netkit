@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from .cnn_layers import depthwise_kernel_hw
+from .cnn_layers import conv2d_input_channels, depthwise_kernel_hw
 from .reference_forward import forward_cnn, forward_mlp, pack_cnn_weights, pack_mlp_weights
 
 
@@ -94,8 +94,9 @@ def _decompose_cnn(arch: dict[str, Any], weights: np.ndarray) -> tuple[list[_Gra
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
             out_c = layer["filters"]
-            kernel_elems = k * k * channels
-            w = weights[offset : offset + kernel_elems * out_c].reshape(out_c, k, k, channels).copy()
+            in_c = conv2d_input_channels(layer, channels)
+            kernel_elems = k * k * in_c
+            w = weights[offset : offset + kernel_elems * out_c].reshape(out_c, k, k, in_c).copy()
             offset += kernel_elems * out_c
             b = weights[offset : offset + out_c].copy()
             offset += out_c
@@ -385,7 +386,6 @@ def optimize_nk(
     else:
         h, w, c = arch["input"]
         probes = [np.random.default_rng(7 + i).standard_normal(h * w * c).astype(np.float32) for i in range(probe_count)]
-    baseline = [_forward(arch, weights, probe) for probe in probes]
 
     current_arch = arch
     current_weights = weights
@@ -404,6 +404,8 @@ def optimize_nk(
         current_arch = fused.arch
         current_weights = fused.weights
         applied.extend(fused.applied)
+
+    baseline = [_forward(current_arch, current_weights, probe) for probe in probes]
 
     while _optimization_passes_enabled(opts) and not _has_composite_layers(current_arch):
         layers, _ = _decompose(current_arch, current_weights)

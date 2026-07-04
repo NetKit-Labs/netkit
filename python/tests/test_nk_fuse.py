@@ -177,6 +177,52 @@ class TestNkFuse(unittest.TestCase):
         arch, _weights = read_nk(nk_path)
         self.assertEqual(arch["layers"][0]["type"], "resnet_basic_block")
 
+    def test_onnx_resnet_backbone_primitive_import_then_packager_fuse(self) -> None:
+        onnx_path = Path("models/import_resnet18_backbone.onnx")
+        if not onnx_path.is_file():
+            self.skipTest("models/import_resnet18_backbone.onnx not found")
+
+        from netkit.onnx_convert import convert_onnx_to_nk, onnx_to_spec
+        from netkit.reader import read_nk
+        from netkit.reference_forward import forward_cnn
+
+        prim = onnx_to_spec(onnx_path, fuse_composite=False)
+        self.assertGreater(len(prim.layers), 10)
+        self.assertTrue(any(layer.kind == "batch_norm2d" for layer in prim.layers))
+
+        nk_path = Path(tempfile.gettempdir()) / "netkit_resnet_backbone_packager_fuse.nk"
+        convert_onnx_to_nk(
+            onnx_path,
+            nk_path,
+            fuse_composite=False,
+            optimize=True,
+            packager_fuse=True,
+        )
+        arch, weights = read_nk(nk_path)
+        self.assertEqual(len(arch["layers"]), 10)
+        self.assertEqual(
+            sum(1 for layer in arch["layers"] if layer["type"] == "resnet_basic_block"),
+            8,
+        )
+
+        rng = np.random.default_rng(0)
+        flat = rng.standard_normal(np.prod(arch["input"]), dtype=np.float32) * 0.1
+        out = np.asarray(forward_cnn(flat, arch, weights), dtype=np.float32)
+
+        try:
+            import onnxruntime as ort
+        except ImportError:
+            self.skipTest("onnxruntime required")
+
+        h, w, c = arch["input"]
+        nhwc = flat.reshape(h, w, c)
+        nchw = np.transpose(nhwc, (2, 0, 1)).reshape(1, c, h, w).astype(np.float32)
+        session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+        ort_out = session.run(None, {session.get_inputs()[0].name: nchw})[0]
+        if ort_out.ndim == 4:
+            ort_out = np.transpose(ort_out, (0, 2, 3, 1))
+        np.testing.assert_allclose(out, ort_out.reshape(-1), rtol=0.0, atol=1e-4)
+
 
 if __name__ == "__main__":
     unittest.main()

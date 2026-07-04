@@ -851,11 +851,19 @@ namespace NkLoader
                         const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
                         const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
 
-                        const std::size_t kernel_elems = static_cast<std::size_t>(layer.kernel_size) *
-                                                         layer.kernel_size * in_channels;
-                        const std::size_t weight_elems = kernel_elems * layer.filters;
+                        const std::size_t kernel_area =
+                            static_cast<std::size_t>(layer.kernel_size) * layer.kernel_size;
+                        if (kernel_area == 0 || layer.filters == 0 ||
+                            w_desc.num_elements % (kernel_area * layer.filters) != 0)
+                        {
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "CNN conv tensor shape mismatch in .nk catalog");
+                        }
+                        const std::size_t conv_in_channels =
+                            w_desc.num_elements / (kernel_area * layer.filters);
+                        const std::size_t weight_elems = w_desc.num_elements;
 
-                        if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.filters)
+                        if (b_desc.num_elements != layer.filters)
                             return Fail(LoadStatus::SizeMismatch, "CNN conv tensor shape mismatch in .nk catalog");
 
                         int pad_h_end = static_cast<int>(layer.pad_h);
@@ -866,7 +874,7 @@ namespace NkLoader
                         network->InitConvLayer(i,
                                                static_cast<int>(layer.kernel_size),
                                                static_cast<int>(layer.stride),
-                                               static_cast<int>(in_channels),
+                                               static_cast<int>(conv_in_channels),
                                                static_cast<int>(layer.filters),
                                                weights + weight_offset,
                                                biases + bias_offset,

@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from .cnn_layers import depthwise_kernel_hw
+from .cnn_layers import conv2d_input_channels, depthwise_kernel_hw
 
 
 def _activate(x: np.ndarray, activation: str, *, alpha: float = 0.01) -> np.ndarray:
@@ -430,8 +430,9 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
             pad_h = layer.get("pad_h", 0)
             pad_w = layer.get("pad_w", 0)
             out_c = layer["filters"]
-            kernel_elems = k * k * channels
-            kernel = weights[offset : offset + kernel_elems * out_c].reshape(out_c, k, k, channels)
+            in_c = conv2d_input_channels(layer, channels)
+            kernel_elems = k * k * in_c
+            kernel = weights[offset : offset + kernel_elems * out_c].reshape(out_c, k, k, in_c)
             offset += kernel_elems * out_c
             bias = weights[offset : offset + out_c]
             offset += out_c

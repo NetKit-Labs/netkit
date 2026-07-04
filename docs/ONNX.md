@@ -60,7 +60,7 @@ PyTorch/TensorFlow exports often include `MatMul`, `Add`, `Reshape`, or extra `P
 
 **ONNX `convert` (default):** when the graph has `Add` nodes, `python -m netkit convert` fuses matching **ResNet BasicBlock** and **MobileNetV4 UIB** (residual add) subgraphs into composite layers. Stride-2 UIB blocks without skip fuse at the project conv. Disable with `--no-fuse`.
 
-**Packager fuse (`nk_fuse`):** after import, `optimize_nk(..., fuse_composite=True)` (default during `convert`) can rebuild composite blocks from primitive layers — ResNet BasicBlock, ConvNeXt V2 block, and MobileNet UIB (including timm conv-only exports via identity BN). This enables **ONNX → primitive `.nk` → optimize → fuse** when `--no-fuse` skips ONNX-side fusion:
+**Packager fuse (`nk_fuse`):** after import, `optimize_nk(..., fuse_composite=True)` (default during `convert`) can rebuild composite blocks from primitive layers — ResNet BasicBlock, ConvNeXt V2 block, and MobileNet UIB (including timm conv-only exports via identity BN). This enables **ONNX → primitive `.nk` → optimize → fuse** when `--no-fuse` skips ONNX-side fusion. Packager fuse runs **before** optimize verification so branched ResNet primitive stacks (main + shortcut convs) do not need to forward sequentially; conv input channels are taken from ONNX weight shapes / `.nk` weight catalogs when they differ from the running tensor depth (stride-2 shortcut convs).
 
 ```bash
 python -m netkit convert model.onnx --no-fuse   # import ResNet blocks as conv+bn primitives

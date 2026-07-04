@@ -351,8 +351,9 @@ def _emit_cnn_primitive(
         stride = int(strides[0]) if strides else 1
         pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
         out_c = int(weight.shape[0])
-        in_c = int(channels)
-        if group > 1 and group == in_c and out_c == in_c:
+        onnx_in_c = int(weight.shape[1])
+        tracked_in_c = int(channels)
+        if group > 1 and group == tracked_in_c and out_c == tracked_in_c:
             layers.append(
                 _depthwise_layer_spec(
                     kh=kh,
@@ -375,6 +376,7 @@ def _emit_cnn_primitive(
                     kernel_size=kh,
                     stride=stride,
                     filters=out_c,
+                    in_channels=onnx_in_c,
                     activation=activation,
                     alpha=alpha,
                     pad_h=pad_top,
@@ -384,13 +386,14 @@ def _emit_cnn_primitive(
                 )
             )
             weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
-        elif group > 1 and in_c % group == 0 and out_c % group == 0:
+        elif group > 1 and tracked_in_c % group == 0 and out_c % group == 0:
             layers.append(
                 LayerSpec(
                     kind="conv2d",
                     kernel_size=kh,
                     stride=stride,
                     filters=out_c,
+                    in_channels=tracked_in_c,
                     activation=activation,
                     alpha=alpha,
                     pad_h=pad_top,
@@ -400,7 +403,7 @@ def _emit_cnn_primitive(
                 )
             )
             weight_tensors.append(
-                _expand_grouped_conv_to_netkit(weight.astype(np.float32), group=group, in_channels=in_c)
+                _expand_grouped_conv_to_netkit(weight.astype(np.float32), group=group, in_channels=tracked_in_c)
             )
         else:
             raise ValueError("grouped conv (non-depthwise) is not supported")
@@ -410,7 +413,10 @@ def _emit_cnn_primitive(
         spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
         spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
         if group == 1 or (
-            group > 1 and in_c % group == 0 and out_c % group == 0 and not (group == in_c and out_c == in_c)
+            group > 1
+            and tracked_in_c % group == 0
+            and out_c % group == 0
+            and not (group == tracked_in_c and out_c == tracked_in_c)
         ):
             channels = out_c
         consumed.add(node_index)
@@ -880,8 +886,9 @@ def onnx_to_spec(
             stride = int(strides[0]) if strides else 1
             pad_top, pad_left, pad_bottom, pad_right = _layer_pad_fields(node)
             out_c = int(weight.shape[0])
-            in_c = int(channels)
-            if group > 1 and group == in_c and out_c == in_c:
+            onnx_in_c = int(weight.shape[1])
+            tracked_in_c = int(channels)
+            if group > 1 and group == tracked_in_c and out_c == tracked_in_c:
                 layers.append(
                     _depthwise_layer_spec(
                         kh=kh,
@@ -904,6 +911,7 @@ def onnx_to_spec(
                         kernel_size=kh,
                         stride=stride,
                         filters=out_c,
+                        in_channels=onnx_in_c,
                         activation=activation,
                         alpha=alpha,
                         pad_h=pad_top,
@@ -913,13 +921,14 @@ def onnx_to_spec(
                     )
                 )
                 weight_tensors.append(_onnx_conv_to_netkit(weight.astype(np.float32)))
-            elif group > 1 and in_c % group == 0 and out_c % group == 0:
+            elif group > 1 and tracked_in_c % group == 0 and out_c % group == 0:
                 layers.append(
                     LayerSpec(
                         kind="conv2d",
                         kernel_size=kh,
                         stride=stride,
                         filters=out_c,
+                        in_channels=tracked_in_c,
                         activation=activation,
                         alpha=alpha,
                         pad_h=pad_top,
@@ -929,7 +938,7 @@ def onnx_to_spec(
                     )
                 )
                 weight_tensors.append(
-                    _expand_grouped_conv_to_netkit(weight.astype(np.float32), group=group, in_channels=in_c)
+                    _expand_grouped_conv_to_netkit(weight.astype(np.float32), group=group, in_channels=tracked_in_c)
                 )
             else:
                 raise ValueError("grouped conv (non-depthwise) is not supported")
@@ -938,7 +947,12 @@ def onnx_to_spec(
             )
             spatial_h = _conv_output_dim(spatial_h, kh, stride, pad_top, pad_bottom)
             spatial_w = _conv_output_dim(spatial_w, kw, stride, pad_left, pad_right)
-            if group == 1 or (group > 1 and in_c % group == 0 and out_c % group == 0 and not (group == in_c and out_c == in_c)):
+            if group == 1 or (
+                group > 1
+                and tracked_in_c % group == 0
+                and out_c % group == 0
+                and not (group == tracked_in_c and out_c == tracked_in_c)
+            ):
                 channels = out_c
             i += 1 + skip
             continue

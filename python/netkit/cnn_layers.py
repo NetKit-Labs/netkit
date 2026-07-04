@@ -68,6 +68,29 @@ def reconcile_depthwise_kernel(
     return kw, top, left, bottom, right
 
 
+def conv2d_input_channels(
+    layer: dict[str, Any],
+    tensor_channels: int,
+    *,
+    weight_elems: int | None = None,
+) -> int:
+    """Resolve conv2d input channels from layer metadata or weight tensor size."""
+    stored = int(layer.get("in_channels", 0))
+    if stored > 0:
+        return stored
+    if weight_elems is not None:
+        k = int(layer["kernel_size"])
+        out_c = int(layer["filters"])
+        denom = k * k * out_c
+        if denom <= 0 or weight_elems % denom != 0:
+            raise ValueError(
+                f"conv2d weight count {weight_elems} does not match "
+                f"kernel={k} filters={out_c}"
+            )
+        return weight_elems // denom
+    return int(tensor_channels)
+
+
 def _layer_weight_tensor_count(layer: dict[str, Any]) -> int:
     layer_type = layer.get("type")
     if layer_type in {"conv2d", "depthwise_conv2d", "dense", "batch_norm2d", "layernorm2d"}:

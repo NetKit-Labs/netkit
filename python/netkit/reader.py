@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .cnn_layers import _layer_weight_tensor_count, depthwise_arch_entry, reconcile_depthwise_kernel
+from .cnn_layers import _layer_weight_tensor_count, conv2d_input_channels, depthwise_arch_entry, reconcile_depthwise_kernel
 from .format import HEADER_BYTES, Activation, LayerKind, NetworkKind, FLAG_HAS_TESTS, TEST_MAGIC, unpack_header
 from .inspect import _read_layer_body, _read_tensor_desc
 from .writer import RegressionCase, RegressionSuite
@@ -192,7 +192,14 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     arch = _layers_to_arch(network, input_shape, layers)
     weight_index = 0
     for layer_index, layer in enumerate(arch["layers"]):
-        if layer["type"] == "depthwise_conv2d":
+        if layer["type"] == "conv2d":
+            if weight_index >= len(weight_arrays):
+                raise ValueError("missing conv weight tensor in .nk catalog")
+            w_arr = weight_arrays[weight_index]
+            layer["in_channels"] = conv2d_input_channels(
+                layer, 0, weight_elems=int(w_arr.size)
+            )
+        elif layer["type"] == "depthwise_conv2d":
             if weight_index >= len(weight_arrays):
                 raise ValueError("missing depthwise weight tensor in .nk catalog")
             parsed = layers[layer_index]

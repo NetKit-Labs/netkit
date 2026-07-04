@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 from .arch_writer import _make_divisible, _out_dim, _resnet_output_spatial, _uib_output_spatial
-from .cnn_layers import depthwise_kernel_hw
+from .cnn_layers import conv2d_input_channels, depthwise_kernel_hw
 from .reference_forward import forward_cnn
 
 
@@ -67,8 +67,9 @@ def _decompose_cnn(arch: dict[str, Any], weights: np.ndarray) -> list[_FuseLayer
         if layer_type == "conv2d":
             k = layer["kernel_size"]
             out_c = layer["filters"]
-            kernel_elems = k * k * channels
-            w = weights[offset : offset + kernel_elems * out_c].reshape(out_c, k, k, channels).copy()
+            in_c = conv2d_input_channels(layer, channels)
+            kernel_elems = k * k * in_c
+            w = weights[offset : offset + kernel_elems * out_c].reshape(out_c, k, k, in_c).copy()
             offset += kernel_elems * out_c
             b = weights[offset : offset + out_c].copy()
             offset += out_c
