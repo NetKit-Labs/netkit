@@ -9,6 +9,9 @@ from pathlib import Path
 
 import numpy as np
 
+if os.environ.get("NETKIT_FAST_TESTS") == "1":
+    raise unittest.SkipTest("skipped in make test-python-fast (use make test-python for full ONNX parity)")
+
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "models"
 

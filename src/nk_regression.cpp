@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -88,6 +89,28 @@ namespace NkRegression
         bool FloatNear(float a, float b, float eps)
         {
             return std::fabs(a - b) <= eps;
+        }
+
+        bool RegressionVerboseEnabled()
+        {
+            const char* env = std::getenv("NETKIT_REGRESSION_VERBOSE");
+            if (env != nullptr && env[0] == '1')
+                return true;
+            if (env != nullptr && env[0] == '0')
+                return false;
+            return std::getenv("GITHUB_ACTIONS") == nullptr;
+        }
+
+        bool ShouldPrintAllOutputs(uint32_t count)
+        {
+            if (RegressionVerboseEnabled())
+                return true;
+            return count <= 64;
+        }
+
+        bool ShouldPrintProgress()
+        {
+            return RegressionVerboseEnabled();
         }
 
         uint32_t ArgMax(const float* values, uint32_t count)
@@ -220,11 +243,13 @@ namespace NkRegression
                 return false;
             }
 
-            PrintRegressionInput(input);
+            if (ShouldPrintAllOutputs(test_case.input_count))
+                PrintRegressionInput(input);
             network.forward(input, output, arena);
 
             const float* actual = static_cast<const float*>(output.data);
-            PrintElementComparison(actual, test_case.expected, test_case.output_count, tolerance);
+            if (ShouldPrintAllOutputs(test_case.output_count))
+                PrintElementComparison(actual, test_case.expected, test_case.output_count, tolerance);
 
             bool outputs_ok = true;
             for (uint32_t i = 0; i < test_case.output_count; ++i)
@@ -282,9 +307,11 @@ namespace NkRegression
                 input_buffer[i] = test_case.input[i];
 
             Tensor input = MakeNhwcInput(input_buffer, input_shape[0], input_shape[1], input_shape[2]);
-            PrintRegressionInput(input);
+            if (ShouldPrintAllOutputs(test_case.input_count))
+                PrintRegressionInput(input);
 
-            std::cout << "  running forward...\n" << std::flush;
+            if (ShouldPrintProgress())
+                std::cout << "  running forward...\n" << std::flush;
             Tensor& output = network.forward(input, arena);
             if (!output.data)
             {
@@ -300,7 +327,8 @@ namespace NkRegression
             }
 
             const float* actual = static_cast<const float*>(output.data);
-            PrintElementComparison(actual, test_case.expected, test_case.output_count, tolerance);
+            if (ShouldPrintAllOutputs(test_case.output_count))
+                PrintElementComparison(actual, test_case.expected, test_case.output_count, tolerance);
 
             for (uint32_t i = 0; i < test_case.output_count; ++i)
             {
@@ -422,7 +450,8 @@ namespace NkRegression
                 std::array<uint32_t, kMaxTensorRank> input_shape{};
                 uint32_t input_rank = 0;
 
-                std::cout << "  loading weights...\n" << std::flush;
+                if (ShouldPrintProgress())
+                    std::cout << "  loading weights...\n" << std::flush;
                 if (NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank).status !=
                         NkLoader::LoadStatus::Ok ||
                     !network || !network->IsValid())

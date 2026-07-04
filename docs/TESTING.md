@@ -10,6 +10,7 @@ netkit uses **GNU Make** as the primary build and test driver. **CMake** is opti
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
 make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + examples + embedded_smoke
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
+make test-fast    # C++/C + fast Python subset (~1 min; skips heavy ONNX/backbone parity)
 make test-cpp     # ./netkit test only (86 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
 make test-python  # ONNX parity (82) + AOT compile tests; requires libnetkit.a
@@ -144,9 +145,9 @@ Sections printed in order:
 
 ## Test output
 
-**Hand cases** print the input tensor, then a per-output line (`out[i]: actual=… expected=…`) so small models show meaningful numeric checks.
+**Hand cases** (≤64 outputs) print the input tensor and a per-output line (`out[i]: actual=… expected=…`). Larger models (MNIST, full backbones) print only `PASS`/`FAIL` unless `NETKIT_REGRESSION_VERBOSE=1`. GitHub Actions sets `GITHUB_ACTIONS=true`, which keeps C++ logs compact automatically.
 
-**MNIST cases** print predicted class, winner softmax probability, and any runner-up outputs above `0.01`. All outputs are compared internally within tolerance.
+**MNIST cases** print predicted class, winner softmax probability, and any runner-up outputs above `0.01` when output logging is enabled. All outputs are compared internally within tolerance.
 
 ## C API suite (`make test-c`)
 

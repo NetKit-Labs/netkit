@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
+
+if os.environ.get("NETKIT_FAST_TESTS") == "1":
+    raise unittest.SkipTest("skipped in make test-python-fast (use make test-python for full suite)")
 
 try:
     import torch

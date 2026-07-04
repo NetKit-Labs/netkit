@@ -144,6 +144,7 @@ make NETKIT_TARGET=mpu lib   # lean embedded runtime
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
 make build-all    # cpu: netkit + examples + C API test binary
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
+make test-fast    # C++/C + fast Python subset (skips heavy ONNX/backbone parity)
 make test-cpp     # C++ embedded .nk cases only (86)
 make test-c       # C API regression only
 make test-python  # ONNX parity (82) + AOT compile tests (requires libnetkit.a)

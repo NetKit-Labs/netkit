@@ -31,6 +31,8 @@ jobs:
         run: make
 
       - name: Run C++, C API, and Python tests
+        env:
+          GITHUB_ACTIONS: true
         run: make NETKIT_CMSIS_DSP=0 rebuild test
 
       - name: CMake configure and build

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -178,6 +179,9 @@ class TestNkFuse(unittest.TestCase):
         self.assertEqual(arch["layers"][0]["type"], "resnet_basic_block")
 
     def test_onnx_resnet_backbone_primitive_import_then_packager_fuse(self) -> None:
+        if os.environ.get("NETKIT_FAST_TESTS") == "1":
+            self.skipTest("skipped in make test-python-fast (use make test-python for full suite)")
+
         onnx_path = Path("models/import_resnet18_backbone.onnx")
         if not onnx_path.is_file():
             self.skipTest("models/import_resnet18_backbone.onnx not found")
