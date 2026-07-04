@@ -72,7 +72,7 @@ Fixtures: `models/import_resnet_basic_block.{onnx,nk}` (timm export → primitiv
 
 **Composite fusion diagnostics:** pass `--verbose-fuse` to `python -m netkit convert` to log ONNX Add-node and packager layer fusion attempts that do not match a composite pattern.
 
-**Full-backbone ONNX round-trip** (timm `forward_features` → convert → ORT vs `nk_infer`) is supported by `tools/write_import_parity_models.py` helpers `build_import_*_backbone()`; ResNet-18 full import still needs weight-layout fixes before parity fixtures ship in CI.
+**Full-backbone ONNX round-trip** (timm `forward_features` → convert → ORT vs `nk_infer`) ships in CI via `models/import_*_backbone.{onnx,nk}` — ResNet-18, MobileNetV4-Conv-Small, and ConvNeXt V2-Atto (6 cases in `PARITY_PAIRS`, tolerance `1e-3`). Regenerate with `make export-import-parity` (`tools/write_import_parity_models.py` → `build_import_*_backbone()`).
 
 **Timm `pack` (no ONNX round-trip):** ResNet-18, MobileNetV4-Conv-Small, and ConvNeXt V2-Atto emit fused composite layers (`resnet_basic_block`, `mobilenetv4_uib`, `convnextv2_block`) directly from PyTorch checkpoints:
 
@@ -89,7 +89,7 @@ Requires `pip install -e "python[train]"` (torch + timm).
 | Suite | What it validates |
 |-------|-------------------|
 | C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (86 cases) |
-| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (76 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
+| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (82 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
 
 ```bash
 make                          # build netkit CLI

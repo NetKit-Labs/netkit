@@ -33,9 +33,12 @@ PARITY_PAIRS = [
     ("import_mobilenet_uib_skip.nk", "import_mobilenet_uib_skip.onnx"),
     ("import_asym_depthwise_conv.nk", "import_asym_depthwise_conv.onnx"),
     ("import_convnextv2_block.nk", "import_convnextv2_block.onnx"),
+    ("import_resnet18_backbone.nk", "import_resnet18_backbone.onnx"),
+    ("import_mobilenetv4_small_backbone.nk", "import_mobilenetv4_small_backbone.onnx"),
+    ("import_convnextv2_atto_backbone.nk", "import_convnextv2_atto_backbone.onnx"),
 ]
 
-EXPECTED_CASES = 76
+EXPECTED_CASES = 82
 
 
 def _nk_infer_bin() -> Path:

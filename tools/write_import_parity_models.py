@@ -51,10 +51,11 @@ def _case_from_ort(
 ) -> RegressionCase:
     import onnxruntime as ort
 
-    h, w, c = input_shape
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
-    nchw = inp.reshape(1, c, h, w).astype(np.float32)
+    h, w, c = input_shape
+    nhwc = inp.reshape(h, w, c)
+    nchw = np.transpose(nhwc, (2, 0, 1)).reshape(1, c, h, w).astype(np.float32)
     raw = np.asarray(session.run(None, {input_name: nchw})[0], dtype=np.float32)
     if raw.ndim == 4:
         raw = np.transpose(raw, (0, 2, 3, 1))
@@ -581,6 +582,9 @@ def main() -> None:
         build_import_mobilenet_uib,
         build_import_mobilenet_uib_skip,
         build_import_convnextv2_block,
+        build_import_resnet18_backbone,
+        build_import_mobilenetv4_backbone,
+        build_import_convnextv2_atto_backbone,
     ]
     for builder in builders:
         _onnx, nk_path, suite = builder()

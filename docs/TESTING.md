@@ -12,7 +12,7 @@ make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + e
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
 make test-cpp     # ./netkit test only (86 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
-make test-python  # ONNX parity (76) + AOT compile tests; requires libnetkit.a
+make test-python  # ONNX parity (82) + AOT compile tests; requires libnetkit.a
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
@@ -39,6 +39,7 @@ Both `make test-cpp` and `make test-c` exercise the **same 86 embedded cases** v
 | MNIST CNN | 10 | `models/mnist_cnn.nk` | Conv+pool+flatten+dense CNN (99.02% test acc) |
 | Op matrix | 17 | `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/cnn_extended_ops.nk`, `models/deep_mlp.nk` | Activation sweep, padded conv/pool, avg pool, batch norm |
 | ONNX import extensions | 27 | `models/import_*.nk` | Asymmetric conv/depthwise, UIB/ResNet/ConvNeXt ONNX import — [ONNX.md](ONNX.md) |
+| ONNX import backbones | 3 | `models/import_*_backbone.nk` | Full timm `forward_features` round-trip (ResNet-18, MobileNetV4 Small, ConvNeXt V2-Atto) — [ONNX.md](ONNX.md) |
 | MobileNetV4 Small | 1 | `models/mobilenetv4_small.nk` | Full MNv4-Conv-Small backbone (22 layers, 56×56×3) — [MOBILENETV4.md](MOBILENETV4.md) |
 | ResNet-18 | 1 | `models/resnet18.nk` | Full ResNet-18 backbone (13 layers, 56×56×3) — [RESNET18.md](RESNET18.md) |
 | ConvNeXt V2-Atto | 1 | `models/convnextv2_atto.nk` | Full ConvNeXt V2-Atto backbone (24 layers, 32×32×3) — [CONVNEXTV2.md](CONVNEXTV2.md) |
@@ -49,7 +50,7 @@ These tests validate **`.nk` parsing, weight loading, and forward inference** ag
 
 ## Python ONNX parity
 
-`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (76 cases).
+`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (82 cases).
 
 Requires **onnxruntime** for parity and **`make lib`** for AOT compile tests.
 

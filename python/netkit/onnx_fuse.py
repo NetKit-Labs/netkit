@@ -215,7 +215,9 @@ def try_fuse_resnet_basic_block(
     stride = int(strides[0]) if strides else 1
     pad_h, pad_w = _symmetric_conv_pads(conv1_node)
     out_c = int(conv1_w.shape[0])
-    in_c = int(in_channels)
+    # Use conv1 weights — topo-order channel tracking can advance on the main-branch
+    # conv before the residual Add is fused (stride-2 blocks).
+    in_c = int(conv1_w.shape[1])
     if identity and not (stride == 1 and in_c == out_c):
         return None
     if not identity and (stride == 1 and in_c == out_c):
@@ -802,42 +804,27 @@ def _trace_pre_gelu_conv(
     return trace_conv(graph, current)
 
 
-def try_fuse_convnextv2_block(
+def _fuse_convnextv2_block_from_add(
     graph: OnnxGraph,
     add_index: int,
     *,
+    main_tensor: str,
+    skip_tensor: str,
     spatial_h: int,
     spatial_w: int,
-    in_channels: int,
-    block_input: str | None = None,
 ) -> FuseResult | None:
     from .onnx_graph import trace_conv
-
-    add_node = graph.node(add_index)
-    if add_node.op_type != "Add" or len(add_node.input) < 2:
-        return None
-
-    left, right = add_node.input[0], add_node.input[1]
-
-    left_main = trace_conv(graph, left)
-    right_main = trace_conv(graph, right)
-    if left_main is not None and right_main is None:
-        main_tensor, skip_tensor = left, right
-    elif right_main is not None and left_main is None:
-        main_tensor, skip_tensor = right, left
-    else:
-        return None
 
     fc2 = trace_conv(graph, main_tensor)
     if fc2 is None:
         return None
-    fc2_idx, fc2_in, fc2_w, fc2_b = fc2
+    _fc2_idx, fc2_in, fc2_w, fc2_b = fc2
     if int(fc2_w.shape[2]) != 1 or int(fc2_w.shape[3]) != 1:
         return None
 
-    channels = int(in_channels)
-    expanded = channels * 4
-    if int(fc2_w.shape[0]) != channels or int(fc2_w.shape[1]) != expanded:
+    channels = int(fc2_w.shape[0])
+    expanded = int(fc2_w.shape[1])
+    if expanded != channels * 4:
         return None
 
     grn = _parse_grn_params(graph, fc2_in)
@@ -848,7 +835,7 @@ def try_fuse_convnextv2_block(
     fc1 = _trace_pre_gelu_conv(graph, fc2_in)
     if fc1 is None:
         return None
-    fc1_idx, fc1_in, fc1_w, fc1_b = fc1
+    _fc1_idx, fc1_in, fc1_w, fc1_b = fc1
     if int(fc1_w.shape[2]) != 1 or int(fc1_w.shape[3]) != 1:
         return None
     if int(fc1_w.shape[0]) != expanded or int(fc1_w.shape[1]) != channels:
@@ -905,6 +892,49 @@ def try_fuse_convnextv2_block(
         spatial_h=spatial_h,
         spatial_w=spatial_w,
     )
+
+
+def try_fuse_convnextv2_block(
+    graph: OnnxGraph,
+    add_index: int,
+    *,
+    spatial_h: int,
+    spatial_w: int,
+    in_channels: int,
+    block_input: str | None = None,
+) -> FuseResult | None:
+    from .onnx_graph import trace_conv
+
+    add_node = graph.node(add_index)
+    if add_node.op_type != "Add" or len(add_node.input) < 2:
+        return None
+
+    left, right = add_node.input[0], add_node.input[1]
+
+    left_main = trace_conv(graph, left)
+    right_main = trace_conv(graph, right)
+    if left_main is not None and right_main is None:
+        candidates = [(left, right)]
+    elif right_main is not None and left_main is None:
+        candidates = [(right, left)]
+    elif left_main is not None and right_main is not None:
+        # Stage-entry blocks: skip is often a downsample Conv, main is fc2 Conv.
+        candidates = [(left, right), (right, left)]
+    else:
+        return None
+
+    for main_tensor, skip_tensor in candidates:
+        fused = _fuse_convnextv2_block_from_add(
+            graph,
+            add_index,
+            main_tensor=main_tensor,
+            skip_tensor=skip_tensor,
+            spatial_h=spatial_h,
+            spatial_w=spatial_w,
+        )
+        if fused is not None:
+            return fused
+    return None
 
 
 def convnext_fuse_result_to_primitives(
