@@ -1,6 +1,8 @@
 # API Overview
 
-netkit exposes two language interfaces over the same **C++26 inference engine**. For the product vision (Phase 1 interpreter runtime, Phase 2 packager optimizations), see [PHILOSOPHY.md](PHILOSOPHY.md). New users start with [GETTING_STARTED.md](GETTING_STARTED.md).
+netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. It exposes two language interfaces over the same **C++26** engine — a type-safe **C++26 API** and a **C23** mirror. Active development: **float32** today; **int8** and **Kalman estimation/control** planned.
+
+**Deployment:** use the **`NkOpsResolver` interpreter** (load `.nk`, runtime layer dispatch) or the **compiled path** (AOT embed + packager optimizations + trimmed op tables for production speed). Both share the same kernels — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). New users start with [GETTING_STARTED.md](GETTING_STARTED.md).
 
 | API | Header | Language | Use when |
 |-----|--------|----------|----------|
@@ -21,7 +23,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 
 | Document | Contents |
 |----------|----------|
-| [PHILOSOPHY.md](PHILOSOPHY.md) | Phase 1 runtime vs Phase 2 packager; memory and roadmap |
+| [PHILOSOPHY.md](PHILOSOPHY.md) | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager; memory and roadmap |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Clone, build, CLI, integrate C/C++ |
 | [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET=cpu\|mcu\|mpu`, arena flags, defaults |
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect`, help |

@@ -204,6 +204,24 @@ TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cp
                        src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
 TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
+# Rebuild objects when target/backends change — avoids mixing CPU and MCU .o files in libnetkit.a.
+NETKIT_BUILD_STAMP = .netkit_build_stamp
+NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),weights_in_ram=$(NETKIT_WEIGHTS_IN_RAM),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
+
+NETKIT_STALE_OBJECTS = $(CORE_OBJECTS) $(TRIM_CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS) \
+                       $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
+
+.PHONY: netkit-config-sync
+netkit-config-sync:
+	@printf '%s\n' '$(NETKIT_BUILD_ID)' > $(NETKIT_BUILD_STAMP).tmp
+	@if ! [ -f $(NETKIT_BUILD_STAMP) ] || ! cmp -s $(NETKIT_BUILD_STAMP).tmp $(NETKIT_BUILD_STAMP); then \
+	  echo "netkit build config changed — rebuilding objects"; \
+	  mv $(NETKIT_BUILD_STAMP).tmp $(NETKIT_BUILD_STAMP); \
+	  rm -f $(NETKIT_STALE_OBJECTS); \
+	else \
+	  rm -f $(NETKIT_BUILD_STAMP).tmp; \
+	fi
+
 .PHONY: all lib clean rebuild test test-full test-cpp test-c test-python test-python-full run example-c example-cpp examples \
         export-mnist export-mnist-cnn export-mnist-all export-op-matrix \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
@@ -211,16 +229,19 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
         test-embedded-smoke-matrix trim-lib check-trim-lib
 
 ifeq ($(BUILD_CLI),1)
-all: $(TARGET)
-build-all: all examples $(TEST_C)
+all: netkit-config-sync $(TARGET)
+build-all: netkit-config-sync all examples $(TEST_C)
 else
-all: $(LIB)
-build-all: $(LIB) examples embedded-smoke
+all: netkit-config-sync $(LIB)
+build-all: netkit-config-sync $(LIB) examples embedded-smoke
 endif
 
-lib: $(LIB)
+$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
+	ar rcs $@ $^
 
-$(TRIM_LIB): $(TRIM_CORE_OBJECTS)
+lib: netkit-config-sync $(LIB)
+
+$(TRIM_LIB): netkit-config-sync $(TRIM_CORE_OBJECTS)
 	ar rcs $@ $^
 
 trim-lib: $(TRIM_LIB)
@@ -228,30 +249,27 @@ trim-lib: $(TRIM_LIB)
 check-trim-lib: lib trim-lib
 	chmod +x tools/check_trim_lib.sh && ./tools/check_trim_lib.sh
 
-$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
-	ar rcs $@ $^
-
 ifeq ($(BUILD_CLI),1)
-$(TARGET): $(LIB) $(CLI_OBJECTS)
+$(TARGET): netkit-config-sync $(LIB) $(CLI_OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $(CLI_OBJECTS) $(LIB)
 endif
 
-$(EXAMPLE_C): $(LIB) $(EXAMPLE_C_OBJ)
+$(EXAMPLE_C): netkit-config-sync $(LIB) $(EXAMPLE_C_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_C_OBJ) $(LIB)
 
-$(EXAMPLE_CPP): $(LIB) $(EXAMPLE_CPP_OBJ)
+$(EXAMPLE_CPP): netkit-config-sync $(LIB) $(EXAMPLE_CPP_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(EXAMPLE_CPP_OBJ) $(LIB)
 
 ifeq ($(BUILD_C_TESTS),1)
-$(TEST_C): $(LIB) $(TEST_C_OBJ)
+$(TEST_C): netkit-config-sync $(LIB) $(TEST_C_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(TEST_C_OBJ) $(LIB)
 endif
 
-$(EMBEDDED_SMOKE): $(LIB) $(EMBEDDED_SMOKE_OBJ)
+$(EMBEDDED_SMOKE): netkit-config-sync $(LIB) $(EMBEDDED_SMOKE_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(EMBEDDED_SMOKE_OBJ) $(LIB)
 
 ifeq ($(BUILD_CLI),1)
-$(NK_INFER): $(LIB) $(NK_INFER_OBJ)
+$(NK_INFER): netkit-config-sync $(LIB) $(NK_INFER_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(NK_INFER_OBJ) $(LIB)
 endif
 
@@ -276,6 +294,7 @@ $(EMBEDDED_SMOKE_OBJ): $(EMBEDDED_SMOKE_SRC) include/netkit.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
+	rm -f $(NETKIT_BUILD_STAMP)
 	rm -f $(CORE_OBJECTS) $(TRIM_CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) \
 	      $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER) examples/trim_firmware examples/trim_firmware.o
 	rm -f src/*.o src/layer_ops/*.o examples/*.o tests/*.o tools/*.o

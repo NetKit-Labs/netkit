@@ -261,7 +261,7 @@ Backends are composed at **compile time** via `active_kernel.hpp` — there is n
 
 ### Layer dispatch (OpsResolver)
 
-CNN graph execution uses an **MCU-safe op registry** (`include/ops_resolver.hpp`) — function pointers and fixed static storage, no virtuals, heap, or `std::vector`.
+CNN graph execution uses an **MCU-safe op registry** (`include/ops_resolver.hpp`) — the **interpreter path**: function pointers and fixed static storage, no virtuals, heap, or `std::vector`. For production speed on a fixed graph, pair AOT embed + packager optimizations with a trimmed `NkOpList` — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 **C++26 constinit resolver tables**: `NkOpList<Ops...>` builds the lookup table at compile time into `constinit` static storage (no dynamic static initialization).
 

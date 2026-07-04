@@ -1,8 +1,12 @@
 # Getting Started
 
-Welcome to netkit. This guide takes you from clone to your first inference in a few minutes.
+Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. The project is **under active development**: **float32** inference works today; **int8** and **Kalman estimation/control** are on the roadmap.
 
-**New here?** Read [PHILOSOPHY.md](PHILOSOPHY.md) for the big picture (Phase 1 interpreter runtime, Phase 2 packager optimizations, memory model).
+**Two ways to run inference:** load a `.nk` and execute through the **`NkOpsResolver` interpreter** (flexible — swap models, use the CLI), or **compile for maximum speed** with `python -m netkit aot` (embed the model in flash, apply packager graph optimizations, trim linked ops, optional CMSIS kernels). Both paths share the same kernels — see [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+
+This guide takes you from clone to your first inference in a few minutes.
+
+**New here?** Read [PHILOSOPHY.md](PHILOSOPHY.md) for the big picture (interpreter vs compiled deployment, Phase 1 runtime, Phase 2 packager optimizations, memory model).
 
 **Related docs:** [CLI](CLI.md) · [Build targets](BUILD_TARGETS.md) · [Arena](ARENA.md) · [C API](c-api.md) · [C++ API](cpp-api.md) · [Testing](TESTING.md)
 
@@ -37,7 +41,7 @@ You get:
 Verify:
 
 ```bash
-make test         # default: C++/C (86) + fast Python (AOT, unit tests)
+make test         # default: C++/C (88) + fast Python (AOT, unit tests)
 ```
 
 ---
@@ -186,6 +190,8 @@ Format spec: [NK_FORMAT.md](NK_FORMAT.md). Python details: [python/README.md](..
 ---
 
 ## 5. AOT compile (embed `.nk` in firmware)
+
+This is the **compiled deployment path** — bake a validated `.nk` into firmware for minimum runtime overhead. The interpreter path (load `.nk` from file or buffer at runtime) is covered in sections 3–4 and in [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 After you have a validated `.nk`, the Python packager can embed it as a static byte array and generate load/run wrappers for the runtime:
 

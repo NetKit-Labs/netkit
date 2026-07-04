@@ -1,14 +1,62 @@
 # netkit Philosophy
 
-netkit is an **on-device inference kit** for MCUs and MPUs. Models ship as single **`.nk`** files. You develop and validate on the desktop (**CPU** build), then link the lean runtime into firmware (**MCU** / **MPU** builds).
+netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. Models ship as single **`.nk`** files. You develop and validate on the desktop (**CPU** build), then link the lean runtime into firmware (**MCU** / **MPU** builds). The engine is written in **C++26** (modern patterns, type-safe primary API) with a **C23** mirror for C-only firmware.
+
+**Status:** Active development. **Float32** inference works today; **int8** and additional dtypes are next ([DATATYPES.md](DATATYPES.md)). **Kalman estimation and control** are planned backend capabilities alongside neural inference.
 
 Companion project: [memkit](https://github.com/jameslavrenz/memkit) for general-purpose embedded memory management. netkit owns the **inference arena and tensor lifecycle** inside a caller-provided buffer.
+
+## Deployment modes: interpreter or compiled
+
+netkit supports two ways to run the same forward engine — pick based on whether you need **flexibility** or **maximum on-device performance**.
+
+### Interpreter — `NkOpsResolver` + `.nk` load
+
+The default runtime is an **interpreter-style forward executor**:
+
+1. Load a `.nk` file from disk (`LoadMLP` / `LoadCNN`, `nk_model_load`) or from a memory buffer (`LoadMLPFromBuffer` / `LoadCNNFromBuffer`, `nk_model_load_memory`).
+2. Walk the layer list at inference time.
+3. Dispatch each layer through **`NkOpsResolver`** — a static function-pointer registry (TFLite `MicroMutableOpResolver` style): no virtuals, heap, or `std::vector` ([KERNELS.md](KERNELS.md)).
+
+**Best for:** desktop development, CLI regression, swapping models without reflashing, prototyping, and any path where the graph may change at runtime.
+
+**Firmware trimming:** register only the op handlers your graph needs with compile-time `NkOpList<Ops...>::View()` and link matching `src/layer_ops/*.cpp` units — the linker drops unused eval bodies.
+
+```cpp
+using TrimOps = NkOpList<NkConv2DOpDescriptor, NkDenseOpDescriptor>;
+cnn.SetOpsResolver(TrimOps::View());
+```
+
+### Compiled — AOT embed + packager optimizations
+
+For production firmware with a **fixed model**, compile as much work as possible **before** inference:
+
+| Step | Tool | Effect |
+|------|------|--------|
+| ONNX → `.nk` | `python -m netkit convert` | Serialize graph + float32 weights |
+| Graph optimize | `convert` (default) or `aot --optimize` | BN fold, conv+BN fusion, dense merge, composite block fuse — **fewer layer dispatches** at runtime; each pass verified numerically |
+| AOT embed | `python -m netkit aot` | Bake `.nk` into flash `.rodata`; emit arena sizing constants and thin load/run wrappers |
+| Lean link | `NkOpList` + trimmed `libnetkit.a` | Only op TUs and kernels your model uses |
+| Kernel backends | `NETKIT_CMSIS_NN` / `NETKIT_CMSIS_DSP` | Hardware-accelerated matmul, conv, pool, FC where available |
+
+**Best for:** shipping firmware — minimum RAM, predictable latency, no filesystem, coefs in flash (`NETKIT_WEIGHTS_IN_RAM=0` on MCU).
+
+Both modes call the **same kernels** (`Kernels::MatMul`, `Conv2D`, …). The compiled path moves graph rewriting and model embedding to **build time** so inference does less dispatch and allocation work. Phase 2 expands packager-side compilation (layout, quantization, target profiles) — see below.
+
+Pipeline comparison:
+
+```text
+Interpreter:  model.nk  ──load──►  NkOpsResolver::Find  ──►  Kernels
+Compiled:     model.onnx  ──convert/optimize──►  model.nk  ──aot──►  flash blob + wrappers  ──►  Kernels
+```
+
+Details: [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [BUILD_TARGETS.md](BUILD_TARGETS.md#layer-dispatch-opsresolver), [python/README.md](../python/README.md).
 
 ## Two-phase roadmap
 
 ### Phase 1 — Interpreter runtime (today)
 
-The C++ engine is an **interpreter-style forward executor**:
+The C++ engine described above is an **interpreter-style forward executor** (see [Deployment modes](#deployment-modes-interpreter-or-compiled)):
 
 1. Load a `.nk` file (architecture descriptor + float32 weights).
 2. Walk the layer list at runtime (Dense, Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, activations).
@@ -37,6 +85,10 @@ The runtime may gain **specialized fast paths** for fused op tags, but the defau
 
 See [DATATYPES.md](DATATYPES.md) for numeric roadmap.
 
+### Phase 3 — Estimation and control (planned)
+
+Beyond neural forward passes, netkit will add **Kalman estimation and control** to the backend — state estimation, sensor fusion, and closed-loop control alongside on-device inference. Details and APIs are TBD.
+
 ## Memory philosophy
 
 - **One bump arena** per inference context — weights, network structs, ping-pong activations.
@@ -61,6 +113,7 @@ Full details: [BUILD_TARGETS.md](BUILD_TARGETS.md), [ARENA.md](ARENA.md).
 | **CPU** | Desktop dev — CLI, embedded regression (88 cases), Python ONNX parity (82), AOT compile tests, embedded smoke orchestration on host (`test_mlp`, `cnn_4x4_single`) |
 | **MCU** | Lean runtime — `.nk` load + inference only |
 | **MPU** | Same lean runtime as MCU; slightly larger default static arena constant |
+| **NPU** | Same lean runtime; offload paths and target-specific kernels TBD as NPUs are integrated |
 
 Only **CPU** builds include `NETKIT_DESKTOP` APIs (`nk_cli_run`, `nk_run_all_tests`).
 

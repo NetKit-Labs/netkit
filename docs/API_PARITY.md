@@ -1,6 +1,6 @@
 # C / C++ API Parity
 
-netkit maintains **two public interfaces** over one **C++26 implementation**:
+netkit maintains **two public interfaces** over one **C++26 implementation** — part of an embedded-first, multi-modal inference engine with interpreter and AOT-compiled deployment paths ([PHILOSOPHY.md](PHILOSOPHY.md)):
 
 | Interface | Header | Standard | Role |
 |-----------|--------|----------|------|

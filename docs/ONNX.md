@@ -1,6 +1,6 @@
 # ONNX Import
 
-ONNX is a **host-side** format only. The Python packager reads ONNX and writes **`.nk`**; the C++ runtime loads `.nk` only.
+ONNX is a **host-side** format only. The Python packager reads ONNX and writes **`.nk`**; the C++ runtime loads `.nk` only — either at runtime through the **`NkOpsResolver` interpreter** or from an **AOT-embedded** flash blob for production firmware. See [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 There is **no ONNX reader in C++**. Parity between converted models and their source graphs is tested in Python (`python/tests/test_onnx_parity.py`) using ONNX Runtime as the reference.
 

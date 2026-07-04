@@ -164,7 +164,7 @@ No extra code-size toggle — these apply whenever reference kernels run (includ
 
 ## Layer dispatch (OpsResolver)
 
-CNN forward uses a **static function-pointer registry** (`ops_resolver.hpp`) — no virtuals, heap, or `std::vector`.
+CNN forward uses a **static function-pointer registry** (`ops_resolver.hpp`) — the core of the **interpreter path**. Layers are looked up at runtime via `NkOpsResolver::Find(opcode)`; no virtuals, heap, or `std::vector`. For maximum speed on a fixed graph, combine AOT embed + packager `--optimize` with a trimmed `NkOpList` — see [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 ### C++26 compile-time resolver tables
 
@@ -207,4 +207,4 @@ CNNNetwork::forward
 ## Related docs
 
 - [BUILD_TARGETS.md](BUILD_TARGETS.md) — Make/CMake flags for CMSIS backends
-- [PHILOSOPHY.md](PHILOSOPHY.md) — Phase 1 interpreter vs Phase 2 packager optimizations
+- [PHILOSOPHY.md](PHILOSOPHY.md) — interpreter vs compiled deployment; Phase 1 vs Phase 2 packager optimizations

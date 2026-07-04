@@ -3,11 +3,11 @@
 Public header: [`include/netkit.h`](../include/netkit.h)  
 Configuration: [`include/netkit_config.h`](../include/netkit_config.h)
 
-Compile user code with `-std=c23`. Link against `libnetkit.a` using a C++ linker driver.
+The C23 API mirrors the C++26 engine for **embedded firmware** — load `.nk` via the interpreter path (`nk_model_load`, `nk_model_load_memory`) or generated **AOT** wrappers. Compile user code with `-std=c23`. Link against `libnetkit.a` using a C++ linker driver.
 
 Every function listed here mirrors a C++26 entry point. See [`API_PARITY.md`](API_PARITY.md) for the full symbol map and contribution policy.
 
-Overview for new users: [GETTING_STARTED.md](GETTING_STARTED.md). Philosophy: [PHILOSOPHY.md](PHILOSOPHY.md).
+Overview for new users: [GETTING_STARTED.md](GETTING_STARTED.md). Philosophy and deployment modes: [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ## Build configuration
 

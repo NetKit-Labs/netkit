@@ -1,14 +1,18 @@
 # netkit — Neural Network Kit
 
-netkit is a C++26 neural network kit for on-device inference on MCUs and MPUs. It is developed and validated on the desktop, then deployed to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
+netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. It is written in **C++26** using modern C++ patterns and type safety (primary API), with a **C23** API for firmware and FFI. Develop and validate on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`. **Inference is float32-only today**; float16, int16, int8, and int4 are on the roadmap — see [docs/DATATYPES.md](docs/DATATYPES.md).
+**Status:** Currently under active development. Inference is **float32-only** today; **int8** and additional numeric types are next — see [docs/DATATYPES.md](docs/DATATYPES.md). **Kalman estimation and control** are planned for the backend.
+
+Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
+
+Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at runtime) for development and flexible deployment, or **compile for maximum speed** (AOT embed, packager graph optimizations, trimmed op tables, CMSIS backends) for production firmware. See [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 ## Documentation
 
 | Guide | Description |
 |-------|-------------|
-| **[Philosophy](docs/PHILOSOPHY.md)** | Phase 1 runtime vs Phase 2 packager; design principles |
+| **[Philosophy](docs/PHILOSOPHY.md)** | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager |
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, CLI, and first inference for new users |
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
@@ -42,7 +46,9 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 ## Features
 
-- **Dual API** — C23 (`netkit.h`) and C++26 (native headers)
+- **Multi-modal** — voice, image, and vision inference (embedded-first for MCU, MPU, NPU)
+- **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed ([PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled))
+- **Dual API** — C23 (`netkit.h`) and C++26 (native headers, modern patterns and type safety)
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
 - **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
 - **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
@@ -148,7 +154,7 @@ make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
 make build-all    # cpu: netkit + examples + C API test binary
 make test         # default: C++/C embedded regression + fast Python (~1 min)
 make test-full    # full suite incl. ONNX parity (82) + backbone tests (manual / pre-release)
-make test-cpp     # C++ embedded .nk cases only (86)
+make test-cpp     # C++ embedded .nk cases only (88)
 make test-c       # C API regression only
 make test-python  # fast Python subset (same as in make test)
 make test-python-full  # ONNX parity (82) + AOT compile tests (requires libnetkit.a)
@@ -204,8 +210,8 @@ make test-embedded-smoke-matrix   # lean MCU/MPU profiles (see docs/TESTING.md)
 
 | Suite | Language | Entry point | Cases |
 |-------|----------|-------------|-------|
-| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 86 (19 hand + 20 MNIST + 17 op matrix + 27 ONNX import extensions + 1 MobileNetV4 Small + 1 ResNet-18 + 1 ConvNeXt V2-Atto) |
-| C API | C23 | `tests/test_c_api.c` | Same 86 via `nk_run_all_tests()` + API smoke tests (`nk_run_model_tests` on composite/import fixtures) |
+| C++ embedded | C++26 | `./netkit test` → `src/test.cpp` | 88 (19 hand + 20 MNIST + 17 op matrix + 27 ONNX import extensions + 1 MobileNetV4 Small + 2 YOLOX + 1 ResNet-18 + 1 ConvNeXt V2-Atto) |
+| C API | C23 | `tests/test_c_api.c` | Same 88 via `nk_run_all_tests()` + API smoke tests (`nk_run_model_tests` on composite/import fixtures) |
 | ONNX parity | Python | `python/tests/test_onnx_parity.py` | 82 (.nk vs ONNX Runtime on bundled sidecars) |
 | Timm backbone parity | Python | `test_torch_backbone_pack.py`, `test_torch_backbone_runtime_parity.py` | Pack timm ResNet-18 / ConvNeXt V2-Atto / MobileNetV4 Small; C++ runtime vs PyTorch (see [TESTING.md](docs/TESTING.md)) |
 | AOT compile | Python | `python/tests/test_aot_compile.py` | Generates C/C++ from `.nk`, builds, runs vs reference |
@@ -218,10 +224,12 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 
 ## Design principles
 
-See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative. In brief:
+See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [interpreter vs compiled deployment](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). In brief:
 
-- **Phase 1 (today)** — Interpreter-style C++ runtime: load `.nk` (file or embedded memory), execute layer graph with generic kernels; Python packager converts ONNX → `.nk` and can AOT-embed `.nk` bytes into C/C++26 or C23 source
-- **Phase 2 (planned)** — Python packager optimizations: fusion, layout, quantization-aware export
+- **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed
+- **Phase 1 (today)** — Float32 forward executor, ONNX → `.nk` packager, desktop CLI, optional CMSIS-NN/DSP backends
+- **Phase 2 (planned)** — Packager-side fusion, layout, quantization-aware export (int8, float16, …)
+- **Phase 3 (planned)** — Kalman estimation and control alongside neural inference
 - **Lightweight** — Standard C/C++ only, no external dependencies in the engine
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (CPU 4 MiB / MCU 64 KiB / MPU 128 KiB)
 - **Single-threaded** — Sequential forward pass
@@ -229,13 +237,19 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative. In brief:
 
 ## Roadmap
 
-**Phase 1 (today):** float32 interpreter runtime — `.nk` load, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding, residual adds, optional CMSIS-NN/DSP with reference fallback ([KERNELS.md](docs/KERNELS.md)).
+**Phase 1 (today):** Multi-modal **float32** inference (image/vision fixtures today; voice on the roadmap) — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding, optional CMSIS-NN/DSP ([KERNELS.md](docs/KERNELS.md)).
 
 **Phase 2 (planned):**
 
-- **Numeric types:** float16, int16, int8, int4 ([DATATYPES.md](docs/DATATYPES.md))
-- **Packager:** quantized `.nk` export, broader fusion ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
-- **Import / runtime:** broader ONNX op coverage (e.g. non-depthwise grouped conv), int8 inference kernels
+- **Numeric types:** float16, int16, **int8**, int4 ([DATATYPES.md](docs/DATATYPES.md))
+- **Packager:** quantized `.nk` export, broader fusion, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
+- **Import / runtime:** broader ONNX op coverage, int8 inference kernels, NPU offload paths
+
+**Phase 3 (planned):** Kalman estimation and control in the backend (sensor fusion, state estimation, closed-loop control).
+
+## Repository topics
+
+GitHub topics for discoverability: `embedded`, `embedded-systems`, `inference`, `multimodal`, `computer-vision`, `edge-ai`, `machine-learning`, `neural-network`, `onnx`, `firmware`, `aot`, `cmsis`, `mcu`, `mpu`, `cpp26`, `c23`.
 
 ## License
 

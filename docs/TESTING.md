@@ -1,6 +1,6 @@
 # Testing
 
-netkit uses **GNU Make** as the primary build and test driver. **CMake** is optional (`cmake -B cmake-build && cmake --build cmake-build`) with the same flags — see [BUILD_TARGETS.md](BUILD_TARGETS.md). C++ regression tests run through `./netkit test` and the C API harness `tests/test_c_api`. ONNX parity runs in Python.
+netkit uses **GNU Make** as the primary build and test driver. **CMake** is optional (`cmake -B cmake-build && cmake --build cmake-build`) with the same flags — see [BUILD_TARGETS.md](BUILD_TARGETS.md). C++ regression tests run through `./netkit test` (interpreter path) and the C API harness `tests/test_c_api`. ONNX parity and **AOT compile** tests run in Python. See [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 **GitHub Actions** — fast **`CI`** workflow on push to `main` and pull requests (`make test`); full suite via manual **`Test full`** workflow only — see [CI](#ci). Run `make test-full` locally before release or when changing ONNX import/fusion.
 

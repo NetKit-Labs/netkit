@@ -1,6 +1,6 @@
 # netkit Binary Model Format (`.nk`)
 
-Version **3** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`.
+Version **3** — single-file inference bundle for embedded runtimes. Produced by the Python package in [`python/`](../python/); consumed by the C++ loader (`NkLoader`) and `./netkit run` / `./netkit inspect`. Load at runtime (interpreter) or embed with `python -m netkit aot` (compiled path) — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
 **Canonical byte-level specification:** [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) (header offsets, layer record sizes, payload alignment, TCAS layout, `xxd` / CLI inspection).
 

@@ -34,6 +34,9 @@ __pycache__/
 # clangd index cache
 .cache/
 
+# Make build-config stamp (NETKIT_TARGET / backend flags)
+.netkit_build_stamp
+
 # CMake build trees
 cmake-build/
 cmake-build-*/

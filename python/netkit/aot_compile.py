@@ -92,16 +92,41 @@ def _recommend_arena_bytes(after_forward: int, *, headroom_percent: int) -> int:
     return _round_up(bumped, 64)
 
 
-def _find_netkit_binary(nk_path: Path) -> Path | None:
+def _repo_root_for_nk(nk_path: Path) -> Path | None:
+    for parent in nk_path.resolve().parents:
+        if (parent / "Makefile").is_file():
+            return parent
+    return None
+
+
+def _ensure_netkit_binary(nk_path: Path) -> Path | None:
+    """Locate ./netkit for inspect --full probing; build it in-repo when missing."""
     found = shutil.which("netkit")
     if found:
         return Path(found)
-    resolved = nk_path.resolve()
-    for parent in resolved.parents:
-        candidate = parent / "netkit"
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate
+
+    root = _repo_root_for_nk(nk_path)
+    if root is None:
+        return None
+
+    candidate = root / "netkit"
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return candidate
+
+    subprocess.run(
+        ["make", "netkit"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+        return candidate
     return None
+
+
+def _find_netkit_binary(nk_path: Path) -> Path | None:
+    return _ensure_netkit_binary(nk_path)
 
 
 def _estimate_arena_bytes(
@@ -111,6 +136,7 @@ def _estimate_arena_bytes(
     *,
     weights_in_ram: bool,
     payload_bytes: int,
+    network: str = "mlp",
 ) -> tuple[int, int]:
     """Conservative fallback when ./netkit inspect is unavailable."""
     if weights_in_ram:
@@ -121,6 +147,14 @@ def _estimate_arena_bytes(
     after_load = weight_guess + 256
     io_scratch = (input_elements + output_elements) * 4 * 4
     after_forward = after_load + io_scratch
+
+    if network == "cnn":
+        # CNN load allocates graph structs and ping-pong activations — often >> .nk file size.
+        weight_bytes = payload_bytes if weights_in_ram else max(0, nk_bytes - payload_bytes)
+        cnn_floor = weight_bytes + nk_bytes * 4 + input_elements * 64
+        after_load = max(after_load, cnn_floor)
+        after_forward = max(after_forward, after_load)
+
     return after_load, after_forward
 
 
@@ -165,6 +199,7 @@ def _resolve_arena_bytes(
     headroom_percent: int,
     weights_in_ram: bool,
     payload_bytes: int,
+    network: str = "mlp",
 ) -> tuple[int, int, int]:
     after_load, after_forward = _probe_arena_bytes(nk_path)
     if after_forward <= 0:
@@ -174,6 +209,7 @@ def _resolve_arena_bytes(
             output_elements,
             weights_in_ram=weights_in_ram,
             payload_bytes=payload_bytes,
+            network=network,
         )
     after_load, after_forward = _adjust_arena_for_flash(
         after_load,
@@ -241,6 +277,7 @@ def compile_aot(
         headroom_percent=arena_headroom_percent,
         weights_in_ram=weights_in_ram,
         payload_bytes=payload_bytes,
+        network=network,
     )
 
     blob_lines = _format_byte_array(nk_bytes)

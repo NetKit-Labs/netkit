@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "netkit-tools"
 version = "0.1.0"
-description = "Convert ONNX models to binary .nk files for embedded inference"
+description = "Multi-modal inference packager — ONNX to .nk for netkit (embedded-first MCU/MPU/NPU runtime)"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

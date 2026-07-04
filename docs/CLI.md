@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `netkit` binary is a **desktop development tool** ( **`NETKIT_TARGET=cpu`** only) implemented in C++26 (`src/cli.cpp`, entry via `Cli::Run()` in `src/main.cpp`). It wraps the same inference engine as the library APIs. MCU/MPU builds produce `libnetkit.a` without the CLI — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
+The `netkit` binary is a **desktop development tool** ( **`NETKIT_TARGET=cpu`** only) implemented in C++26 (`src/cli.cpp`, entry via `Cli::Run()` in `src/main.cpp`). It exercises the **interpreter path** — load `.nk`, run forward via `NkOpsResolver` — same engine as the library APIs. For production firmware, use **AOT compile** to embed and optimize the model instead. MCU/MPU builds produce `libnetkit.a` without the CLI — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
 ```bash
 make              # NETKIT_TARGET=cpu (default) — builds ./netkit

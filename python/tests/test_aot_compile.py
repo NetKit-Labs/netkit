@@ -344,7 +344,7 @@ class TestAotCompile(unittest.TestCase):
                     err_msg="MCU-target AOT mismatch for mlp_hand.nk",
                 )
         finally:
-            subprocess.run(["make", "lib"], cwd=ROOT, check=True)
+            subprocess.run(["make", "NETKIT_TARGET=cpu", "lib"], cwd=ROOT, check=True)
 
     def test_aot_optimize_matches_reference(self) -> None:
         nk_path = MODELS / "cnn_extended_ops.nk"

@@ -1,6 +1,6 @@
 # Data Types and Numeric Precision
 
-Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md) (Phase 2 packager will emit quantized `.nk` payloads).
+Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** is implemented today; **int8** and other quantized types are next (Phase 2 packager will emit quantized `.nk` payloads).
 
 ## Float32 only (today)
 
