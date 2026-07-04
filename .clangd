@@ -1,4 +1,18 @@
 CompileFlags:
   Add:
-    - -std=c++26
     - -Iinclude
+
+---
+If:
+  PathMatch: .*\.(cpp|hpp)$
+CompileFlags:
+  Add:
+    - -std=c++26
+
+---
+If:
+  PathMatch: .*\.(c|h)$
+CompileFlags:
+  Add:
+    - -std=c23
+    - -DNETKIT_TARGET_CPU=1

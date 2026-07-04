@@ -88,5 +88,10 @@
     "directory": "/Users/jimlavrenz/workspace/netkit",
     "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c tests/test_c_api.c",
     "file": "/Users/jimlavrenz/workspace/netkit/tests/test_c_api.c"
+  },
+  {
+    "directory": "/Users/jimlavrenz/workspace/netkit",
+    "command": "clang -std=c23 -I/Users/jimlavrenz/workspace/netkit/include -DNETKIT_TARGET_CPU=1 -c tests/embedded_smoke.c",
+    "file": "/Users/jimlavrenz/workspace/netkit/tests/embedded_smoke.c"
   }
 ]
