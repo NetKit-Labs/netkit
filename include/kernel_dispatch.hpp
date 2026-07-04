@@ -199,7 +199,21 @@ namespace detail
                                NetkitKernelActivation fuse_activation,
                                Tensor& output)
     {
-        (void)LayerFast{};
+        if constexpr (NkAcceleratedKernel<LayerFast>)
+        {
+            if (LayerFast::TryDepthwiseConv2dForward(input,
+                                                     weights,
+                                                     bias,
+                                                     kernel_h,
+                                                     kernel_w,
+                                                     stride,
+                                                     pad_h,
+                                                     pad_w,
+                                                     channels,
+                                                     fuse_activation,
+                                                     output))
+                return true;
+        }
         return ReferenceKernel::DepthwiseConv2dForwardImpl(input,
                                                            weights,
                                                            bias,
@@ -231,6 +245,41 @@ namespace detail
                 return false;
         }
         return ReferenceKernel::FullyConnectedWithBiasImpl(input, weights, bias, fuse_activation, output);
+    }
+
+    template<typename LayerFast, typename VectorFast>
+    void TryGelu(const Tensor& a, Tensor& c)
+    {
+        if constexpr (NkAcceleratedKernel<LayerFast>)
+        {
+            if (LayerFast::TryGeluForward(a, c))
+                return;
+        }
+        if constexpr (NkAcceleratedKernel<VectorFast>)
+        {
+            if (VectorFast::TryGeluForward(a, c))
+                return;
+        }
+        ReferenceKernel::GeluImpl(a, c);
+    }
+
+    template<typename VectorFast>
+    void TryGrn2d(const Tensor& input,
+                  const float* gamma,
+                  const float* beta,
+                  int channels,
+                  float eps,
+                  float* channel_norm_scratch,
+                  Tensor& output)
+    {
+        if constexpr (NkAcceleratedKernel<VectorFast>)
+        {
+            if (VectorFast::TryGrn2dForward(
+                    input, gamma, beta, channels, eps, channel_norm_scratch, output))
+                return;
+        }
+        ReferenceKernel::Grn2dForwardImpl(
+            input, gamma, beta, channels, eps, channel_norm_scratch, output);
     }
 
     /*
@@ -304,6 +353,22 @@ namespace detail
             }
             else
                 ReferenceKernel::SoftmaxImpl(a, c);
+        }
+
+        static void GeluImpl(const Tensor& a, Tensor& c)
+        {
+            TryGelu<LayerFast, VectorFast>(a, c);
+        }
+
+        static void Grn2dForwardImpl(const Tensor& input,
+                                     const float* gamma,
+                                     const float* beta,
+                                     int channels,
+                                     float eps,
+                                     float* channel_norm_scratch,
+                                     Tensor& output)
+        {
+            TryGrn2d<VectorFast>(input, gamma, beta, channels, eps, channel_norm_scratch, output);
         }
 
         static bool Conv2dForwardImpl(const Tensor& input,
@@ -416,8 +481,11 @@ namespace detail
                                            float eps,
                                            Tensor& output)
         {
-            (void)LayerFast{};
-            (void)VectorFast{};
+            if constexpr (NkAcceleratedKernel<VectorFast>)
+            {
+                if (VectorFast::TryLayerNorm2dForward(input, weight, bias, channels, eps, output))
+                    return;
+            }
             ReferenceKernel::LayerNorm2dForwardImpl(input, weight, bias, channels, eps, output);
         }
 

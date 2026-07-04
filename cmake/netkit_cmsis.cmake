@@ -49,10 +49,14 @@ function(netkit_add_cmsis_nn target)
         Source/ConvolutionFunctions/arm_convolve_f32.c
         Source/ConvolutionFunctions/arm_convolve_1_x_n_f32.c
         Source/ConvolutionFunctions/arm_convolve_1x1_f32.c
+        Source/ConvolutionFunctions/arm_depthwise_conv_f32.c
         Source/NNSupportFunctions/arm_get_buffer_size_f32.c
         Source/NNSupportFunctions/arm_nn_pack_conv_patch_f32.c
         Source/NNSupportFunctions/arm_nn_mat_mult_nt_t_f32.c
         Source/NNSupportFunctions/arm_nn_mat_mult_nt_n_packed_f32.c
+        Source/NNSupportFunctions/arm_nn_depthwise_conv_nt_t_f32.c
+        Source/NNSupportFunctions/arm_nn_depthwise_conv3x3_f32.c
+        Source/NNSupportFunctions/arm_nn_depthwise_conv1d_k3_f32.c
         Source/NNSupportFunctions/arm_nn_conv1d_k3_f32.c
         Source/NNSupportFunctions/arm_nn_conv1d_k3_packed_f32.c
         Source/NNSupportFunctions/arm_nn_conv1d_k5_f32.c
@@ -98,7 +102,10 @@ function(netkit_add_cmsis_dsp target)
         Source/BasicMathFunctions/arm_add_f32.c
         Source/BasicMathFunctions/arm_mult_f32.c
         Source/BasicMathFunctions/arm_scale_f32.c
+        Source/BasicMathFunctions/arm_offset_f32.c
         Source/BasicMathFunctions/arm_clip_f32.c
+        Source/StatisticsFunctions/arm_mean_f32.c
+        Source/StatisticsFunctions/arm_var_f32.c
         Source/MatrixFunctions/arm_mat_init_f32.c
         Source/MatrixFunctions/arm_mat_vec_mult_f32.c
         Source/MatrixFunctions/arm_mat_mult_f32.c

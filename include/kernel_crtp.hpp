@@ -70,6 +70,22 @@ struct KernelBase
         Derived::SoftmaxImpl(a, c);
     }
 
+    static void Gelu(const Tensor& a, Tensor& c)
+    {
+        Derived::GeluImpl(a, c);
+    }
+
+    static void Grn2dForward(const Tensor& input,
+                             const float* gamma,
+                             const float* beta,
+                             int channels,
+                             float eps,
+                             float* channel_norm_scratch,
+                             Tensor& output)
+    {
+        Derived::Grn2dForwardImpl(input, gamma, beta, channels, eps, channel_norm_scratch, output);
+    }
+
     static bool Conv2dForward(const Tensor& input,
                               float* weights,
                               float* bias,

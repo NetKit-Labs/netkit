@@ -7,10 +7,14 @@ CMSIS_NN_SOURCES = \
 	$(CMSIS_NN_DIR)/Source/ConvolutionFunctions/arm_convolve_f32.c \
 	$(CMSIS_NN_DIR)/Source/ConvolutionFunctions/arm_convolve_1_x_n_f32.c \
 	$(CMSIS_NN_DIR)/Source/ConvolutionFunctions/arm_convolve_1x1_f32.c \
+	$(CMSIS_NN_DIR)/Source/ConvolutionFunctions/arm_depthwise_conv_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_get_buffer_size_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_pack_conv_patch_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_mat_mult_nt_t_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_mat_mult_nt_n_packed_f32.c \
+	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_depthwise_conv_nt_t_f32.c \
+	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_depthwise_conv3x3_f32.c \
+	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_depthwise_conv1d_k3_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_conv1d_k3_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_conv1d_k3_packed_f32.c \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_conv1d_k5_f32.c \

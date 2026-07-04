@@ -27,10 +27,11 @@ VectorFast  LayerFast        ← CmsisDspKernel, CmsisNnKernel, or ReferenceKern
 | `kernel_crtp.hpp` | `KernelBase<Derived>` — static `Kernels::Mul` → `Derived::MulImpl` |
 | `kernel_activation.hpp` | `NetkitKernelActivation` enum for fused conv/FC activations |
 | `reference_kernel.hpp` / `reference_kernel.cpp` | Portable float32 implementations |
-| `cmsis_dsp_kernel.hpp` / `cmsis_dsp_backend.cpp` | CMSIS-DSP `Try*` for vector ops (add, mul, matmul, clip) |
-| `cmsis_nn_kernel.hpp` / `cmsis_nn_backend.cpp` | CMSIS-NN `Try*` for layer ops (conv, pool, FC, batch norm, activations) |
+| `cmsis_dsp_kernel.hpp` / `cmsis_dsp_backend.cpp` | CMSIS-DSP `Try*` for vector ops (add, mul, matmul, clip, batch-norm fallback, LayerNorm2d, GRN) |
+| `cmsis_nn_kernel.hpp` / `cmsis_nn_backend.cpp` | CMSIS-NN `Try*` for layer ops (conv, depthwise conv, pool, FC, batch norm, activations, GELU, softmax) |
 | `kernel_dispatch.hpp` | `ComposedKernel<VectorFast, LayerFast>` and `Try*` helpers |
 | `active_kernel.hpp` | `using Kernels = …` alias for the current build |
+| `fused_kernel_ops.hpp` | Inline helpers for fused blocks (BN, ReLU, MatAdd, FC 1×1, GELU, GRN) → `Kernels::` |
 | `activation_followup.hpp` | Shared post-kernel activation when not fused in CMSIS-NN |
 
 Backend `.cpp` files **must** include `netkit_config.h` so `NETKIT_CMSIS_NN_ALLOWED` and related macros match the active build profile.
@@ -50,11 +51,28 @@ Selected in `active_kernel.hpp` from `NETKIT_USE_CMSIS_NN`, `NETKIT_USE_CMSIS_DS
 
 | Role | Typical backend | Ops |
 |------|-----------------|-----|
-| **VectorFast** | CMSIS-DSP when enabled | `Mul`, `MatMul`, `MulScalar`, `ReLU6` clip fallback |
-| **LayerFast** | CMSIS-NN when enabled | `Conv2d`, pool, batch norm, FC, NN activations, softmax |
+| **VectorFast** | CMSIS-DSP when enabled | `Mul`, `MatMul`, `MulScalar`, `MatAdd`/`MatAddND`, `ReLU6` clip fallback, `BatchNorm2d` (desktop fallback), `LayerNorm2d`, `Grn2dForward` |
+| **LayerFast** | CMSIS-NN when enabled | `Conv2d`, depthwise conv, pool, batch norm, FC, NN activations, `Gelu`, softmax |
 | **Reference** | Always | Fallback when `Try*` returns false or backend is `ReferenceKernel` |
 
-On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP accelerates vector ops only — they do not compete for the same op.
+**GEMM:** there is no separate `Gemm` symbol. General matrix multiply is `Kernels::MatMul` (`Ops::MatMul`); linear layers use `Kernels::FullyConnectedWithBias` (internally matmul + bias). ONNX `Gemm` is lowered to packed dense weights at export time.
+
+On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP accelerates vector ops and ops without NN float APIs (LayerNorm, GRN). They do not compete for the same op.
+
+### Float32 op coverage
+
+| Op | Reference | CMSIS-NN | CMSIS-DSP |
+|----|-----------|----------|-----------|
+| Conv2D, depthwise conv, pool, batch norm, FC, activations, softmax | ✓ | ✓ (`Try*` + fallback) | FC/BN fallback on some builds |
+| MatMul, elementwise mul/add/scale | ✓ | add (elementwise) | ✓ |
+| LayerNorm2d | ✓ | — | ✓ |
+| GELU | ✓ | ✓ (tanh on inner polynomial) | — (falls back to reference) |
+| GRN | ✓ | — | ✓ (mean + vector mul/add per pixel) |
+| Residual / skip merge | ✓ | add (`MatAddND`) | add |
+
+**Depthwise conv** is **2D-only** in the API (`DepthwiseConv2D`, NHWC `[H,W,C]`, weights `[C,Kh,Kw]`). **1D** along time/height is expressed as a degenerate 2D kernel (e.g. `kernel_h=5`, `kernel_w=1` on input `[T,1,C]`). See [NK_FORMAT.md](NK_FORMAT.md) and `python/README.md`.
+
+**Fused blocks** (ResNet BasicBlock, MobileNetV4 UIB, ConvNeXt V2) route internal BN, ReLU, FC, LayerNorm, GELU, GRN, and residual adds through `fused_kernel_ops.hpp` → `Kernels::`, so CMSIS applies when enabled.
 
 ## Dispatch pattern
 

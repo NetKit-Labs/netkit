@@ -48,7 +48,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **GitHub Actions CI** — manual `workflow_dispatch` only (`gh workflow run ci.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
-- **Optional CMSIS backends** — CMSIS-NN when `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` (flag ignored on cpu/mpu); CMSIS-DSP on any target
+- **Optional CMSIS backends** — CMSIS-NN (MCU + Cortex-M): conv, depthwise, pool, FC, BN, activations, GELU; CMSIS-DSP: MatMul, add/mul, LayerNorm, GRN; reference fallback always linked ([KERNELS.md](docs/KERNELS.md))
 
 ## Quick start
 

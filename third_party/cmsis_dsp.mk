@@ -10,7 +10,10 @@ CMSIS_DSP_SOURCES = \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_mult_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_scale_f32.c \
+	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_offset_f32.c \
 	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_clip_f32.c \
+	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_mean_f32.c \
+	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_var_f32.c \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_init_f32.c \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_vec_mult_f32.c \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_mult_f32.c

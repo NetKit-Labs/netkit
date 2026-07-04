@@ -17,6 +17,14 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
     static void LeakyReLUImpl(const Tensor& a, Tensor& c, float alpha);
     static void ReLU6Impl(const Tensor& a, Tensor& c);
     static void SoftmaxImpl(const Tensor& a, Tensor& c);
+    static void GeluImpl(const Tensor& a, Tensor& c);
+    static void Grn2dForwardImpl(const Tensor& input,
+                                 const float* gamma,
+                                 const float* beta,
+                                 int channels,
+                                 float eps,
+                                 float* channel_norm_scratch,
+                                 Tensor& output);
 
     static bool Conv2dForwardImpl(const Tensor& input,
                                   float* weights,

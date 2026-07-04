@@ -1,9 +1,9 @@
 #include "mobilenetv4_uib.hpp"
 
 #include "active_kernel.hpp"
+#include "fused_kernel_ops.hpp"
 #include "nk_op_detail.hpp"
 #include "tensor_access.hpp"
-#include "tensor_factory.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -12,27 +12,6 @@
 namespace
 {
     using nk_op_detail::CalcOutputDim;
-
-    void BatchNormNhwcInPlace(float* data, uint32_t count, uint32_t channels, const float* scale, const float* bias)
-    {
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            const uint32_t c = i % channels;
-            data[i] = data[i] * scale[c] + bias[c];
-        }
-    }
-
-    void ReluInPlace(float* data, uint32_t count)
-    {
-        for (uint32_t i = 0; i < count; ++i)
-            data[i] = std::max(0.0f, data[i]);
-    }
-
-    Tensor MakeView(float* data, uint32_t h, uint32_t w, uint32_t c)
-    {
-        const std::array<uint32_t, 3> shape = {h, w, c};
-        return TensorFactory::ViewND(data, 3, shape);
-    }
 }
 
 uint32_t MobileNetV4Uib::MakeDivisible(float value, uint32_t divisor)
@@ -134,8 +113,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
         const uint32_t next_w =
             CalcOutputDim(cur_w, start_dw_kernel, static_cast<int>(start_dw_stride()), pad);
 
-        Tensor cur = MakeView(cur_data, cur_h, cur_w, cur_c);
-        Tensor next = MakeView(next_data, next_h, next_w, cur_c);
+        Tensor cur = fused_ops::NhwcView(cur_data, cur_h, cur_w, cur_c);
+        Tensor next = fused_ops::NhwcView(next_data, next_h, next_w, cur_c);
         Kernels::DepthwiseConv2dForward(cur,
                                         start_dw_weights,
                                         start_dw_bias,
@@ -147,7 +126,7 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                         in_channels,
                                         NetkitKernelActivation::None,
                                         next);
-        BatchNormNhwcInPlace(tensor_data_f32(next), next.num_elements, cur_c, start_bn_scale, start_bn_bias);
+        fused_ops::BatchNormInPlace(next, in_channels, start_bn_scale, start_bn_bias);
 
         cur_h = next_h;
         cur_w = next_w;
@@ -157,8 +136,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
 
     {
         float* expand_out = cur_in_work ? work_b : work_a;
-        Tensor cur = MakeView(cur_data, cur_h, cur_w, cur_c);
-        Tensor next = MakeView(expand_out, cur_h, cur_w, expand_c);
+        Tensor cur = fused_ops::NhwcView(cur_data, cur_h, cur_w, cur_c);
+        Tensor next = fused_ops::NhwcView(expand_out, cur_h, cur_w, expand_c);
         Kernels::Conv2dForward(cur,
                                expand_weights,
                                expand_bias,
@@ -170,8 +149,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                static_cast<int>(expand_c),
                                NetkitKernelActivation::None,
                                next);
-        BatchNormNhwcInPlace(tensor_data_f32(next), next.num_elements, expand_c, expand_bn_scale, expand_bn_bias);
-        ReluInPlace(tensor_data_f32(next), next.num_elements);
+        fused_ops::BatchNormInPlace(next, static_cast<int>(expand_c), expand_bn_scale, expand_bn_bias);
+        fused_ops::ReluInPlace(next);
 
         cur_c = expand_c;
         cur_data = expand_out;
@@ -187,8 +166,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
             CalcOutputDim(cur_w, middle_dw_kernel, static_cast<int>(middle_dw_stride()), pad);
 
         float* middle_out = cur_in_work ? work_b : work_a;
-        Tensor cur = MakeView(cur_data, cur_h, cur_w, cur_c);
-        Tensor next = MakeView(middle_out, next_h, next_w, cur_c);
+        Tensor cur = fused_ops::NhwcView(cur_data, cur_h, cur_w, cur_c);
+        Tensor next = fused_ops::NhwcView(middle_out, next_h, next_w, cur_c);
         Kernels::DepthwiseConv2dForward(cur,
                                         middle_dw_weights,
                                         middle_dw_bias,
@@ -200,8 +179,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                         static_cast<int>(expand_c),
                                         NetkitKernelActivation::None,
                                         next);
-        BatchNormNhwcInPlace(tensor_data_f32(next), next.num_elements, cur_c, middle_bn_scale, middle_bn_bias);
-        ReluInPlace(tensor_data_f32(next), next.num_elements);
+        fused_ops::BatchNormInPlace(next, static_cast<int>(expand_c), middle_bn_scale, middle_bn_bias);
+        fused_ops::ReluInPlace(next);
 
         cur_h = next_h;
         cur_w = next_w;
@@ -209,7 +188,7 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
     }
 
     {
-        Tensor cur = MakeView(cur_data, cur_h, cur_w, cur_c);
+        Tensor cur = fused_ops::NhwcView(cur_data, cur_h, cur_w, cur_c);
         Kernels::Conv2dForward(cur,
                                proj_weights,
                                proj_bias,
@@ -221,13 +200,12 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                out_channels,
                                NetkitKernelActivation::None,
                                output);
-        BatchNormNhwcInPlace(tensor_data_f32(output), output.num_elements, out_c, proj_bn_scale, proj_bn_bias);
+        fused_ops::BatchNormInPlace(output, out_channels, proj_bn_scale, proj_bn_bias);
     }
 
     if (has_residual())
     {
-        float* out = tensor_data_f32(output);
-        for (uint32_t i = 0; i < output.num_elements; ++i)
-            out[i] += residual_buf[i];
+        Tensor residual = fused_ops::NhwcView(residual_buf, in_h, in_w, in_c);
+        fused_ops::MatAddInPlace(output, residual);
     }
 }

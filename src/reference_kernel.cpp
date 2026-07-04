@@ -207,6 +207,74 @@ void ReferenceKernel::SoftmaxImpl(const Tensor& a, Tensor& c)
         c_data[i] *= inv_sum;
 }
 
+namespace
+{
+    constexpr float kGeluCoef = 0.044715f;
+    constexpr float kSqrt2OverPi = 0.7978845608f;
+}
+
+void ReferenceKernel::GeluImpl(const Tensor& a, Tensor& c)
+{
+    const float* a_data = static_cast<const float*>(a.data);
+    float* c_data = static_cast<float*>(c.data);
+
+    for (uint32_t i = 0; i < a.num_elements; ++i)
+    {
+        const float x = a_data[i];
+        const float inner = kSqrt2OverPi * (x + kGeluCoef * x * x * x);
+        c_data[i] = 0.5f * x * (1.0f + std::tanh(inner));
+    }
+}
+
+void ReferenceKernel::Grn2dForwardImpl(const Tensor& input,
+                                       const float* gamma,
+                                       const float* beta,
+                                       int channels,
+                                       float eps,
+                                       float* channel_norm_scratch,
+                                       Tensor& output)
+{
+    if (!gamma || !beta || !channel_norm_scratch || input.rank != 3 || output.rank != 3)
+        return;
+
+    const float* in = tensor_data_f32(const_cast<Tensor&>(input));
+    float* out = tensor_data_f32(output);
+    const uint32_t height = input.shape[0];
+    const uint32_t width = input.shape[1];
+    const uint32_t channel_count = static_cast<uint32_t>(channels);
+    const uint32_t spatial = height * width;
+
+    if (input.shape[2] != channel_count || output.shape[2] != channel_count)
+        return;
+
+    for (uint32_t c = 0; c < channel_count; ++c)
+    {
+        double sum_sq = 0.0;
+        for (uint32_t i = 0; i < spatial; ++i)
+        {
+            const float value = in[i * channel_count + c];
+            sum_sq += static_cast<double>(value) * value;
+        }
+        channel_norm_scratch[c] = std::sqrt(static_cast<float>(sum_sq));
+    }
+
+    float mean_norm = 0.0f;
+    for (uint32_t c = 0; c < channel_count; ++c)
+        mean_norm += channel_norm_scratch[c];
+    mean_norm /= static_cast<float>(channel_count);
+
+    const float denom = mean_norm + eps;
+    for (uint32_t i = 0; i < spatial; ++i)
+    {
+        for (uint32_t c = 0; c < channel_count; ++c)
+        {
+            const float nx = channel_norm_scratch[c] / denom;
+            const float x = in[i * channel_count + c];
+            out[i * channel_count + c] = gamma[c] * (x * nx) + beta[c] + x;
+        }
+    }
+}
+
 bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
                                         float* weights,
                                         float* bias,

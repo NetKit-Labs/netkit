@@ -15,6 +15,8 @@ Matches the standard ResNet BasicBlock (inference BN folded into scale/bias):
 5. **Residual** — identity when `stride == 1` and `in_channels == out_channels`; else 1×1 conv + BN projection with stride `s`
 6. **ReLU**
 
+**Runtime:** conv uses `Conv2D::forward` → `Kernels::`; batch norm, ReLU, and residual merge use `fused_kernel_ops.hpp` → `Kernels::` (CMSIS when enabled, reference fallback otherwise). Skip/residual is `MatAddND` — no separate skip kernel.
+
 ## `.nk` layer descriptor (kind `10`)
 
 | Field | Type |

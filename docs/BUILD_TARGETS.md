@@ -210,11 +210,11 @@ Optional compile-time kernel backends (Apache-2.0). Fetch once with `make cmsis-
 
 ### CMSIS-NN
 
-[ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) accelerates layer kernels when **`NETKIT_CMSIS_NN=1`**, **`NETKIT_TARGET=mcu`**, and **`NETKIT_ARCH`** is Cortex-M (CM4, M33, …). On **cpu** or **mpu**, the flag is **ignored** (Make warning) and reference kernels run.
+[ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) accelerates layer kernels when **`NETKIT_CMSIS_NN=1`**, **`NETKIT_TARGET=mcu`**, and **`NETKIT_ARCH`** is Cortex-M (CM4, M33, …). Includes **depthwise conv** (linked from `arm_depthwise_conv_f32.c` and support kernels). On **cpu** or **mpu**, the flag is **ignored** (Make warning) and reference kernels run.
 
 ### CMSIS-DSP
 
-[ARM CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) accelerates **Ops** primitives: elementwise add/mul, scale, clip (ReLU/ReLU6 fallback), matrix multiply, and fully-connected / batch-norm fallbacks on **desktop and MPU** (and on MCU when CMSIS-NN is off).
+[ARM CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) accelerates vector/matrix ops: elementwise add/mul, scale, clip (ReLU/ReLU6 fallback), `MatMul`, fully-connected / batch-norm fallbacks, **LayerNorm2d**, and **GRN** on **desktop, MPU, and MCU** (vector role when both NN and DSP are enabled).
 
 Both backends are **compile-time only** — one binary, one backend set; no runtime switching.
 
@@ -296,8 +296,9 @@ Full architecture: [KERNELS.md](KERNELS.md).
 
 | Op family | Primary backend |
 |-----------|-----------------|
-| Conv / pool / batch norm / FC / NN activations / softmax | CMSIS-NN (`LayerFast`) |
-| Elementwise mul / matmul / scale / ReLU6 clip | CMSIS-DSP (`VectorFast`) |
+| Conv / depthwise conv / pool / batch norm / FC / NN activations / GELU / softmax | CMSIS-NN (`LayerFast`) |
+| Elementwise mul / matmul / add / scale / ReLU6 clip / LayerNorm2d / GRN | CMSIS-DSP (`VectorFast`) |
+| Fused blocks (ResNet / MobileNet / ConvNeXt internals) | Same via `fused_kernel_ops.hpp` |
 | Any `Try*` miss | Reference |
 
 ## Testing

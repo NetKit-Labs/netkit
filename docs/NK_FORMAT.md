@@ -114,6 +114,8 @@ Example MLP first-layer weight with `2 → 2` units: `rank=2`, `dtype=float32`, 
 
 Example depthwise conv weight: `rank=3`, `dims=[C,Kh,Kw]` per channel.
 
+**1D depthwise:** there is no separate `depthwise_conv1d` kind. Use `depthwise_conv2d` with independent `kernel_h` / `kernel_w`. For a sequence axis of length `T` with `W=1`, set input shape `[T,1,C]` and e.g. `kernel_h=5`, `kernel_w=1`, `pad_h=2`, `pad_w=0` (weights `[C,5,1]`).
+
 Example conv weight: `rank=4`, `dims=[O,Kh,Kw,I]` in **netkit** layout `[out, kernel, kernel, in_channels]`.
 
 ## Payload

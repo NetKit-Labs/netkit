@@ -49,6 +49,9 @@ namespace
         return clamp;
     }
 
+    constexpr float kGeluCoef = 0.044715f;
+    constexpr float kSqrt2OverPi = 0.7978845608f;
+
     arm_nn_activation_type_flt map_activation_type(NetkitKernelActivation activation)
     {
         switch (activation)
@@ -146,6 +149,84 @@ bool CmsisNnKernel::TryConv2dForward(const Tensor& input,
                                                     bias,
                                                     &output_dims,
                                                     out));
+}
+
+bool CmsisNnKernel::TryDepthwiseConv2dForward(const Tensor& input,
+                                              float* weights,
+                                              float* bias,
+                                              int kernel_h,
+                                              int kernel_w,
+                                              int stride,
+                                              int pad_h,
+                                              int pad_w,
+                                              int channels,
+                                              NetkitKernelActivation fuse_activation,
+                                              Tensor& output)
+{
+    if (!weights || input.rank != 3 || output.rank != 3)
+        return false;
+
+    const uint32_t in_h = input.shape[0];
+    const uint32_t in_w = input.shape[1];
+    const uint32_t out_h = output.shape[0];
+    const uint32_t out_w = output.shape[1];
+
+    if (static_cast<int>(input.shape[2]) != channels || static_cast<int>(output.shape[2]) != channels)
+        return false;
+
+    const float* in = static_cast<const float*>(input.data);
+    float* out = static_cast<float*>(output.data);
+
+    const cmsis_nn_dw_conv_params_f32 dw_conv_params = {
+        .ch_mult = 1,
+        .stride = {.w = stride, .h = stride},
+        .padding = {.w = pad_w, .h = pad_h},
+        .dilation = {.w = 1, .h = 1},
+        .activation = fused_activation_clamp(fuse_activation),
+    };
+
+    const cmsis_nn_dims input_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(in_h),
+        .w = static_cast<int32_t>(in_w),
+        .c = channels,
+    };
+    const cmsis_nn_dims filter_dims = {
+        .n = channels,
+        .h = kernel_h,
+        .w = kernel_w,
+        .c = channels,
+    };
+    const cmsis_nn_dims bias_dims = {.n = 1, .h = 1, .w = 1, .c = channels};
+    const cmsis_nn_dims output_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(out_h),
+        .w = static_cast<int32_t>(out_w),
+        .c = channels,
+    };
+
+    const int32_t buf_size = arm_depthwise_conv_wrapper_f32_get_buffer_size(
+        &dw_conv_params, &input_dims, &filter_dims, &output_dims);
+
+    cmsis_nn_context ctx = {0};
+    if (buf_size > 0)
+    {
+        if (buf_size > 262144)
+            return false;
+        ctx.buf = alloca(static_cast<size_t>(buf_size));
+        ctx.size = buf_size;
+    }
+
+    return cmsis_status_ok(arm_depthwise_conv_wrapper_f32(&ctx,
+                                                          &dw_conv_params,
+                                                          &input_dims,
+                                                          in,
+                                                          &filter_dims,
+                                                          weights,
+                                                          &bias_dims,
+                                                          bias,
+                                                          &output_dims,
+                                                          out));
 }
 
 bool CmsisNnKernel::TryMaxPool2dForward(const Tensor& input,
@@ -358,6 +439,37 @@ bool CmsisNnKernel::TrySoftmaxForward(const Tensor& input, Tensor& output)
                                            1,
                                            static_cast<int32_t>(input.num_elements),
                                            out));
+}
+
+bool CmsisNnKernel::TryGeluForward(const Tensor& input, Tensor& output)
+{
+    if (input.num_elements != output.num_elements)
+        return false;
+    if (!tensor_is_dense(input) || !tensor_is_dense(output))
+        return false;
+
+    const int32_t count = static_cast<int32_t>(input.num_elements);
+    if (count <= 0)
+        return false;
+
+    const float* in = static_cast<const float*>(input.data);
+    float* out = static_cast<float*>(output.data);
+    float* inner = static_cast<float*>(alloca(static_cast<size_t>(count) * sizeof(float)));
+
+    for (int32_t i = 0; i < count; ++i)
+    {
+        const float x = in[i];
+        inner[i] = kSqrt2OverPi * (x + kGeluCoef * x * x * x);
+    }
+
+    if (!cmsis_status_ok(arm_nn_activation_f32(
+            inner, inner, count, ARM_NN_FLT_ACT_TANH, 0.0f)))
+        return false;
+
+    for (int32_t i = 0; i < count; ++i)
+        out[i] = 0.5f * in[i] * (1.0f + inner[i]);
+
+    return true;
 }
 
 bool CmsisNnKernel::TryMatAdd(const Tensor& a, const Tensor& b, Tensor& c)

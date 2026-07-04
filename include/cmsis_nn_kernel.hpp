@@ -17,6 +17,18 @@ struct CmsisNnKernel
                                  NetkitKernelActivation fuse_activation,
                                  Tensor& output);
 
+    static bool TryDepthwiseConv2dForward(const Tensor& input,
+                                          float* weights,
+                                          float* bias,
+                                          int kernel_h,
+                                          int kernel_w,
+                                          int stride,
+                                          int pad_h,
+                                          int pad_w,
+                                          int channels,
+                                          NetkitKernelActivation fuse_activation,
+                                          Tensor& output);
+
     static bool TryMaxPool2dForward(const Tensor& input,
                                     int pool_size,
                                     int stride,
@@ -50,6 +62,8 @@ struct CmsisNnKernel
                                      float leaky_alpha);
 
     static bool TrySoftmaxForward(const Tensor& input, Tensor& output);
+
+    static bool TryGeluForward(const Tensor& input, Tensor& output);
 
     static bool TryMatAdd(const Tensor& a, const Tensor& b, Tensor& c);
 };

@@ -9,6 +9,7 @@
 #if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
 
 #include <arm_math.h>
+#include <cmath>
 #include <cstdint>
 
 namespace
@@ -187,6 +188,129 @@ bool CmsisDspKernel::TryBatchNorm2dForward(const Tensor& input,
         float32_t* out_row = out + p * channel_count;
         arm_mult_f32(in_row, scale_vec, out_row, channel_count);
         arm_add_f32(out_row, bias_vec, out_row, channel_count);
+    }
+
+    return true;
+}
+
+bool CmsisDspKernel::TryLayerNorm2dForward(const Tensor& input,
+                                           const float* weight,
+                                           const float* bias,
+                                           int channels,
+                                           float eps,
+                                           Tensor& output)
+{
+    if (!weight || !bias || input.rank != 3 || output.rank != 3)
+        return false;
+    if (!tensor_is_dense(input) || !tensor_is_dense(output))
+        return false;
+    if (static_cast<int>(input.shape[2]) != channels || static_cast<int>(output.shape[2]) != channels)
+        return false;
+    if (input.shape[0] != output.shape[0] || input.shape[1] != output.shape[1])
+        return false;
+    if (channels <= 0)
+        return false;
+
+    const uint32_t height = input.shape[0];
+    const uint32_t width = input.shape[1];
+    const uint32_t channel_count = static_cast<uint32_t>(channels);
+    const float32_t* weight_vec = static_cast<const float32_t*>(weight);
+    const float32_t* bias_vec = static_cast<const float32_t*>(bias);
+
+    const float32_t* in = static_cast<const float32_t*>(input.data);
+    float32_t* out = static_cast<float32_t*>(output.data);
+
+    for (uint32_t oh = 0; oh < height; ++oh)
+    {
+        for (uint32_t ow = 0; ow < width; ++ow)
+        {
+            const float32_t* pixel_in = in + (oh * width + ow) * channel_count;
+            float32_t* pixel_out = out + (oh * width + ow) * channel_count;
+
+            float32_t mean = 0.0f;
+            float32_t variance = 0.0f;
+            arm_mean_f32(pixel_in, channel_count, &mean);
+            if (channel_count > 1U)
+            {
+                arm_var_f32(pixel_in, channel_count, &variance);
+                variance *= static_cast<float32_t>(channel_count - 1U) /
+                            static_cast<float32_t>(channel_count);
+            }
+
+            const float32_t inv_std = 1.0f / std::sqrt(variance + eps);
+            arm_offset_f32(pixel_in, -mean, pixel_out, channel_count);
+            arm_scale_f32(pixel_out, inv_std, pixel_out, channel_count);
+            arm_mult_f32(pixel_out, weight_vec, pixel_out, channel_count);
+            arm_add_f32(pixel_out, bias_vec, pixel_out, channel_count);
+        }
+    }
+
+    return true;
+}
+
+bool CmsisDspKernel::TryGeluForward(const Tensor& input, Tensor& output)
+{
+    (void)input;
+    (void)output;
+    return false;
+}
+
+bool CmsisDspKernel::TryGrn2dForward(const Tensor& input,
+                                     const float* gamma,
+                                     const float* beta,
+                                     int channels,
+                                     float eps,
+                                     float* channel_norm_scratch,
+                                     Tensor& output)
+{
+    if (!gamma || !beta || !channel_norm_scratch || input.rank != 3 || output.rank != 3)
+        return false;
+    if (!tensor_is_dense(input) || !tensor_is_dense(output))
+        return false;
+    if (static_cast<int>(input.shape[2]) != channels || static_cast<int>(output.shape[2]) != channels)
+        return false;
+    if (input.shape[0] != output.shape[0] || input.shape[1] != output.shape[1])
+        return false;
+    if (channels <= 0)
+        return false;
+
+    const uint32_t height = input.shape[0];
+    const uint32_t width = input.shape[1];
+    const uint32_t channel_count = static_cast<uint32_t>(channels);
+    const uint32_t spatial = height * width;
+
+    const float32_t* in = static_cast<const float32_t*>(input.data);
+    float32_t* out = static_cast<float32_t*>(output.data);
+    float32_t* channel_norms = static_cast<float32_t*>(channel_norm_scratch);
+    float32_t* one_plus_gnx = channel_norms;
+
+    for (uint32_t c = 0; c < channel_count; ++c)
+    {
+        double sum_sq = 0.0;
+        for (uint32_t i = 0; i < spatial; ++i)
+        {
+            const float32_t value = in[i * channel_count + c];
+            sum_sq += static_cast<double>(value) * value;
+        }
+        channel_norms[c] = std::sqrt(static_cast<float32_t>(sum_sq));
+    }
+
+    float32_t mean_norm = 0.0f;
+    arm_mean_f32(channel_norms, channel_count, &mean_norm);
+
+    const float32_t denom = mean_norm + eps;
+    const float32_t* gamma_vec = static_cast<const float32_t*>(gamma);
+    const float32_t* beta_vec = static_cast<const float32_t*>(beta);
+
+    for (uint32_t c = 0; c < channel_count; ++c)
+        one_plus_gnx[c] = 1.0f + gamma_vec[c] * channel_norms[c] / denom;
+
+    for (uint32_t i = 0; i < spatial; ++i)
+    {
+        const float32_t* pixel_in = in + i * channel_count;
+        float32_t* pixel_out = out + i * channel_count;
+        arm_mult_f32(pixel_in, one_plus_gnx, pixel_out, channel_count);
+        arm_add_f32(pixel_out, beta_vec, pixel_out, channel_count);
     }
 
     return true;

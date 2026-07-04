@@ -1,37 +1,15 @@
 #include "resnet_basic_block.hpp"
 
 #include "conv2d.hpp"
+#include "fused_kernel_ops.hpp"
 #include "nk_op_detail.hpp"
 #include "tensor_access.hpp"
-#include "tensor_factory.hpp"
 
-#include <algorithm>
 #include <cstring>
 
 namespace
 {
     using nk_op_detail::CalcOutputDim;
-
-    void BatchNormNhwcInPlace(float* data, uint32_t count, uint32_t channels, const float* scale, const float* bias)
-    {
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            const uint32_t c = i % channels;
-            data[i] = data[i] * scale[c] + bias[c];
-        }
-    }
-
-    void ReluInPlace(float* data, uint32_t count)
-    {
-        for (uint32_t i = 0; i < count; ++i)
-            data[i] = std::max(0.0f, data[i]);
-    }
-
-    Tensor MakeView(float* data, uint32_t h, uint32_t w, uint32_t c)
-    {
-        const std::array<uint32_t, 3> shape = {h, w, c};
-        return TensorFactory::ViewND(data, 3, shape);
-    }
 }
 
 bool ResNetBasicBlock::has_identity_shortcut() const
@@ -77,10 +55,10 @@ void ResNetBasicBlock::forward(const Tensor& input, Tensor& output)
     conv1.weights = conv1_weights;
     conv1.bias = conv1_bias;
 
-    Tensor work_a_tensor = MakeView(work_a, out_h, out_w, out_c);
+    Tensor work_a_tensor = fused_ops::NhwcView(work_a, out_h, out_w, out_c);
     conv1.forward(input, work_a_tensor);
-    BatchNormNhwcInPlace(work_a, out_elems, out_c, bn1_scale, bn1_bias);
-    ReluInPlace(work_a, out_elems);
+    fused_ops::BatchNormInPlace(work_a_tensor, out_channels, bn1_scale, bn1_bias);
+    fused_ops::ReluInPlace(work_a_tensor);
 
     Conv2D conv2{};
     conv2.kernel_size = 3;
@@ -92,19 +70,17 @@ void ResNetBasicBlock::forward(const Tensor& input, Tensor& output)
     conv2.weights = conv2_weights;
     conv2.bias = conv2_bias;
 
-    Tensor work_b_tensor = MakeView(work_b, out_h, out_w, out_c);
+    Tensor work_b_tensor = fused_ops::NhwcView(work_b, out_h, out_w, out_c);
     conv2.forward(work_a_tensor, work_b_tensor);
-    BatchNormNhwcInPlace(work_b, out_elems, out_c, bn2_scale, bn2_bias);
+    fused_ops::BatchNormInPlace(work_b_tensor, out_channels, bn2_scale, bn2_bias);
 
-    float* out = tensor_data_f32(output);
+    Tensor out_tensor = fused_ops::NhwcView(tensor_data_f32(output), out_h, out_w, out_c);
 
     if (has_identity_shortcut())
     {
-        const float* inp = tensor_data_f32(const_cast<Tensor&>(input));
         if (input.num_elements != out_elems)
             return;
-        for (uint32_t i = 0; i < out_elems; ++i)
-            out[i] = work_b[i] + inp[i];
+        Kernels::MatAddND(work_b_tensor, input, out_tensor);
     }
     else
     {
@@ -118,13 +94,12 @@ void ResNetBasicBlock::forward(const Tensor& input, Tensor& output)
         shortcut.weights = shortcut_weights;
         shortcut.bias = shortcut_bias;
 
-        Tensor residual_tensor = MakeView(residual, out_h, out_w, out_c);
+        Tensor residual_tensor = fused_ops::NhwcView(residual, out_h, out_w, out_c);
         shortcut.forward(input, residual_tensor);
-        BatchNormNhwcInPlace(residual, out_elems, out_c, shortcut_bn_scale, shortcut_bn_bias);
+        fused_ops::BatchNormInPlace(residual_tensor, out_channels, shortcut_bn_scale, shortcut_bn_bias);
 
-        for (uint32_t i = 0; i < out_elems; ++i)
-            out[i] = work_b[i] + residual[i];
+        Kernels::MatAddND(work_b_tensor, residual_tensor, out_tensor);
     }
 
-    ReluInPlace(out, out_elems);
+    fused_ops::ReluInPlace(out_tensor);
 }

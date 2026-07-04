@@ -14,6 +14,8 @@ Matches the reference PyTorch implementation (`d-li14/mobilenetv4.pytorch`):
 4. **Project** — 1×1 conv to `out_channels`; BN; no ReLU
 5. **Residual** — add input when `stride == 1` and `in_channels == out_channels`
 
+**Runtime:** conv and depthwise conv call `Kernels::` directly; batch norm, ReLU, and residual add use `fused_kernel_ops.hpp` → `Kernels::`.
+
 ### Stride / downsampling
 
 When `stride > 1`:

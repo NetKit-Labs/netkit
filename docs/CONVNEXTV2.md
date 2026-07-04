@@ -14,9 +14,11 @@ For input `X` with shape `[H, W, C]`:
 4. **GELU**
 5. **GRN** — `γ * (x * Nx) + β + x` where `Nx[c] = ||X_c||_2 / (mean_c(||X_c||_2) + ε)`
 6. **Pointwise project** — dense `4C → C` at each pixel
-7. **Residual** — add input `X`
+7. **Residual** — add input `X` (`Kernels::MatAddND`)
 
 Spatial size is unchanged (`H`, `W` constant).
+
+**Runtime:** all sub-ops above (except the residual buffer copy in other blocks) go through `Kernels::` via `include/fused_kernel_ops.hpp`, so CMSIS-NN/DSP apply when enabled with reference fallback. GELU uses CMSIS-NN `tanh` on the inner polynomial when NN is linked; GRN uses CMSIS-DSP vector ops when DSP is linked.
 
 ## `.nk` layer descriptor
 

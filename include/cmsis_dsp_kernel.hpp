@@ -19,4 +19,18 @@ struct CmsisDspKernel
                                       const float* bias,
                                       int channels,
                                       Tensor& output);
+    static bool TryLayerNorm2dForward(const Tensor& input,
+                                      const float* weight,
+                                      const float* bias,
+                                      int channels,
+                                      float eps,
+                                      Tensor& output);
+    static bool TryGeluForward(const Tensor& input, Tensor& output);
+    static bool TryGrn2dForward(const Tensor& input,
+                                const float* gamma,
+                                const float* beta,
+                                int channels,
+                                float eps,
+                                float* channel_norm_scratch,
+                                Tensor& output);
 };
