@@ -208,16 +208,15 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 NETKIT_BUILD_STAMP = .netkit_build_stamp
 NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),weights_in_ram=$(NETKIT_WEIGHTS_IN_RAM),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
 
-NETKIT_STALE_OBJECTS = $(CORE_OBJECTS) $(TRIM_CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS) \
-                       $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
+NETKIT_STALE_BINARIES = $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 
 .PHONY: netkit-config-sync
 netkit-config-sync:
 	@printf '%s\n' '$(NETKIT_BUILD_ID)' > $(NETKIT_BUILD_STAMP).tmp
 	@if ! [ -f $(NETKIT_BUILD_STAMP) ] || ! cmp -s $(NETKIT_BUILD_STAMP).tmp $(NETKIT_BUILD_STAMP); then \
-	  echo "netkit build config changed — rebuilding objects"; \
+	  echo "netkit build config changed — rebuilding"; \
 	  mv $(NETKIT_BUILD_STAMP).tmp $(NETKIT_BUILD_STAMP); \
-	  rm -f $(NETKIT_STALE_OBJECTS); \
+	  rm -f $(NETKIT_STALE_BINARIES); \
 	else \
 	  rm -f $(NETKIT_BUILD_STAMP).tmp; \
 	fi
@@ -241,7 +240,7 @@ $(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
 
 lib: netkit-config-sync $(LIB)
 
-$(TRIM_LIB): $(TRIM_CORE_OBJECTS) | netkit-config-sync
+$(TRIM_LIB): $(TRIM_CORE_OBJECTS)
 	ar rcs $@ $^
 
 trim-lib: $(TRIM_LIB)
@@ -273,24 +272,24 @@ $(NK_INFER): netkit-config-sync $(LIB) $(NK_INFER_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(NK_INFER_OBJ) $(LIB)
 endif
 
-%.o: %.cpp
+%.o: %.cpp $(NETKIT_BUILD_STAMP)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(EXAMPLE_CPP_OBJ): $(EXAMPLE_CPP_SRC)
+$(EXAMPLE_CPP_OBJ): $(EXAMPLE_CPP_SRC) $(NETKIT_BUILD_STAMP)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(NK_INFER_OBJ): $(NK_INFER_SRC) include/netkit.h
+$(NK_INFER_OBJ): $(NK_INFER_SRC) include/netkit.h $(NETKIT_BUILD_STAMP)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(EXAMPLE_C_OBJ): $(EXAMPLE_C_SRC) include/netkit.h
+$(EXAMPLE_C_OBJ): $(EXAMPLE_C_SRC) include/netkit.h $(NETKIT_BUILD_STAMP)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 ifeq ($(BUILD_C_TESTS),1)
-$(TEST_C_OBJ): $(TEST_C_SRC) include/netkit.h
+$(TEST_C_OBJ): $(TEST_C_SRC) include/netkit.h $(NETKIT_BUILD_STAMP)
 	$(CC) $(CFLAGS) -c $< -o $@
 endif
 
-$(EMBEDDED_SMOKE_OBJ): $(EMBEDDED_SMOKE_SRC) include/netkit.h
+$(EMBEDDED_SMOKE_OBJ): $(EMBEDDED_SMOKE_SRC) include/netkit.h $(NETKIT_BUILD_STAMP)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
