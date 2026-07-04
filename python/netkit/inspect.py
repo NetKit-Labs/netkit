@@ -154,6 +154,16 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
             "out_channels": out_ch,
             "stride": stride,
         }
+    if kind == LayerKind.YOLOX_DECOUPLED_HEAD:
+        in_ch, hidden_dim, num_classes, num_convs = struct.unpack("<III B", stream.read(13))
+        stream.read(3)
+        return {
+            "kind": "yolox_decoupled_head",
+            "in_channels": in_ch,
+            "hidden_dim": hidden_dim,
+            "num_classes": num_classes,
+            "num_convs": num_convs,
+        }
     if kind == LayerKind.FLATTEN:
         return {"kind": "flatten"}
     raise ValueError(f"unsupported layer kind: {kind}")
@@ -176,6 +186,8 @@ def _layer_body_bytes(kind: int) -> int:
         return 20
     if kind == LayerKind.RESNET_BASIC_BLOCK:
         return 12
+    if kind == LayerKind.YOLOX_DECOUPLED_HEAD:
+        return 16
     if kind == LayerKind.FLATTEN:
         return 0
     raise ValueError(f"unsupported layer kind: {kind}")

@@ -700,6 +700,19 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
                 shortcut_bn_bias=shortcut_bn_bias,
             )
             h, w, channels = x.shape
+        elif layer_type == "yolox_decoupled_head":
+            from .yolox_detector import yolox_decoupled_head_forward_nhwc
+
+            x, offset = yolox_decoupled_head_forward_nhwc(
+                x,
+                in_channels=layer["in_channels"],
+                hidden_dim=layer["hidden_dim"],
+                num_classes=layer["num_classes"],
+                num_convs=int(layer["num_convs"]),
+                weights=weights,
+                offset=offset,
+            )
+            h, w, channels = x.shape
         elif layer_type == "flatten":
             x = x.reshape(-1)
             dense_in = x.size

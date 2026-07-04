@@ -29,9 +29,10 @@ enum class NkOpCode : uint8_t
     MobilenetV4Uib = static_cast<uint8_t>(NkFormat::LayerKind::MobilenetV4Uib),
     ResNetBasicBlock = static_cast<uint8_t>(NkFormat::LayerKind::ResNetBasicBlock),
     LayerNorm2d = static_cast<uint8_t>(NkFormat::LayerKind::LayerNorm2d),
+    YoloxDecoupledHead = static_cast<uint8_t>(NkFormat::LayerKind::YoloxDecoupledHead),
 };
 
-constexpr uint8_t kNkOpCodeCount = 11;
+constexpr uint8_t kNkOpCodeCount = 12;
 
 struct NkCnnSpatialPlan
 {

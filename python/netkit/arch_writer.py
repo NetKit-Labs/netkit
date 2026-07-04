@@ -307,6 +307,58 @@ def _split_cnn_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
 
             height, width = _resnet_output_spatial(height, width, layer)
             channels = out_c
+        elif layer_type == "yolox_decoupled_head":
+            in_c = layer["in_channels"]
+            hidden = layer["hidden_dim"]
+            num_classes = layer["num_classes"]
+            num_convs = int(layer["num_convs"])
+
+            stem_elems = hidden * in_c
+            stem_w = weights[offset : offset + stem_elems].reshape(hidden, 1, 1, in_c)
+            offset += stem_elems
+            stem_b = weights[offset : offset + hidden]
+            offset += hidden
+            weight_tensors.append(stem_w.astype(np.float32))
+            bias_tensors.append(stem_b.astype(np.float32))
+
+            branch_elems = hidden * hidden * 9
+            for _ in range(num_convs):
+                w = weights[offset : offset + branch_elems].reshape(hidden, 3, 3, hidden)
+                offset += branch_elems
+                b = weights[offset : offset + hidden]
+                offset += hidden
+                weight_tensors.append(w.astype(np.float32))
+                bias_tensors.append(b.astype(np.float32))
+            for _ in range(num_convs):
+                w = weights[offset : offset + branch_elems].reshape(hidden, 3, 3, hidden)
+                offset += branch_elems
+                b = weights[offset : offset + hidden]
+                offset += hidden
+                weight_tensors.append(w.astype(np.float32))
+                bias_tensors.append(b.astype(np.float32))
+
+            cls_w = weights[offset : offset + num_classes * hidden].reshape(num_classes, 1, 1, hidden)
+            offset += num_classes * hidden
+            cls_b = weights[offset : offset + num_classes]
+            offset += num_classes
+            weight_tensors.append(cls_w.astype(np.float32))
+            bias_tensors.append(cls_b.astype(np.float32))
+
+            reg_w = weights[offset : offset + 4 * hidden].reshape(4, 1, 1, hidden)
+            offset += 4 * hidden
+            reg_b = weights[offset : offset + 4]
+            offset += 4
+            weight_tensors.append(reg_w.astype(np.float32))
+            bias_tensors.append(reg_b.astype(np.float32))
+
+            obj_w = weights[offset : offset + hidden].reshape(1, 1, 1, hidden)
+            offset += hidden
+            obj_b = weights[offset : offset + 1]
+            offset += 1
+            weight_tensors.append(obj_w.astype(np.float32))
+            bias_tensors.append(obj_b.astype(np.float32))
+
+            channels = 4 + 1 + num_classes
         elif layer_type == "flatten":
             dense_in = height * width * channels
         elif layer_type == "dense":
@@ -413,6 +465,20 @@ def pack_random_cnn_weights(arch: dict, rng: np.random.Generator, scale: float =
             )
             height, width = _resnet_output_spatial(height, width, layer)
             channels = layer["out_channels"]
+        elif layer_type == "yolox_decoupled_head":
+            from .yolox_detector import pack_yolox_head_weights_flat
+
+            parts.extend(
+                pack_yolox_head_weights_flat(
+                    rng,
+                    in_channels=layer["in_channels"],
+                    hidden_dim=layer["hidden_dim"],
+                    num_classes=layer["num_classes"],
+                    num_convs=int(layer["num_convs"]),
+                    scale=scale,
+                )
+            )
+            channels = 4 + 1 + int(layer["num_classes"])
         elif layer_type == "flatten":
             dense_in = height * width * channels
         elif layer_type == "dense":
@@ -530,6 +596,16 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                     in_channels=layer["in_channels"],
                     out_channels=layer["out_channels"],
                     stride=int(layer.get("stride", 1)),
+                )
+            )
+        elif layer_type == "yolox_decoupled_head":
+            layers.append(
+                LayerSpec(
+                    kind="yolox_decoupled_head",
+                    in_channels=layer["in_channels"],
+                    hidden_dim=int(layer["hidden_dim"]),
+                    num_classes=int(layer["num_classes"]),
+                    num_convs=int(layer["num_convs"]),
                 )
             )
         elif layer_type == "flatten":

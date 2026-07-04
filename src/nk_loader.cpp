@@ -1,6 +1,7 @@
 #include "nk_loader.hpp"
 #include "mobilenetv4_uib.hpp"
 #include "resnet_basic_block.hpp"
+#include "yolox_decoupled_head.hpp"
 #include "tensor_factory.hpp"
 #include "nk_op_detail.hpp"
 #include "netkit_config.h"
@@ -71,6 +72,8 @@ namespace NkLoader
                         count += 2;
                     return count;
                 }
+                case NkFormat::LayerKind::YoloxDecoupledHead:
+                    return 3u + 2u * static_cast<uint32_t>(layer.yolox_decoupled_head.num_convs);
                 default:
                     return 0;
             }
@@ -180,6 +183,14 @@ namespace NkLoader
                         shape_probe.stride = static_cast<int>(layer.stride);
                         shape_probe.output_spatial(h, w, h, w);
                         c = layer.out_channels;
+                        features = h * w * c;
+                        break;
+                    }
+                    case NkFormat::LayerKind::YoloxDecoupledHead:
+                    {
+                        const NkFormat::YoloxDecoupledHeadLayerDesc& head =
+                            model.layers[i].yolox_decoupled_head;
+                        c = 4u + 1u + head.num_classes;
                         features = h * w * c;
                         break;
                     }
@@ -387,6 +398,17 @@ namespace NkLoader
                    ReadU32(file, layer.mobilenetv4_uib.reserved);
         }
 
+        bool ReadYoloxDecoupledHeadLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::YoloxDecoupledHead;
+            return ReadU32(file, layer.yolox_decoupled_head.in_channels) &&
+                   ReadU32(file, layer.yolox_decoupled_head.hidden_dim) &&
+                   ReadU32(file, layer.yolox_decoupled_head.num_classes) &&
+                   ReadU8(file, layer.yolox_decoupled_head.num_convs) &&
+                   ReadExact(file, layer.yolox_decoupled_head.reserved,
+                             sizeof(layer.yolox_decoupled_head.reserved));
+        }
+
         bool ReadResNetBasicBlockLayer(std::FILE* file, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::ResNetBasicBlock;
@@ -436,6 +458,8 @@ namespace NkLoader
                     return ReadConvNeXtV2BlockLayer(file, layer);
                 case NkFormat::LayerKind::MobilenetV4Uib:
                     return ReadMobilenetV4UibLayer(file, layer);
+                case NkFormat::LayerKind::YoloxDecoupledHead:
+                    return ReadYoloxDecoupledHeadLayer(file, layer);
                 case NkFormat::LayerKind::ResNetBasicBlock:
                     return ReadResNetBasicBlockLayer(file, layer);
                 case NkFormat::LayerKind::LayerNorm2d:
@@ -681,6 +705,17 @@ namespace NkLoader
                    CursorReadU32(cursor, layer.mobilenetv4_uib.reserved);
         }
 
+        bool ReadYoloxDecoupledHeadLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::YoloxDecoupledHead;
+            return CursorReadU32(cursor, layer.yolox_decoupled_head.in_channels) &&
+                   CursorReadU32(cursor, layer.yolox_decoupled_head.hidden_dim) &&
+                   CursorReadU32(cursor, layer.yolox_decoupled_head.num_classes) &&
+                   CursorReadU8(cursor, layer.yolox_decoupled_head.num_convs) &&
+                   CursorReadExact(cursor, layer.yolox_decoupled_head.reserved,
+                                   sizeof(layer.yolox_decoupled_head.reserved));
+        }
+
         bool ReadResNetBasicBlockLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::ResNetBasicBlock;
@@ -731,6 +766,8 @@ namespace NkLoader
                     return ReadConvNeXtV2BlockLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::MobilenetV4Uib:
                     return ReadMobilenetV4UibLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::YoloxDecoupledHead:
+                    return ReadYoloxDecoupledHeadLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::ResNetBasicBlock:
                     return ReadResNetBasicBlockLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::LayerNorm2d:
@@ -1403,6 +1440,100 @@ namespace NkLoader
                         in_channels = out_c;
                         break;
                     }
+                    case NkFormat::LayerKind::YoloxDecoupledHead:
+                    {
+                        const NkFormat::YoloxDecoupledHeadLayerDesc& layer =
+                            parsed.layers[i].yolox_decoupled_head;
+                        const uint32_t in_c = layer.in_channels;
+                        const uint32_t hidden = layer.hidden_dim;
+                        const uint32_t num_classes = layer.num_classes;
+                        const int num_convs = static_cast<int>(layer.num_convs);
+
+                        auto take_pair = [&](std::size_t expected_w,
+                                             std::size_t expected_b) -> std::pair<float*, float*>
+                        {
+                            const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                            const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+                            if (w_desc.num_elements != expected_w || b_desc.num_elements != expected_b)
+                                return {nullptr, nullptr};
+                            float* w_ptr = weights + weight_offset;
+                            float* b_ptr = biases + bias_offset;
+                            weight_offset += expected_w;
+                            bias_offset += expected_b;
+                            return {w_ptr, b_ptr};
+                        };
+
+                        const auto [stem_w, stem_b] =
+                            take_pair(static_cast<std::size_t>(hidden) * in_c, hidden);
+                        if (!stem_w)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "YOLOX head stem tensor shape mismatch in .nk catalog");
+
+                        float* cls_conv_w[YoloxDecoupledHead::kMaxStackedConvs]{};
+                        float* cls_conv_b[YoloxDecoupledHead::kMaxStackedConvs]{};
+                        float* reg_conv_w[YoloxDecoupledHead::kMaxStackedConvs]{};
+                        float* reg_conv_b[YoloxDecoupledHead::kMaxStackedConvs]{};
+                        const std::size_t branch_w_elems =
+                            static_cast<std::size_t>(hidden) * hidden * 9u;
+
+                        for (int ci = 0; ci < num_convs; ++ci)
+                        {
+                            const auto [cw, cb] = take_pair(branch_w_elems, hidden);
+                            if (!cw)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "YOLOX head cls conv tensor shape mismatch in .nk catalog");
+                            cls_conv_w[ci] = cw;
+                            cls_conv_b[ci] = cb;
+                        }
+
+                        for (int ri = 0; ri < num_convs; ++ri)
+                        {
+                            const auto [rw, rb] = take_pair(branch_w_elems, hidden);
+                            if (!rw)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "YOLOX head reg conv tensor shape mismatch in .nk catalog");
+                            reg_conv_w[ri] = rw;
+                            reg_conv_b[ri] = rb;
+                        }
+
+                        const auto [cls_pred_w, cls_pred_b] =
+                            take_pair(static_cast<std::size_t>(num_classes) * hidden, num_classes);
+                        const auto [reg_pred_w, reg_pred_b] =
+                            take_pair(static_cast<std::size_t>(4u) * hidden, 4u);
+                        const auto [obj_pred_w, obj_pred_b] =
+                            take_pair(static_cast<std::size_t>(hidden), 1u);
+
+                        if (!cls_pred_w || !reg_pred_w || !obj_pred_w)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "YOLOX head prediction tensor shape mismatch in .nk catalog");
+
+                        if (in_c != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "YOLOX head in_channels must match input channels in .nk");
+
+                        network->InitYoloxDecoupledHeadLayer(i,
+                                                             arena,
+                                                             h,
+                                                             w,
+                                                             static_cast<int>(in_c),
+                                                             static_cast<int>(hidden),
+                                                             static_cast<int>(num_classes),
+                                                             num_convs,
+                                                             stem_w,
+                                                             stem_b,
+                                                             cls_conv_w,
+                                                             cls_conv_b,
+                                                             reg_conv_w,
+                                                             reg_conv_b,
+                                                             cls_pred_w,
+                                                             cls_pred_b,
+                                                             reg_pred_w,
+                                                             reg_pred_b,
+                                                             obj_pred_w,
+                                                             obj_pred_b);
+                        in_channels = 4 + 1 + static_cast<int>(num_classes);
+                        break;
+                    }
                     case NkFormat::LayerKind::Flatten:
                         dense_in = h * w * in_channels;
                         network->InitFlattenLayer(i);
@@ -1858,6 +1989,12 @@ namespace NkLoader
                               << " out=" << layer.resnet_basic_block.out_channels
                               << " stride=" << static_cast<uint32_t>(layer.resnet_basic_block.stride);
                     break;
+                case NkFormat::LayerKind::YoloxDecoupledHead:
+                    std::cout << "YoloxDecoupledHead in=" << layer.yolox_decoupled_head.in_channels
+                              << " hidden=" << layer.yolox_decoupled_head.hidden_dim
+                              << " classes=" << layer.yolox_decoupled_head.num_classes
+                              << " convs=" << static_cast<uint32_t>(layer.yolox_decoupled_head.num_convs);
+                    break;
                 case NkFormat::LayerKind::Flatten:
                     std::cout << "Flatten";
                     break;
@@ -1961,6 +2098,12 @@ namespace NkLoader
                     std::cout << " in=" << layer.resnet_basic_block.in_channels
                               << " out=" << layer.resnet_basic_block.out_channels
                               << " stride=" << static_cast<uint32_t>(layer.resnet_basic_block.stride);
+                    break;
+                case NkFormat::LayerKind::YoloxDecoupledHead:
+                    std::cout << " in=" << layer.yolox_decoupled_head.in_channels
+                              << " hidden=" << layer.yolox_decoupled_head.hidden_dim
+                              << " classes=" << layer.yolox_decoupled_head.num_classes
+                              << " convs=" << static_cast<uint32_t>(layer.yolox_decoupled_head.num_convs);
                     break;
                 case NkFormat::LayerKind::Flatten:
                     break;

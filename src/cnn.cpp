@@ -76,6 +76,11 @@ void ResNetBasicBlockLayer::forward(const Tensor& input, Tensor& output)
     block.forward(input, output);
 }
 
+void YoloxDecoupledHeadLayer::forward(const Tensor& input, Tensor& output)
+{
+    block.forward(input, output);
+}
+
 CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)
     : blocks(nullptr), num_layers(num_layers)
 {
@@ -413,6 +418,64 @@ void CNNNetwork::InitResNetBasicBlockLayer(uint32_t layer_idx,
         static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
                                         alignof(float)));
     block.scratch_elems = block.scratch ? scratch_elems : 0;
+}
+
+void CNNNetwork::InitYoloxDecoupledHeadLayer(uint32_t layer_idx,
+                                             Arena& arena,
+                                             uint32_t spatial_h,
+                                             uint32_t spatial_w,
+                                             int in_channels,
+                                             int hidden_dim,
+                                             int num_classes,
+                                             int num_convs,
+                                             float* stem_weights,
+                                             float* stem_bias,
+                                             float* const* cls_conv_weights,
+                                             float* const* cls_conv_bias,
+                                             float* const* reg_conv_weights,
+                                             float* const* reg_conv_bias,
+                                             float* cls_pred_weights,
+                                             float* cls_pred_bias,
+                                             float* reg_pred_weights,
+                                             float* reg_pred_bias,
+                                             float* obj_pred_weights,
+                                             float* obj_pred_bias)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::YoloxDecoupledHead;
+    YoloxDecoupledHead& block = blocks[layer_idx].yolox_decoupled_head.block;
+    block.in_channels = in_channels;
+    block.hidden_dim = hidden_dim;
+    block.num_classes = num_classes;
+    block.num_convs = num_convs;
+    block.stem_weights = stem_weights;
+    block.stem_bias = stem_bias;
+    block.cls_pred_weights = cls_pred_weights;
+    block.cls_pred_bias = cls_pred_bias;
+    block.reg_pred_weights = reg_pred_weights;
+    block.reg_pred_bias = reg_pred_bias;
+    block.obj_pred_weights = obj_pred_weights;
+    block.obj_pred_bias = obj_pred_bias;
+
+    for (int i = 0; i < num_convs && i < YoloxDecoupledHead::kMaxStackedConvs; ++i)
+    {
+        block.cls_conv_weights[i] = cls_conv_weights[i];
+        block.cls_conv_bias[i] = cls_conv_bias[i];
+        block.reg_conv_weights[i] = reg_conv_weights[i];
+        block.reg_conv_bias[i] = reg_conv_bias[i];
+    }
+
+    const uint32_t spatial = spatial_h * spatial_w;
+    const uint32_t hidden = static_cast<uint32_t>(hidden_dim);
+    const uint32_t scratch_elems = spatial * hidden * 3u;
+    block.scratch =
+        static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
+                                        alignof(float)));
+    block.scratch_elems = block.scratch ? scratch_elems : 0;
+    (void)spatial_w;
+    (void)in_channels;
 }
 
 void CNNNetwork::InitFlattenLayer(uint32_t layer_idx)

@@ -122,6 +122,16 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
                     "stride": layer["stride"],
                 }
             )
+        elif kind == "yolox_decoupled_head":
+            arch_layers.append(
+                {
+                    "type": "yolox_decoupled_head",
+                    "in_channels": layer["in_channels"],
+                    "hidden_dim": layer["hidden_dim"],
+                    "num_classes": layer["num_classes"],
+                    "num_convs": layer["num_convs"],
+                }
+            )
         elif kind == "flatten":
             arch_layers.append({"type": "flatten"})
         else:

@@ -1,0 +1,88 @@
+# YOLOX single-scale detector (MobileNetV4-Small)
+
+Netkit ships a **single-scale, anchor-free YOLOX-style object detector** built from the existing **MobileNetV4-Conv-Small** backbone plus a fused **decoupled detection head** layer kind (`yolox_decoupled_head`).
+
+## Architecture
+
+```
+Input (H×W×3)
+  └─ MobileNetV4-Conv-Small backbone (18 UIB/conv blocks, no classifier head)
+  └─ YOLOX decoupled head (fused composite layer)
+       ├─ stem: 1×1 conv + SiLU
+       ├─ cls branch: stacked 3×3 convs + SiLU → 1×1 cls prediction
+       ├─ reg branch: stacked 3×3 convs + SiLU → 1×1 box regression (ltrb)
+       └─ obj branch: 1×1 objectness (from reg features)
+Output (H'×W'×(4+1+num_classes))  — NHWC, single tensor
+```
+
+Channel layout per spatial location:
+
+| Channels | Meaning |
+|----------|---------|
+| 0–3 | Box offsets (left, top, right, bottom) |
+| 4 | Objectness logit |
+| 5… | Class logits (`num_classes`) |
+
+The head runs cls/reg/obj branches **in parallel inside the fused layer** (netkit graphs are otherwise sequential). This matches YOLOX decoupled-head semantics at a single stride.
+
+## Fixture model
+
+| File | Input | Head | Output grid |
+|------|-------|------|-------------|
+| `models/yolox_mnv4_small.nk` | 56×56×3 | hidden=64, 2 stacked convs, 10 classes | 2×2×15 (60 floats) |
+
+Regenerate:
+
+```bash
+python tools/write_yolox_mnv4_detector_fixture.py
+```
+
+## Python API
+
+```python
+from netkit.yolox_detector import build_yolox_mnv4_small_detector
+from netkit.yolox_decode import decode_yolox_output
+from netkit.reference_forward import forward_cnn
+
+arch = build_yolox_mnv4_small_detector(height=416, width=416, num_classes=80, hidden_dim=256)
+# ... pack weights, write .nk with write_nk_from_arch ...
+output = forward_cnn(flat_input, arch, weights)
+detections = decode_yolox_output(output, num_classes=80, input_height=416, input_width=416)
+```
+
+Builder parameters:
+
+- `height`, `width` — input resolution (backbone stride ≈ 32 → output grid is H/32 × W/32)
+- `num_classes` — detection classes (default 80)
+- `hidden_dim` — head width (default 256, YOLOX-style)
+- `num_convs` — stacked 3×3 convs per branch (default 2, max 4)
+
+## C++ runtime
+
+The fused layer is registered in the op resolver as `yolox_decoupled_head` (`LayerKind` value **12**). Load and run like any CNN:
+
+```bash
+./netkit run models/yolox_mnv4_small.nk --input <9408 comma-separated floats>
+./netkit inspect models/yolox_mnv4_small.nk --full
+```
+
+Post-processing (sigmoid, grid decode, NMS) stays on the host — see `python/netkit/yolox_decode.py`.
+
+## Arena sizing
+
+Use `./netkit inspect models/yolox_mnv4_small.nk --full` for activation high-water. The fused head allocates scratch proportional to `3 × H' × W' × hidden_dim` inside the layer (not counted in ping-pong buffers).
+
+For MCU firmware with flash-backed weights, compile with `NETKIT_WEIGHTS_IN_RAM=0` and subtract payload bytes from inspect totals (see [ARENA.md](ARENA.md)).
+
+## Tests
+
+- `python/tests/test_yolox_detector.py` — arch builder, NumPy reference, decode, `.nk` roundtrip, C++ CLI parity
+- C++ regression includes `models/yolox_mnv4_small.nk` via embedded TCAS cases
+
+## Limitations (Phase 1)
+
+- **Single scale only** — no FPN/PAN multi-stride neck
+- **No NMS in runtime** — host decode helper only
+- **Random-weight fixture** — timm/YOLOX-trained checkpoint packing is future work
+
+See also: [MOBILENETV4.md](MOBILENETV4.md), [NK_FORMAT.md](NK_FORMAT.md).

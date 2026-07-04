@@ -29,6 +29,7 @@ namespace NkFormat
             case LayerKind::MobilenetV4Uib: return "mobilenetv4_uib";
             case LayerKind::ResNetBasicBlock: return "resnet_basic_block";
             case LayerKind::LayerNorm2d: return "layernorm2d";
+            case LayerKind::YoloxDecoupledHead: return "yolox_decoupled_head";
         }
         return "unknown";
     }

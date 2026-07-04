@@ -48,7 +48,8 @@ namespace NkFormat
         ConvNeXtV2Block = 8,
         MobilenetV4Uib = 9,
         ResNetBasicBlock = 10,
-        LayerNorm2d = 11
+        LayerNorm2d = 11,
+        YoloxDecoupledHead = 12
     };
 
     enum class DType : uint8_t
@@ -167,6 +168,15 @@ namespace NkFormat
         float eps = 1e-6f;
     };
 
+    struct YoloxDecoupledHeadLayerDesc
+    {
+        uint32_t in_channels = 0;
+        uint32_t hidden_dim = 256;
+        uint32_t num_classes = 80;
+        uint8_t num_convs = 2;
+        uint8_t reserved[3]{};
+    };
+
     struct LayerDesc
     {
         LayerKind kind = LayerKind::Dense;
@@ -178,6 +188,7 @@ namespace NkFormat
         MobilenetV4UibLayerDesc mobilenetv4_uib{};
         ResNetBasicBlockLayerDesc resnet_basic_block{};
         LayerNormLayerDesc layernorm2d{};
+        YoloxDecoupledHeadLayerDesc yolox_decoupled_head{};
     };
 
     const char* NetworkKindName(NetworkKind kind);

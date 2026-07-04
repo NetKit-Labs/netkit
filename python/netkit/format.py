@@ -37,6 +37,7 @@ class LayerKind(IntEnum):
     MOBILENETV4_UIB = 9
     RESNET_BASIC_BLOCK = 10
     LAYERNORM2D = 11
+    YOLOX_DECOUPLED_HEAD = 12
 
 
 class DType(IntEnum):
@@ -238,6 +239,18 @@ def pack_resnet_basic_block_layer(
 
 def pack_layernorm2d_layer(*, channels: int, eps: float = 1e-6) -> bytes:
     return pack_layer_kind(LayerKind.LAYERNORM2D) + struct.pack("<IIf", channels, 0, eps)
+
+
+def pack_yolox_decoupled_head_layer(
+    *,
+    in_channels: int,
+    hidden_dim: int,
+    num_classes: int,
+    num_convs: int = 2,
+) -> bytes:
+    return pack_layer_kind(LayerKind.YOLOX_DECOUPLED_HEAD) + struct.pack(
+        "<III B3x", in_channels, hidden_dim, num_classes, num_convs
+    )
 
 
 def pack_flatten_layer() -> bytes:

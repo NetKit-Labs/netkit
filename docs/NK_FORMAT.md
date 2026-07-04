@@ -85,8 +85,11 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 | `batch_norm2d` | 6 | `channels u32`, `reserved u32` |
 | `convnextv2_block` | 8 | `channels u32`, `reserved u32`, `eps f32` |
 | `mobilenetv4_uib` | 9 | `in_channels u32`, `out_channels u32`, `start_dw u8`, `middle_dw u8`, `stride u8`, `middle_dw_downsample u8`, `expand_ratio f32`, `reserved u32` |
+| `resnet_basic_block` | 10 | `in_channels u32`, `out_channels u32`, `stride u8`, `reserved u8[3]` |
+| `layernorm2d` | 11 | `channels u32`, `eps f32`, `reserved u32` |
+| `yolox_decoupled_head` | 12 | `in_channels u32`, `hidden_dim u32`, `num_classes u32`, `num_convs u8`, `reserved u8[3]` |
 
-See [CONVNEXTV2.md](CONVNEXTV2.md) and [MOBILENETV4.md](MOBILENETV4.md) for fused block details.
+See [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), and [YOLOX.md](YOLOX.md) for fused block details.
 
 Weight/bias tensor pairs (in layer order, W then B each):
 

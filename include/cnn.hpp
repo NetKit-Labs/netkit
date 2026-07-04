@@ -6,6 +6,7 @@
 #include "depthwise_conv2d.hpp"
 #include "mobilenetv4_uib.hpp"
 #include "resnet_basic_block.hpp"
+#include "yolox_decoupled_head.hpp"
 #include "mlp.hpp"
 #include "ops_resolver.hpp"
 
@@ -32,7 +33,8 @@ enum class CnnBlockType
     Dense,
     ConvNeXtV2Block,
     MobilenetV4Uib,
-    ResNetBasicBlock
+    ResNetBasicBlock,
+    YoloxDecoupledHead
 };
 
 struct Conv2DLayer
@@ -119,6 +121,13 @@ struct ResNetBasicBlockLayer
     void forward(const Tensor& input, Tensor& output);
 };
 
+struct YoloxDecoupledHeadLayer
+{
+    YoloxDecoupledHead block;
+
+    void forward(const Tensor& input, Tensor& output);
+};
+
 struct CnnBlock
 {
     CnnBlockType type = CnnBlockType::Conv2D;
@@ -131,6 +140,7 @@ struct CnnBlock
     ConvNeXtV2BlockLayer convnextv2_block;
     MobilenetV4UibLayer mobilenetv4_uib;
     ResNetBasicBlockLayer resnet_basic_block;
+    YoloxDecoupledHeadLayer yolox_decoupled_head;
     MLPLayer dense;
 };
 
@@ -283,6 +293,27 @@ public:
                                    float* shortcut_bias,
                                    float* shortcut_bn_scale,
                                    float* shortcut_bn_bias);
+
+    void InitYoloxDecoupledHeadLayer(uint32_t layer_idx,
+                                     Arena& arena,
+                                     uint32_t spatial_h,
+                                     uint32_t spatial_w,
+                                     int in_channels,
+                                     int hidden_dim,
+                                     int num_classes,
+                                     int num_convs,
+                                     float* stem_weights,
+                                     float* stem_bias,
+                                     float* const* cls_conv_weights,
+                                     float* const* cls_conv_bias,
+                                     float* const* reg_conv_weights,
+                                     float* const* reg_conv_bias,
+                                     float* cls_pred_weights,
+                                     float* cls_pred_bias,
+                                     float* reg_pred_weights,
+                                     float* reg_pred_bias,
+                                     float* obj_pred_weights,
+                                     float* obj_pred_bias);
 
     void InitFlattenLayer(uint32_t layer_idx);
 

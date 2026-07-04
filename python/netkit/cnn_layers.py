@@ -111,6 +111,8 @@ def _layer_weight_tensor_count(layer: dict[str, Any]) -> int:
         if int(layer.get("stride", 1)) != 1 or int(layer["in_channels"]) != int(layer["out_channels"]):
             count += 2
         return count
+    if layer_type == "yolox_decoupled_head":
+        return 3 + 2 * int(layer.get("num_convs", 2))
     return 0
 
 

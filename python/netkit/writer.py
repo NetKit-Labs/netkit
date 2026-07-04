@@ -27,6 +27,7 @@ from .format import (
     pack_pool_layer,
     pack_tensor_desc,
     pack_test_section,
+    pack_yolox_decoupled_head_layer,
     payload_alignment_padding,
 )
 
@@ -56,6 +57,9 @@ class LayerSpec:
     middle_dw_kernel: int = 0
     middle_dw_downsample: int = 1
     expand_ratio: float = 1.0
+    hidden_dim: int = 256
+    num_classes: int = 80
+    num_convs: int = 2
 
 
 @dataclass
@@ -212,6 +216,13 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
                 in_channels=layer.in_channels,
                 out_channels=layer.out_channels,
                 stride=layer.stride,
+            )
+        elif layer.kind == "yolox_decoupled_head":
+            layer_bytes += pack_yolox_decoupled_head_layer(
+                in_channels=layer.in_channels,
+                hidden_dim=layer.hidden_dim,
+                num_classes=layer.num_classes,
+                num_convs=layer.num_convs,
             )
         elif layer.kind == "flatten":
             layer_bytes += pack_flatten_layer()

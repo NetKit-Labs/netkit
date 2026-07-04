@@ -17,6 +17,7 @@
 #include "layer_ops/nk_depthwise_conv2d_op.hpp"
 #include "layer_ops/nk_dense_op.hpp"
 #include "layer_ops/nk_flatten_op.hpp"
+#include "layer_ops/nk_yolox_decoupled_head_op.hpp"
 #include "layer_ops/nk_max_pool2d_op.hpp"
 
 using NkAllLayerOps = NkOpList<NkDenseOpDescriptor,
@@ -24,6 +25,7 @@ using NkAllLayerOps = NkOpList<NkDenseOpDescriptor,
                                  NkDepthwiseConv2DOpDescriptor,
                                  NkConvNeXtV2BlockOpDescriptor,
                                  NkMobilenetV4UibOpDescriptor,
+                                 NkYoloxDecoupledHeadOpDescriptor,
                                  NkResNetBasicBlockOpDescriptor,
                                  NkLayerNorm2dOpDescriptor,
                                  NkMaxPool2DOpDescriptor,

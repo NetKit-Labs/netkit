@@ -26,6 +26,8 @@ NkOpCode ToOpCode(CnnBlockType block_type)
             return NkOpCode::MobilenetV4Uib;
         case CnnBlockType::ResNetBasicBlock:
             return NkOpCode::ResNetBasicBlock;
+        case CnnBlockType::YoloxDecoupledHead:
+            return NkOpCode::YoloxDecoupledHead;
     }
     return NkOpCode::Dense;
 }
