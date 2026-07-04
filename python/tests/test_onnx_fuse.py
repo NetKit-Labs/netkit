@@ -50,6 +50,35 @@ class OnnxFuseTests(unittest.TestCase):
         self.assertEqual(len(block_layers), 8)
         self.assertGreater(len(spec.layers), 0)
 
+    def test_convnextv2_block_onnx_fuses(self) -> None:
+        backbone = timm.create_model("convnextv2_atto", pretrained=False, num_classes=10)
+        backbone.eval()
+        block = backbone.stages[0].blocks[0]
+
+        class OneBlock(torch.nn.Module):
+            def __init__(self, module: torch.nn.Module) -> None:
+                super().__init__()
+                self.block = module
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.block(x)
+
+        dummy = torch.randn(1, 40, 8, 8)
+        onnx_path = Path(tempfile.gettempdir()) / "netkit_convnext_block_fuse_test.onnx"
+        export_kwargs = dict(
+            input_names=["input"],
+            output_names=["output"],
+            opset_version=17,
+        )
+        try:
+            torch.onnx.export(OneBlock(block), dummy, str(onnx_path), **export_kwargs, dynamo=False)
+        except TypeError:
+            torch.onnx.export(OneBlock(block), dummy, str(onnx_path), **export_kwargs)
+
+        spec = onnx_to_spec(onnx_path, fuse_composite=True)
+        self.assertEqual(len(spec.layers), 1)
+        self.assertEqual(spec.layers[0].kind, "convnextv2_block")
+
 
 if __name__ == "__main__":
     unittest.main()

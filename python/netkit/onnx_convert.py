@@ -107,8 +107,6 @@ def _depthwise_layer_spec(
         pad_w=pad_left,
     )
     if pad_bottom != pad_top or pad_right != pad_left:
-        if kh != kw:
-            raise ValueError("asymmetric padding on non-square depthwise conv is not supported")
         spec.pad_h_end = pad_bottom
         spec.pad_w_end = pad_right
     return spec
@@ -314,7 +312,31 @@ def _emit_cnn_primitive(
     weight_tensors: list[np.ndarray] = []
     bias_tensors: list[np.ndarray] = []
 
-    if node.op_type in {"Identity", "Dropout", "Reshape", "Squeeze", "Unsqueeze", "Transpose"}:
+    if node.op_type in {
+        "Constant",
+        "Identity",
+        "Dropout",
+        "Reshape",
+        "Squeeze",
+        "Unsqueeze",
+        "Transpose",
+        "Erf",
+        "Div",
+        "Mul",
+        "ReduceL2",
+        "ReduceMean",
+    }:
+        consumed.add(node_index)
+        return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
+
+    if node.op_type == "LayerNormalization":
+        scale = get_initializer(graph, node.input[1]).astype(np.float32).reshape(-1)
+        bias = get_initializer(graph, node.input[2]).astype(np.float32).reshape(-1)
+        eps = _attr_float(node, "epsilon", 1e-5)
+        out_c = int(scale.shape[0])
+        layers.append(LayerSpec(kind="layernorm2d", channels=out_c, eps=eps))
+        weight_tensors.append(scale)
+        bias_tensors.append(bias)
         consumed.add(node_index)
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
@@ -501,9 +523,8 @@ def _emit_cnn_primitive(
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
     if node.op_type == "Add":
-        raise ValueError(
-            "unsupported Add node — enable composite fusion or simplify the ONNX graph"
-        )
+        consumed.add(node_index)
+        return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
     raise ValueError(f"unsupported ONNX op for CNN: {node.op_type}")
 
@@ -519,7 +540,7 @@ def _primitive_shape_delta(
 ) -> tuple[int, int, int] | None:
     """Return updated (h, w, channels) after a primitive ONNX op, or None if no shape change."""
     node = graph.node(node_index)
-    if node.op_type in _STANDALONE_ACTIVATIONS or node.op_type in {"Identity", "Dropout", "Add"}:
+    if node.op_type in _STANDALONE_ACTIVATIONS or node.op_type in {"Identity", "Dropout", "Add", "Constant"}:
         return spatial_h, spatial_w, channels
     if node.op_type == "Conv":
         from .onnx_graph import get_initializer
@@ -566,15 +587,25 @@ def _primitive_shape_delta(
         "Squeeze",
         "Unsqueeze",
         "Transpose",
+        "Erf",
+        "Div",
+        "Mul",
+        "ReduceL2",
+        "ReduceMean",
+        "LayerNormalization",
     }:
         return spatial_h, spatial_w, channels
     return None
 
 
-def _onnx_to_spec_cnn_branched(model, *, composite: bool) -> ModelSpec:
+def _onnx_to_spec_cnn_branched(model, *, composite: bool, verbose_fuse: bool = False) -> ModelSpec:
+    import sys
+
     from .onnx_fuse import (
+        convnext_fuse_result_to_primitives,
         mobilenet_uib_fuse_result_to_primitives,
         resnet_fuse_result_to_primitives,
+        try_fuse_convnextv2_block,
         try_fuse_mobilenetv4_uib,
         try_fuse_mobilenetv4_uib_chain,
         try_fuse_resnet_basic_block,
@@ -609,6 +640,21 @@ def _onnx_to_spec_cnn_branched(model, *, composite: bool) -> ModelSpec:
                     spatial_h=spatial_h,
                     spatial_w=spatial_w,
                     in_channels=channels,
+                )
+            if fused is None:
+                fused = try_fuse_convnextv2_block(
+                    graph,
+                    idx,
+                    spatial_h=spatial_h,
+                    spatial_w=spatial_w,
+                    in_channels=channels,
+                    block_input=block_input,
+                )
+            if fused is None and verbose_fuse:
+                print(
+                    f"onnx fuse: no composite match at Add node {node.name or idx} "
+                    f"(channels={channels}, spatial={spatial_h}x{spatial_w})",
+                    file=sys.stderr,
                 )
             if fused is not None:
                 fusion_by_index[idx] = fused
@@ -665,6 +711,11 @@ def _onnx_to_spec_cnn_branched(model, *, composite: bool) -> ModelSpec:
                 bias_tensors.extend(prim_b)
             elif fused.layer.kind == "mobilenetv4_uib":
                 prim_layers, prim_w, prim_b = mobilenet_uib_fuse_result_to_primitives(fused)
+                layers.extend(prim_layers)
+                weight_tensors.extend(prim_w)
+                bias_tensors.extend(prim_b)
+            elif fused.layer.kind == "convnextv2_block":
+                prim_layers, prim_w, prim_b = convnext_fuse_result_to_primitives(fused)
                 layers.extend(prim_layers)
                 weight_tensors.extend(prim_w)
                 bias_tensors.extend(prim_b)
@@ -735,7 +786,9 @@ def _peek_fused_bias_add_graph(
     return initializers[bias_name].astype(np.float32).reshape(-1), {node_index + 1}
 
 
-def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> ModelSpec:
+def onnx_to_spec(
+    onnx_path: str | Path, *, fuse_composite: bool = True, verbose_fuse: bool = False
+) -> ModelSpec:
     model = onnx.load(onnx_path)
     network, input_shape = _resolve_input_shape(model)
     initializers = _initializer_map(model)
@@ -795,7 +848,9 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
         )
 
     if network == "cnn" and _has_graph_branches(nodes, initializers):
-        return _onnx_to_spec_cnn_branched(model, composite=fuse_composite)
+        return _onnx_to_spec_cnn_branched(
+            model, composite=fuse_composite, verbose_fuse=verbose_fuse
+        )
 
     # CNN (linear scan)
     channels = input_shape[2]
@@ -1022,6 +1077,7 @@ def convert_onnx_to_nk(
     fuse_composite: bool = True,
     packager_fuse: bool | None = None,
     optimize: bool = True,
+    verbose_fuse: bool = False,
 ) -> Path:
     from .arch_writer import _arch_to_spec
     from .nk_optimize import optimize_nk
@@ -1032,7 +1088,9 @@ def convert_onnx_to_nk(
 
     onnx_path = Path(onnx_path)
     output_path = Path(output_path) if output_path else onnx_path.with_suffix(".nk")
-    spec = onnx_to_spec(onnx_path, fuse_composite=fuse_composite)
+    spec = onnx_to_spec(
+        onnx_path, fuse_composite=fuse_composite, verbose_fuse=verbose_fuse
+    )
     if optimize:
         from .nk_optimize import OptimizeOptions
 
@@ -1040,14 +1098,17 @@ def convert_onnx_to_nk(
         opt = optimize_nk(
             arch,
             weights,
-            options=OptimizeOptions(fuse_composite=packager_fuse),
+            options=OptimizeOptions(
+                fuse_composite=packager_fuse,
+                verbose_fuse=verbose_fuse,
+            ),
         )
         spec = _arch_to_spec(opt.arch, opt.weights)
     elif packager_fuse:
-        from .nk_fuse import fuse_composite_blocks
+        from .nk_fuse import FuseOptions, fuse_composite_blocks
 
         arch, weights = read_nk_bytes(write_nk_bytes(spec))
-        fused = fuse_composite_blocks(arch, weights, verify_output=False)
+        fused = fuse_composite_blocks(arch, weights, verify_output=False, options=FuseOptions(verbose_fuse=verbose_fuse))
         spec = _arch_to_spec(fused.arch, fused.weights)
     write_nk(output_path, spec)
     return output_path

@@ -43,6 +43,12 @@ def reconcile_depthwise_kernel(
     literal_kw = kernel_w_byte if kernel_w_byte else kernel_h
     if kernel_h * literal_kw == kernel_area:
         candidates.append((literal_kw, pad_h, pad_w, pad_h, pad_w))
+    if kernel_h != literal_kw and kernel_area % kernel_h == 0:
+        actual_kw = kernel_area // kernel_h
+        if actual_kw != kernel_h and kernel_h * kernel_w_byte != kernel_area:
+            top, left, bottom, right = decode_pad_extra(pad_h, pad_w, kernel_w_byte)
+            if bottom != top or right != left:
+                candidates.append((actual_kw, top, left, bottom, right))
 
     if not candidates:
         raise ValueError(

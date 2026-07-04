@@ -372,13 +372,28 @@ static void TestCnnExtendedOpsLoad(void)
     ExpectTrue(output_count == 2, "cnn extended ops output count");
 }
 
+static void ExpectModelTestsPass(const char* nk_path, const char* label)
+{
+    char message[128];
+    const nk_test_summary_t summary = nk_run_model_tests(nk_path);
+
+    snprintf(message, sizeof(message), "%s failed count", label);
+    ExpectTrue(summary.failed == 0, message);
+
+    snprintf(message, sizeof(message), "%s passed count", label);
+    ExpectTrue(summary.passed >= 1, message);
+}
+
 static void TestCompositeBlockLoad(void)
 {
-    printf("\n--- composite block load (C API) ---\n");
+    printf("\n--- composite / ONNX import load (C API) ---\n");
 
-    const nk_test_summary_t summary = nk_run_model_tests("models/resnet18_basic_block.nk");
-    ExpectTrue(summary.failed == 0, "resnet basic block regression via C API");
-    ExpectTrue(summary.passed >= 1, "resnet basic block passed count");
+    ExpectModelTestsPass("models/resnet18_basic_block.nk", "resnet18 basic block");
+    ExpectModelTestsPass("models/import_resnet_basic_block.nk", "import resnet basic block");
+    ExpectModelTestsPass("models/import_mobilenet_uib.nk", "import mobilenet uib");
+    ExpectModelTestsPass("models/import_mobilenet_uib_skip.nk", "import mobilenet uib skip");
+    ExpectModelTestsPass("models/import_convnextv2_block.nk", "import convnextv2 block");
+    ExpectModelTestsPass("models/import_asym_depthwise_conv.nk", "import asym depthwise conv");
 }
 
 static void TestRegression(void)
@@ -390,8 +405,8 @@ static void TestRegression(void)
 
     const nk_test_summary_t summary = nk_run_all_tests();
     ExpectTrue(summary.failed == 0, "regression failed count");
-    ExpectTrue(summary.passed == 71,
-               "regression passed count (71 embedded cases)");
+    ExpectTrue(summary.passed == 86,
+               "regression passed count (86 embedded cases)");
 #else
     printf("\n--- regression (skipped: NETKIT_TARGET is not cpu) ---\n");
 #endif

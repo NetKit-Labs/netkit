@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +20,7 @@ class FuseOptions:
     resnet_basic_block: bool = True
     mobilenetv4_uib: bool = True
     convnextv2_block: bool = True
+    verbose_fuse: bool = False
 
 
 _COMPOSITE_LAYER_TYPES = frozenset(
@@ -1095,6 +1097,13 @@ def fuse_composite_blocks(
                 if result is not None:
                     matched, tag = result, "mobilenetv4_uib"
             if matched is None:
+                if opts.verbose_fuse:
+                    layer_type = layers[index].spec.get("type", "?")
+                    print(
+                        f"packager fuse: no composite match at layer {index} "
+                        f"({layer_type}, shape={shape.height}x{shape.width}x{shape.channels})",
+                        file=sys.stderr,
+                    )
                 index += 1
                 continue
 

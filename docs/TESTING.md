@@ -10,9 +10,9 @@ netkit uses **GNU Make** as the primary build and test driver. **CMake** is opti
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
 make build-all    # cpu: netkit + examples + C API test binary; mcu/mpu: lib + examples + embedded_smoke
 make test         # C++ embedded regression + Python ONNX parity (cpu only)
-make test-cpp     # ./netkit test only (71 embedded .nk cases)
+make test-cpp     # ./netkit test only (86 embedded .nk cases)
 make test-c       # ./tests/test_c_api only
-make test-python  # ONNX parity (73) + AOT compile tests; requires libnetkit.a
+make test-python  # ONNX parity (76) + AOT compile tests; requires libnetkit.a
 make clean        # remove objects and binaries
 make rebuild      # clean + make
 
@@ -29,7 +29,7 @@ Embedded runtime-only builds: `make NETKIT_TARGET=mcu lib` or `make NETKIT_TARGE
 
 ## C++ regression (`.nk` loader + inference)
 
-Both `make test-cpp` and `make test-c` exercise the **same 71 embedded cases** via `run_all_tests()` / `nk_run_all_tests()`:
+Both `make test-cpp` and `make test-c` exercise the **same 86 embedded cases** via `run_all_tests()` / `nk_run_all_tests()`:
 
 | Suite | Cases | Source | Description |
 |-------|------:|--------|-------------|
@@ -38,17 +38,18 @@ Both `make test-cpp` and `make test-c` exercise the **same 71 embedded cases** v
 | MNIST MLP | 10 | `models/mnist_mlp.nk` | Trained 784→128→10 MLP (98.06% test acc) |
 | MNIST CNN | 10 | `models/mnist_cnn.nk` | Conv+pool+flatten+dense CNN (99.02% test acc) |
 | Op matrix | 17 | `models/op_matrix_mlp.nk`, `models/op_matrix_cnn.nk`, `models/cnn_extended_ops.nk`, `models/deep_mlp.nk` | Activation sweep, padded conv/pool, avg pool, batch norm |
+| ONNX import extensions | 27 | `models/import_*.nk` | Asymmetric conv/depthwise, UIB/ResNet/ConvNeXt ONNX import — [ONNX.md](ONNX.md) |
 | MobileNetV4 Small | 1 | `models/mobilenetv4_small.nk` | Full MNv4-Conv-Small backbone (22 layers, 56×56×3) — [MOBILENETV4.md](MOBILENETV4.md) |
 | ResNet-18 | 1 | `models/resnet18.nk` | Full ResNet-18 backbone (13 layers, 56×56×3) — [RESNET18.md](RESNET18.md) |
 | ConvNeXt V2-Atto | 1 | `models/convnextv2_atto.nk` | Full ConvNeXt V2-Atto backbone (24 layers, 32×32×3) — [CONVNEXTV2.md](CONVNEXTV2.md) |
 
-**Total: 71 passed** when healthy (`19` hand + `10` MNIST MLP + `10` MNIST CNN + `17` op matrix + `12` ONNX import extensions + `1` MobileNetV4 Small + `1` ResNet-18 + `1` ConvNeXt V2-Atto).
+**Total: 86 passed** when healthy (`19` hand + `10` MNIST MLP + `10` MNIST CNN + `17` op matrix + `27` ONNX import extensions + `1` MobileNetV4 Small + `1` ResNet-18 + `1` ConvNeXt V2-Atto).
 
 These tests validate **`.nk` parsing, weight loading, and forward inference** against reference outputs embedded in each file (`TCAS` section). See [NK_FORMAT.md](NK_FORMAT.md).
 
 ## Python ONNX parity
 
-`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (73 cases).
+`make test-python` runs `python/tests/test_onnx_parity.py`: replays embedded inputs through **`tools/nk_infer`** and **ONNX Runtime** on the matching `.onnx` file (76 cases).
 
 Requires **onnxruntime** for parity and **`make lib`** for AOT compile tests.
 
@@ -81,7 +82,7 @@ Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.n
 
 | Harness | In CI job? | Models | What it checks |
 |---------|:----------:|--------|----------------|
-| `make test` / `make test-cpp` | Yes | hand + MNIST + op-matrix + import extensions + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | Full `.nk` load + forward vs embedded TCAS expected outputs (**71 cases**) |
+| `make test` / `make test-cpp` | Yes | hand + MNIST + op-matrix + import extensions + MobileNetV4 / ResNet-18 / ConvNeXt V2 backbones | Full `.nk` load + forward vs embedded TCAS expected outputs (**86 cases**) |
 | `make test-c` | Yes | same via `nk_run_all_tests()` | C API parity with C++ regression |
 | `tests/embedded_smoke` / `make test-embedded-smoke-matrix` | No | `test_mlp.nk`, `cnn_4x4_single.nk` | Lean MCU/MPU runtime on host (`NETKIT_HOST_SMOKE=1`); run locally via `./tools/run_embedded_smoke.sh` |
 
@@ -157,7 +158,7 @@ Entry: `./tests/test_c_api` (C23).
 | Parse architecture | MLP and CNN `.nk` metadata |
 | Model load / run | `nk_model_load` + `nk_model_run` on hand MLP/CNN |
 | Hybrid CNN | `nk_parse_architecture` + `nk_cnn_load` on `mnist_cnn.nk` |
-| Full regression | `nk_run_all_tests()` — same **71** embedded cases as C++ |
+| Full regression | `nk_run_all_tests()` — same **86** embedded cases as C++ (`run_all_tests()` in `src/test.cpp`) |
 
 The C API regression path uses the same C++ runner internally (`nk_run_all_tests` → `run_all_tests`).
 

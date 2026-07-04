@@ -20,6 +20,7 @@ class OptimizeOptions:
     merge_linear_dense: bool = True
     remove_identity_batch_norm: bool = True
     fuse_composite: bool = False
+    verbose_fuse: bool = False
 
 
 @dataclass
@@ -391,13 +392,14 @@ def optimize_nk(
     applied: list[str] = []
 
     if opts.fuse_composite and current_arch.get("network") == "cnn":
-        from .nk_fuse import fuse_composite_blocks
+        from .nk_fuse import FuseOptions, fuse_composite_blocks
 
         fused = fuse_composite_blocks(
             current_arch,
             current_weights,
             atol=atol,
             verify_output=False,
+            options=FuseOptions(verbose_fuse=opts.verbose_fuse),
         )
         current_arch = fused.arch
         current_weights = fused.weights

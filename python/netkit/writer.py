@@ -135,7 +135,12 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
             pad_h_end = layer.pad_h_end or layer.pad_h
             pad_w_end = layer.pad_w_end or layer.pad_w
             kernel_w_byte = kw
-            if kh == kw and (pad_h_end != layer.pad_h or pad_w_end != layer.pad_w):
+            if kh != kw:
+                if pad_h_end != layer.pad_h or pad_w_end != layer.pad_w:
+                    kernel_w_byte = encode_pad_extra(
+                        layer.pad_h, layer.pad_w, pad_h_end, pad_w_end
+                    )
+            elif kh == kw and (pad_h_end != layer.pad_h or pad_w_end != layer.pad_w):
                 kernel_w_byte = encode_pad_extra(layer.pad_h, layer.pad_w, pad_h_end, pad_w_end)
             layer_bytes += pack_depthwise_conv_layer(
                 kernel_h=kh,

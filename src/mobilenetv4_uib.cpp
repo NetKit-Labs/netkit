@@ -123,6 +123,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                         static_cast<int>(start_dw_stride()),
                                         pad,
                                         pad,
+                                        pad,
+                                        pad,
                                         in_channels,
                                         NetkitKernelActivation::None,
                                         next);
@@ -174,6 +176,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                         middle_dw_kernel,
                                         middle_dw_kernel,
                                         static_cast<int>(middle_dw_stride()),
+                                        pad,
+                                        pad,
                                         pad,
                                         pad,
                                         static_cast<int>(expand_c),

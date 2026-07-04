@@ -668,3 +668,263 @@ def mobilenet_uib_fuse_result_to_primitives(
     expanded_arch, expanded_weights = expand_mobilenetv4_uib_to_linear(arch, weights)
     spec = _arch_to_spec(expanded_arch, expanded_weights)
     return spec.layers, spec.weight_tensors, spec.bias_tensors
+
+
+def _trace_through_layout(graph: OnnxGraph, tensor: str) -> str:
+    seen: set[str] = set()
+    while tensor not in seen:
+        seen.add(tensor)
+        node = graph.producer_node(tensor)
+        if node is None:
+            return tensor
+        if node.op_type in {"Transpose", "Identity", "Squeeze", "Unsqueeze"}:
+            tensor = node.input[0]
+            continue
+        return tensor
+    return tensor
+
+
+def _ancestor_node_indices(graph: OnnxGraph, tensor: str) -> set[int]:
+    from .onnx_graph import get_initializer
+
+    seen: set[int] = set()
+    stack = [tensor]
+    while stack:
+        current = stack.pop()
+        if current == graph.input_name:
+            continue
+        try:
+            get_initializer(graph, current)
+        except KeyError:
+            pass
+        else:
+            continue
+        idx = graph.producer_index(current)
+        if idx is None or idx in seen:
+            continue
+        seen.add(idx)
+        for inp in graph.node(idx).input:
+            stack.append(inp)
+    return seen
+
+
+def _trace_layernorm_from_tensor(
+    graph: OnnxGraph, tensor: str
+) -> tuple[int, np.ndarray, np.ndarray, float] | None:
+    from .onnx_graph import get_initializer
+
+    traced = _trace_through_layout(graph, tensor)
+    node = graph.producer_node(traced)
+    if node is None or node.op_type != "LayerNormalization":
+        return None
+    idx = graph.producers[node.output[0]]
+    scale = get_initializer(graph, node.input[1]).astype(np.float32).reshape(-1)
+    bias = get_initializer(graph, node.input[2]).astype(np.float32).reshape(-1)
+    eps = _attr_float(node, "epsilon", 1e-5)
+    return idx, scale, bias, eps
+
+
+def _parse_grn_params(graph: OnnxGraph, fc2_input: str) -> tuple[np.ndarray, np.ndarray] | None:
+    from .onnx_graph import get_initializer
+
+    traced = _trace_through_layout(graph, fc2_input)
+    add2 = graph.producer_node(traced)
+    if add2 is None or add2.op_type != "Add":
+        return None
+
+    add1_tensor = None
+    for inp in add2.input:
+        producer = graph.producer_node(_trace_through_layout(graph, inp))
+        if producer is not None and producer.op_type == "Add":
+            add1_tensor = inp
+            break
+    if add1_tensor is None:
+        return None
+
+    add1 = graph.producer_node(_trace_through_layout(graph, add1_tensor))
+    if add1 is None or add1.op_type != "Add":
+        return None
+
+    beta = None
+    mul2_tensor = None
+    for inp in add1.input:
+        try:
+            beta = get_initializer(graph, inp).astype(np.float32).reshape(-1)
+        except KeyError:
+            mul2_tensor = inp
+    if beta is None or mul2_tensor is None:
+        return None
+
+    mul2 = graph.producer_node(_trace_through_layout(graph, mul2_tensor))
+    if mul2 is None or mul2.op_type != "Mul":
+        return None
+
+    mul1_tensor = None
+    for inp in mul2.input:
+        producer = graph.producer_node(_trace_through_layout(graph, inp))
+        if producer is not None and producer.op_type == "Mul":
+            mul1_tensor = inp
+            break
+    if mul1_tensor is None:
+        return None
+
+    mul1 = graph.producer_node(_trace_through_layout(graph, mul1_tensor))
+    if mul1 is None or mul1.op_type != "Mul":
+        return None
+
+    gamma = None
+    for inp in mul1.input:
+        try:
+            gamma = get_initializer(graph, inp).astype(np.float32).reshape(-1)
+        except KeyError:
+            continue
+    if gamma is None:
+        return None
+    return gamma, beta
+
+
+def _trace_pre_gelu_conv(
+    graph: OnnxGraph, fc2_input: str
+) -> tuple[int, str, np.ndarray, np.ndarray | None] | None:
+    from .onnx_graph import trace_conv
+
+    traced = _trace_through_layout(graph, fc2_input)
+    add2 = graph.producer_node(traced)
+    if add2 is None or add2.op_type != "Add":
+        return None
+
+    gelu_tensor = add2.input[0]
+    current = _trace_through_layout(graph, gelu_tensor)
+    node = graph.producer_node(current)
+    while node is not None and node.op_type in {"Mul", "Add", "Div", "Erf"}:
+        current = _trace_through_layout(graph, node.input[0])
+        node = graph.producer_node(current)
+    return trace_conv(graph, current)
+
+
+def try_fuse_convnextv2_block(
+    graph: OnnxGraph,
+    add_index: int,
+    *,
+    spatial_h: int,
+    spatial_w: int,
+    in_channels: int,
+    block_input: str | None = None,
+) -> FuseResult | None:
+    from .onnx_graph import trace_conv
+
+    add_node = graph.node(add_index)
+    if add_node.op_type != "Add" or len(add_node.input) < 2:
+        return None
+
+    left, right = add_node.input[0], add_node.input[1]
+
+    left_main = trace_conv(graph, left)
+    right_main = trace_conv(graph, right)
+    if left_main is not None and right_main is None:
+        main_tensor, skip_tensor = left, right
+    elif right_main is not None and left_main is None:
+        main_tensor, skip_tensor = right, left
+    else:
+        return None
+
+    fc2 = trace_conv(graph, main_tensor)
+    if fc2 is None:
+        return None
+    fc2_idx, fc2_in, fc2_w, fc2_b = fc2
+    if int(fc2_w.shape[2]) != 1 or int(fc2_w.shape[3]) != 1:
+        return None
+
+    channels = int(in_channels)
+    expanded = channels * 4
+    if int(fc2_w.shape[0]) != channels or int(fc2_w.shape[1]) != expanded:
+        return None
+
+    grn = _parse_grn_params(graph, fc2_in)
+    if grn is None:
+        return None
+    grn_gamma, grn_beta = grn
+
+    fc1 = _trace_pre_gelu_conv(graph, fc2_in)
+    if fc1 is None:
+        return None
+    fc1_idx, fc1_in, fc1_w, fc1_b = fc1
+    if int(fc1_w.shape[2]) != 1 or int(fc1_w.shape[3]) != 1:
+        return None
+    if int(fc1_w.shape[0]) != expanded or int(fc1_w.shape[1]) != channels:
+        return None
+
+    ln = _trace_layernorm_from_tensor(graph, fc1_in)
+    if ln is None:
+        return None
+    ln_idx, ln_w, ln_b, eps = ln
+
+    ln_in = _trace_through_layout(graph, graph.node(ln_idx).input[0])
+    dw = trace_conv(graph, ln_in)
+    if dw is None:
+        return None
+    dw_idx, dw_in, dw_w, dw_b = dw
+    block_entry = _trace_through_layout(graph, skip_tensor)
+    if _trace_through_layout(graph, dw_in) != block_entry:
+        return None
+
+    dw_node = graph.node(dw_idx)
+    group = _attr_int(dw_node, "group", 1)
+    if group != channels or int(dw_w.shape[0]) != channels:
+        return None
+    kh = int(dw_w.shape[2])
+    kw = int(dw_w.shape[3])
+    if kh != 7 or kw != 7:
+        return None
+
+    main_ancestors = _ancestor_node_indices(graph, main_tensor)
+    entry_ancestors = _ancestor_node_indices(graph, block_entry)
+    consumed = (main_ancestors - entry_ancestors) | {add_index}
+
+    weight_tensors: list[np.ndarray] = [
+        _onnx_depthwise_conv_to_netkit(dw_w.astype(np.float32)),
+        ln_w,
+        _onnx_conv_to_netkit(fc1_w.astype(np.float32)),
+        grn_gamma,
+        _onnx_conv_to_netkit(fc2_w.astype(np.float32)),
+    ]
+    bias_tensors: list[np.ndarray] = [
+        dw_b.astype(np.float32) if dw_b is not None else np.zeros(channels, dtype=np.float32),
+        ln_b,
+        fc1_b.astype(np.float32) if fc1_b is not None else np.zeros(expanded, dtype=np.float32),
+        grn_beta,
+        fc2_b.astype(np.float32) if fc2_b is not None else np.zeros(channels, dtype=np.float32),
+    ]
+
+    return FuseResult(
+        layer=LayerSpec(kind="convnextv2_block", channels=channels, eps=eps),
+        weight_tensors=weight_tensors,
+        bias_tensors=bias_tensors,
+        consumed_indices=consumed,
+        out_channels=channels,
+        spatial_h=spatial_h,
+        spatial_w=spatial_w,
+    )
+
+
+def convnext_fuse_result_to_primitives(
+    fused: FuseResult,
+) -> tuple[list[LayerSpec], list[np.ndarray], list[np.ndarray]]:
+    """Expand a fused ConvNeXt V2 block into primitive depthwise / layernorm / conv layers."""
+    from .arch_writer import _arch_to_spec
+    from .nk_fuse import expand_convnextv2_block_to_linear
+
+    layer = fused.layer
+    arch = {
+        "network": "cnn",
+        "input": [fused.spatial_h, fused.spatial_w, layer.channels],
+        "layers": [{"type": "convnextv2_block", "channels": layer.channels, "eps": layer.eps}],
+    }
+    parts: list[np.ndarray] = []
+    for w, b in zip(fused.weight_tensors, fused.bias_tensors):
+        parts.append(np.asarray(w, dtype=np.float32).reshape(-1))
+        parts.append(np.asarray(b, dtype=np.float32).reshape(-1))
+    weights = np.concatenate(parts).astype(np.float32)
+    expanded_arch, expanded_weights = expand_convnextv2_block_to_linear(arch, weights)
+    spec = _arch_to_spec(expanded_arch, expanded_weights)
+    return spec.layers, spec.weight_tensors, spec.bias_tensors

@@ -72,7 +72,11 @@ On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP acceler
 
 **Depthwise conv** is **2D-only** in the API (`DepthwiseConv2D`, NHWC `[H,W,C]`, weights `[C,Kh,Kw]`). **1D** along time/height is expressed as a degenerate 2D kernel (e.g. `kernel_h=5`, `kernel_w=1` on input `[T,1,C]`). See [NK_FORMAT.md](NK_FORMAT.md) and `python/README.md`.
 
-**Fused blocks** (ResNet BasicBlock, MobileNetV4 UIB, ConvNeXt V2) route internal BN, ReLU, FC, LayerNorm, GELU, GRN, and residual adds through `fused_kernel_ops.hpp` → `Kernels::`, so CMSIS applies when enabled.
+**Fused blocks** (ResNet BasicBlock, MobileNetV4 UIB, ConvNeXt V2) route internal BN, ReLU, FC, LayerNorm, GELU, GRN, and residual adds through `fused_kernel_ops.hpp` → `Kernels::`, so CMSIS applies when enabled. Composite blocks do not introduce separate CMSIS entry points — they delegate to the same `Try*` paths as primitives. When CMSIS-NN rejects a case (e.g. depthwise conv with asymmetric padding), the reference kernel handles it automatically.
+
+### Arena sizing for composite models
+
+Fused blocks increase per-layer scratch (ConvNeXt V2 GRN norms, UIB ping-pong paths) but **ping-pong activation buffers** still dominate peak memory. Size firmware arenas from **`./netkit inspect models/your_model.nk --full`** (or `nk_inspect_model(..., full=1)`): use **arena bytes after forward** plus 1.5–2× headroom. Composite backbones (`resnet18.nk`, `mobilenetv4_small.nk`, `convnextv2_atto.nk`) typically need **multi‑MiB** CPU heap arenas; see [ARENA.md](ARENA.md#choosing-arena-size).
 
 ## Dispatch pattern
 

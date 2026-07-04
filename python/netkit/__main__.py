@@ -28,6 +28,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable packager graph optimizations (BN fold, conv+BN merge, linear dense merge)",
     )
+    convert.add_argument(
+        "--verbose-fuse",
+        action="store_true",
+        help="Log ONNX/packager composite fusion attempts that do not match",
+    )
 
     pack = sub.add_parser("pack", help="Pack PyTorch backbone checkpoint to .nk")
     pack.add_argument(
@@ -89,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output,
             fuse_composite=not args.no_fuse,
             optimize=not args.no_optimize,
+            verbose_fuse=args.verbose_fuse,
         )
         print(f"Wrote {out}")
         return 0

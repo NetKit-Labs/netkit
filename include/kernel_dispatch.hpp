@@ -197,24 +197,29 @@ namespace detail
                                int stride,
                                int pad_h,
                                int pad_w,
+                               int pad_h_end,
+                               int pad_w_end,
                                int channels,
                                NetkitKernelActivation fuse_activation,
                                Tensor& output)
     {
         if constexpr (NkAcceleratedKernel<LayerFast>)
         {
-            if (LayerFast::TryDepthwiseConv2dForward(input,
-                                                     weights,
-                                                     bias,
-                                                     kernel_h,
-                                                     kernel_w,
-                                                     stride,
-                                                     pad_h,
-                                                     pad_w,
-                                                     channels,
-                                                     fuse_activation,
-                                                     output))
-                return true;
+            if (pad_h_end == pad_h && pad_w_end == pad_w)
+            {
+                if (LayerFast::TryDepthwiseConv2dForward(input,
+                                                         weights,
+                                                         bias,
+                                                         kernel_h,
+                                                         kernel_w,
+                                                         stride,
+                                                         pad_h,
+                                                         pad_w,
+                                                         channels,
+                                                         fuse_activation,
+                                                         output))
+                    return true;
+            }
         }
         return ReferenceKernel::DepthwiseConv2dForwardImpl(input,
                                                            weights,
@@ -224,6 +229,8 @@ namespace detail
                                                            stride,
                                                            pad_h,
                                                            pad_w,
+                                                           pad_h_end,
+                                                           pad_w_end,
                                                            channels,
                                                            fuse_activation,
                                                            output);
@@ -406,6 +413,8 @@ namespace detail
                                                int stride,
                                                int pad_h,
                                                int pad_w,
+                                               int pad_h_end,
+                                               int pad_w_end,
                                                int channels,
                                                NetkitKernelActivation fuse_activation,
                                                Tensor& output)
@@ -418,6 +427,8 @@ namespace detail
                                                     stride,
                                                     pad_h,
                                                     pad_w,
+                                                    pad_h_end,
+                                                    pad_w_end,
                                                     channels,
                                                     fuse_activation,
                                                     output);

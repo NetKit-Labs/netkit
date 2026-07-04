@@ -80,6 +80,11 @@ NkRegression::RunSummary run_all_tests()
     merge(NkRegression::RunModelTests("models/import_rect_pool.nk"));
     merge(NkRegression::RunModelTests("models/import_matmul_mlp.nk"));
     merge(NkRegression::RunModelTests("models/import_cnn_matmul_head.nk"));
+    merge(NkRegression::RunModelTests("models/import_asym_depthwise_conv.nk"));
+    merge(NkRegression::RunModelTests("models/import_resnet_basic_block.nk"));
+    merge(NkRegression::RunModelTests("models/import_mobilenet_uib.nk"));
+    merge(NkRegression::RunModelTests("models/import_mobilenet_uib_skip.nk"));
+    merge(NkRegression::RunModelTests("models/import_convnextv2_block.nk"));
 
     NkRegression::EndRegressionArena();
 

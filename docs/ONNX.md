@@ -68,7 +68,11 @@ python -m netkit convert model.onnx --no-fuse   # import ResNet blocks as conv+b
 python -m netkit convert model.onnx --no-fuse --no-optimize   # fully primitive output
 ```
 
-Fixtures: `models/import_resnet_basic_block.{onnx,nk}` (timm export → primitive import → packager fuse), `models/import_mobilenet_uib.{onnx,nk}` (stride-2 UIB without skip), and `models/import_mobilenet_uib_skip.{onnx,nk}` (UIB with residual Add).
+Fixtures: `models/import_resnet_basic_block.{onnx,nk}` (timm export → primitive import → packager fuse), `models/import_mobilenet_uib.{onnx,nk}` (stride-2 UIB without skip), `models/import_mobilenet_uib_skip.{onnx,nk}` (UIB with residual Add), and `models/import_convnextv2_block.{onnx,nk}` (timm ConvNeXt block → ONNX-side `convnextv2_block` fusion).
+
+**Composite fusion diagnostics:** pass `--verbose-fuse` to `python -m netkit convert` to log ONNX Add-node and packager layer fusion attempts that do not match a composite pattern.
+
+**Full-backbone ONNX round-trip** (timm `forward_features` → convert → ORT vs `nk_infer`) is supported by `tools/write_import_parity_models.py` helpers `build_import_*_backbone()`; ResNet-18 full import still needs weight-layout fixes before parity fixtures ship in CI.
 
 **Timm `pack` (no ONNX round-trip):** ResNet-18, MobileNetV4-Conv-Small, and ConvNeXt V2-Atto emit fused composite layers (`resnet_basic_block`, `mobilenetv4_uib`, `convnextv2_block`) directly from PyTorch checkpoints:
 
@@ -84,8 +88,8 @@ Requires `pip install -e "python[train]"` (torch + timm).
 
 | Suite | What it validates |
 |-------|-------------------|
-| C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (71 cases) |
-| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (73 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
+| C++ `make test-cpp` / `make test-c` | **`.nk` loader + inference** against embedded `TCAS` cases in each model (86 cases) |
+| Python `make test-python` | **`.nk` runtime vs ONNX Runtime** on embedded inputs (76 cases); **AOT compile** tests (C/C++ from `.nk`, requires `make lib`) |
 
 ```bash
 make                          # build netkit CLI

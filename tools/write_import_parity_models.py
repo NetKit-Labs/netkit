@@ -42,6 +42,25 @@ def _case(name: str, inp: list[float], arch: dict, weights: np.ndarray) -> Regre
     return RegressionCase(name=name, input=inp, expected=expected)
 
 
+def _case_from_ort(
+    name: str,
+    inp: np.ndarray,
+    *,
+    onnx_path: Path,
+    input_shape: list[int],
+) -> RegressionCase:
+    import onnxruntime as ort
+
+    h, w, c = input_shape
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    input_name = session.get_inputs()[0].name
+    nchw = inp.reshape(1, c, h, w).astype(np.float32)
+    raw = np.asarray(session.run(None, {input_name: nchw})[0], dtype=np.float32)
+    if raw.ndim == 4:
+        raw = np.transpose(raw, (0, 2, 3, 1))
+    return RegressionCase(name=name, input=inp.tolist(), expected=raw.reshape(-1))
+
+
 def build_asym_conv() -> tuple[Path, Path, RegressionSuite]:
     """Single conv with asymmetric ONNX pads [1,1,2,1] (top, left, bottom, right)."""
     onnx_path = MODELS / "import_asym_conv.onnx"
@@ -374,6 +393,131 @@ def build_import_resnet_basic_block() -> tuple[Path, Path, RegressionSuite]:
     return onnx_path, nk_path, suite
 
 
+def build_import_convnextv2_block() -> tuple[Path, Path, RegressionSuite]:
+    """Real timm ConvNeXt V2 block ONNX → ONNX-side convnextv2_block fusion."""
+    import torch
+    import timm
+
+    onnx_path = MODELS / "import_convnextv2_block.onnx"
+    nk_path = MODELS / "import_convnextv2_block.nk"
+
+    backbone = timm.create_model("convnextv2_atto", pretrained=False, num_classes=10)
+    backbone.eval()
+    block = backbone.stages[0].blocks[0]
+
+    class OneBlock(torch.nn.Module):
+        def __init__(self, module: torch.nn.Module) -> None:
+            super().__init__()
+            self.block = module
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.block(x)
+
+    dummy = torch.randn(1, 40, 8, 8)
+    _export_torch_onnx(OneBlock(block), dummy, onnx_path)
+    convert_onnx_to_nk(
+        onnx_path,
+        nk_path,
+        fuse_composite=True,
+        optimize=False,
+        packager_fuse=False,
+    )
+
+    arch, weights = read_nk(nk_path)
+    assert arch["layers"][0]["type"] == "convnextv2_block"
+    rng = np.random.default_rng(42)
+    h, w, c = arch["input"]
+    inputs = [
+        ("uniform", rng.standard_normal(h * w * c).astype(np.float32) * 0.1),
+        ("ramp", np.linspace(-0.5, 0.5, h * w * c, dtype=np.float32)),
+        ("sparse", np.array([0.0, 1.0, 0.0] + [0.0] * (h * w * c - 3), dtype=np.float32)),
+    ]
+    suite = RegressionSuite(
+        tolerance=1e-4,
+        cases=[_case(name, inp.tolist(), arch, weights) for name, inp in inputs],
+    )
+    return onnx_path, nk_path, suite
+
+
+def _export_backbone_onnx(
+    arch_name: str,
+    *,
+    height: int,
+    width: int,
+) -> tuple[Path, Path]:
+    """Export timm forward_features ONNX and convert to .nk (ONNX-side composite fusion)."""
+    import torch
+    import timm
+
+    timm_names = {
+        "resnet18": "resnet18",
+        "mobilenetv4_small": "mobilenetv4_conv_small",
+        "convnextv2_atto": "convnextv2_atto",
+    }
+    onnx_path = MODELS / f"import_{arch_name}_backbone.onnx"
+    nk_path = MODELS / f"import_{arch_name}_backbone.nk"
+
+    backbone = timm.create_model(timm_names[arch_name], pretrained=False, num_classes=10)
+    backbone.eval()
+
+    class FeaturesOnly(torch.nn.Module):
+        def __init__(self, module: torch.nn.Module) -> None:
+            super().__init__()
+            self.module = module
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.module.forward_features(x)
+
+    dummy = torch.randn(1, 3, height, width)
+    _export_torch_onnx(FeaturesOnly(backbone), dummy, onnx_path)
+    convert_onnx_to_nk(
+        onnx_path,
+        nk_path,
+        fuse_composite=True,
+        optimize=False,
+        packager_fuse=False,
+    )
+    return onnx_path, nk_path
+
+
+def build_import_backbone(
+    arch_name: str,
+    *,
+    height: int,
+    width: int,
+    samples: int = 2,
+) -> tuple[Path, Path, RegressionSuite]:
+    onnx_path, nk_path = _export_backbone_onnx(arch_name, height=height, width=width)
+    arch, weights = read_nk(nk_path)
+    rng = np.random.default_rng(17)
+    h, w, c = arch["input"]
+    flat = h * w * c
+    inputs = [
+        ("uniform", rng.standard_normal(flat).astype(np.float32) * 0.1),
+        ("ramp", np.linspace(-0.2, 0.2, flat, dtype=np.float32)),
+    ][:samples]
+    suite = RegressionSuite(
+        tolerance=1e-3,
+        cases=[
+            _case_from_ort(name, inp, onnx_path=onnx_path, input_shape=arch["input"])
+            for name, inp in inputs
+        ],
+    )
+    return onnx_path, nk_path, suite
+
+
+def build_import_resnet18_backbone() -> tuple[Path, Path, RegressionSuite]:
+    return build_import_backbone("resnet18", height=56, width=56)
+
+
+def build_import_mobilenetv4_backbone() -> tuple[Path, Path, RegressionSuite]:
+    return build_import_backbone("mobilenetv4_small", height=56, width=56)
+
+
+def build_import_convnextv2_atto_backbone() -> tuple[Path, Path, RegressionSuite]:
+    return build_import_backbone("convnextv2_atto", height=32, width=32)
+
+
 def build_import_mobilenet_uib() -> tuple[Path, Path, RegressionSuite]:
     """Real timm MobileNetV4 UIB export (stride-2, no residual Add)."""
     import torch
@@ -436,6 +580,7 @@ def main() -> None:
         build_import_resnet_basic_block,
         build_import_mobilenet_uib,
         build_import_mobilenet_uib_skip,
+        build_import_convnextv2_block,
     ]
     for builder in builders:
         _onnx, nk_path, suite = builder()

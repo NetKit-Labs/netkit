@@ -342,6 +342,8 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                                                  int stride,
                                                  int pad_h,
                                                  int pad_w,
+                                                 int /*pad_h_end*/,
+                                                 int /*pad_w_end*/,
                                                  int channels,
                                                  NetkitKernelActivation /*fuse_activation*/,
                                                  Tensor& output)

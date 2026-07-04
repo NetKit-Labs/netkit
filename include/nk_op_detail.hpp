@@ -75,6 +75,20 @@ namespace nk_op_detail
             const uint32_t literal_kw = kw_byte ? kw_byte : kernel_h;
             if (static_cast<std::size_t>(kernel_h) * literal_kw == kernel_area)
                 candidates.push_back(literal(literal_kw));
+            if ((kernel_area % kernel_h) == 0)
+            {
+                const uint32_t actual_kw = static_cast<uint32_t>(kernel_area / kernel_h);
+                if (actual_kw != kernel_h &&
+                    static_cast<std::size_t>(kernel_h) * kw_byte != kernel_area)
+                {
+                    DepthwiseMeta meta{};
+                    meta.kernel_h = kernel_h;
+                    meta.kernel_w = actual_kw;
+                    DecodeConvPadExtra(layer.pad_h, layer.pad_w, kw_byte, meta.pad_h_end, meta.pad_w_end);
+                    if (meta.pad_h_end != pad_h || meta.pad_w_end != pad_w)
+                        candidates.push_back(meta);
+                }
+            }
             if (!candidates.empty())
                 return candidates.front();
         }

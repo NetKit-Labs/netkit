@@ -30,6 +30,8 @@ void ConvNeXtV2Block::forward(const Tensor& input, Tensor& output)
                                     1,
                                     kDwPad,
                                     kDwPad,
+                                    kDwPad,
+                                    kDwPad,
                                     channels,
                                     NetkitKernelActivation::None,
                                     output);
