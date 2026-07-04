@@ -118,6 +118,7 @@ Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. **Only `NK_DT
 | `NK_CNN_BLOCK_CONVNEXTV2_BLOCK` | `ConvNeXtV2Block` |
 | `NK_CNN_BLOCK_MOBILENETV4_UIB` | `MobilenetV4Uib` |
 | `NK_CNN_BLOCK_RESNET_BASIC_BLOCK` | `ResNetBasicBlock` |
+| `NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD` | `YoloxDecoupledHead` |
 
 Numeric values match C++ `CnnBlockType` member order (starting at 0).
 
@@ -298,6 +299,7 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_cnn_init_convnextv2_block_layer` | `CNNNetwork::InitConvNeXtV2BlockLayer` |
 | `nk_cnn_init_mobilenetv4_uib_layer` | `CNNNetwork::InitMobilenetV4UibLayer` |
 | `nk_cnn_init_resnet_basic_block_layer` | `CNNNetwork::InitResNetBasicBlockLayer` |
+| `nk_cnn_init_yolox_decoupled_head_layer` | `CNNNetwork::InitYoloxDecoupledHeadLayer` |
 | `nk_cnn_init_flatten_layer` | `CNNNetwork::InitFlattenLayer` |
 | `nk_cnn_init_dense_layer` | `CNNNetwork::InitDenseLayer` |
 | `nk_cnn_init_activation_buffers` | `CNNNetwork::InitActivationBuffers` |

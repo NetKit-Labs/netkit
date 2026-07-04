@@ -833,6 +833,53 @@ nk_status_t nk_cnn_init_resnet_basic_block_layer(nk_cnn_t* cnn,
     return NK_OK;
 }
 
+nk_status_t nk_cnn_init_yolox_decoupled_head_layer(nk_cnn_t* cnn,
+                                                 nk_arena_t* arena,
+                                                 uint32_t layer_idx,
+                                                 uint32_t spatial_h,
+                                                 uint32_t spatial_w,
+                                                 int in_channels,
+                                                 int hidden_dim,
+                                                 int num_classes,
+                                                 int num_convs,
+                                                 float* stem_weights,
+                                                 float* stem_bias,
+                                                 float* const* cls_conv_weights,
+                                                 float* const* cls_conv_bias,
+                                                 float* const* reg_conv_weights,
+                                                 float* const* reg_conv_bias,
+                                                 float* cls_pred_weights,
+                                                 float* cls_pred_bias,
+                                                 float* reg_pred_weights,
+                                                 float* reg_pred_bias,
+                                                 float* obj_pred_weights,
+                                                 float* obj_pred_bias)
+{
+    if (!nk_cnn_is_valid(cnn) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    CnnPtr(cnn)->net->InitYoloxDecoupledHeadLayer(layer_idx,
+                                                 *ArenaPtr(arena),
+                                                 spatial_h,
+                                                 spatial_w,
+                                                 in_channels,
+                                                 hidden_dim,
+                                                 num_classes,
+                                                 num_convs,
+                                                 stem_weights,
+                                                 stem_bias,
+                                                 cls_conv_weights,
+                                                 cls_conv_bias,
+                                                 reg_conv_weights,
+                                                 reg_conv_bias,
+                                                 cls_pred_weights,
+                                                 cls_pred_bias,
+                                                 reg_pred_weights,
+                                                 reg_pred_bias,
+                                                 obj_pred_weights,
+                                                 obj_pred_bias);
+    return NK_OK;
+}
+
 nk_status_t nk_cnn_init_flatten_layer(nk_cnn_t* cnn, uint32_t layer_idx)
 {
     if (!nk_cnn_is_valid(cnn))

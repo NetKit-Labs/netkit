@@ -115,7 +115,8 @@ typedef enum nk_cnn_block_type
     NK_CNN_BLOCK_DENSE,
     NK_CNN_BLOCK_CONVNEXTV2_BLOCK,
     NK_CNN_BLOCK_MOBILENETV4_UIB,
-    NK_CNN_BLOCK_RESNET_BASIC_BLOCK
+    NK_CNN_BLOCK_RESNET_BASIC_BLOCK,
+    NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD
 } nk_cnn_block_type_t;
 
 /* -------------------------------------------------------------------------- */
@@ -415,6 +416,28 @@ nk_status_t nk_cnn_init_resnet_basic_block_layer(nk_cnn_t* cnn,
                                                  float* shortcut_bias,
                                                  float* shortcut_bn_scale,
                                                  float* shortcut_bn_bias);
+
+nk_status_t nk_cnn_init_yolox_decoupled_head_layer(nk_cnn_t* cnn,
+                                                 nk_arena_t* arena,
+                                                 uint32_t layer_idx,
+                                                 uint32_t spatial_h,
+                                                 uint32_t spatial_w,
+                                                 int in_channels,
+                                                 int hidden_dim,
+                                                 int num_classes,
+                                                 int num_convs,
+                                                 float* stem_weights,
+                                                 float* stem_bias,
+                                                 float* const* cls_conv_weights,
+                                                 float* const* cls_conv_bias,
+                                                 float* const* reg_conv_weights,
+                                                 float* const* reg_conv_bias,
+                                                 float* cls_pred_weights,
+                                                 float* cls_pred_bias,
+                                                 float* reg_pred_weights,
+                                                 float* reg_pred_bias,
+                                                 float* obj_pred_weights,
+                                                 float* obj_pred_bias);
 
 nk_status_t nk_cnn_init_flatten_layer(nk_cnn_t* cnn, uint32_t layer_idx);
 

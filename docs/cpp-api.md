@@ -261,6 +261,9 @@ public:
                                  int in_channels, int out_channels, /* UIB config + weights */);
     void InitResNetBasicBlockLayer(uint32_t layer_idx, Arena& arena, uint32_t spatial_h, uint32_t spatial_w,
                                    int in_channels, int out_channels, int stride, /* conv/BN weights */);
+    void InitYoloxDecoupledHeadLayer(uint32_t layer_idx, Arena& arena, uint32_t spatial_h, uint32_t spatial_w,
+                                     int in_channels, int hidden_dim, int num_classes, int num_convs,
+                                     /* stem/branch/pred weight pointers */);
     void InitFlattenLayer(uint32_t layer_idx);
     void InitDenseLayer(uint32_t layer_idx, const Tensor& W, const Tensor& b,
                         ActivationType activation, float leaky_alpha = 0.01f);

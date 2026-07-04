@@ -92,6 +92,8 @@ Python: `python/tests/test_yolox_detector.py` (run via `make test-python`).
 
 C++: `src/test.cpp` includes both `.nk` fixtures (**88** total embedded cases across the suite).
 
+C API: `nk_cnn_init_yolox_decoupled_head_layer` mirrors `CNNNetwork::InitYoloxDecoupledHeadLayer` for manual construction (`NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD` = 11). File load uses `nk_model_load` / `nk_model_run` as usual. Smoke test: `tests/test_c_api.c` (`TestManualYoloxDecoupledHeadLayer`, `yolox_head_only.nk` in composite load pass).
+
 ## Limitations (Phase 1)
 
 - **Single scale only** — no FPN/PAN multi-stride neck

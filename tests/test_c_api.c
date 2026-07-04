@@ -394,6 +394,96 @@ static void TestCompositeBlockLoad(void)
     ExpectModelTestsPass("models/import_mobilenet_uib_skip.nk", "import mobilenet uib skip");
     ExpectModelTestsPass("models/import_convnextv2_block.nk", "import convnextv2 block");
     ExpectModelTestsPass("models/import_asym_depthwise_conv.nk", "import asym depthwise conv");
+    ExpectModelTestsPass("models/yolox_head_only.nk", "yolox head only");
+}
+
+static void TestManualYoloxDecoupledHeadLayer(void)
+{
+    printf("\n--- manual yolox decoupled head layer ---\n");
+
+    ExpectTrue(NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD == 11, "yolox block enum value");
+
+    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    nk_cnn_t cnn;
+    ExpectStatus(nk_cnn_create(&arena, 1, &cnn), NK_OK, "cnn create for yolox head");
+
+    static float weights[1024];
+    for (size_t i = 0; i < sizeof(weights) / sizeof(weights[0]); ++i)
+        weights[i] = 0.0f;
+
+    float* cls_conv_w[1] = {weights};
+    float* cls_conv_b[1] = {weights};
+    float* reg_conv_w[1] = {weights};
+    float* reg_conv_b[1] = {weights};
+
+    ExpectStatus(nk_cnn_init_yolox_decoupled_head_layer(&cnn,
+                                                        &arena,
+                                                        0,
+                                                        2,
+                                                        2,
+                                                        4,
+                                                        8,
+                                                        2,
+                                                        1,
+                                                        weights,
+                                                        weights,
+                                                        cls_conv_w,
+                                                        cls_conv_b,
+                                                        reg_conv_w,
+                                                        reg_conv_b,
+                                                        weights,
+                                                        weights,
+                                                        weights,
+                                                        weights,
+                                                        weights,
+                                                        weights),
+                 NK_OK,
+                 "yolox head init");
+
+    ExpectStatus(nk_cnn_init_yolox_decoupled_head_layer(NULL,
+                                                        &arena,
+                                                        0,
+                                                        2,
+                                                        2,
+                                                        4,
+                                                        8,
+                                                        2,
+                                                        1,
+                                                        weights,
+                                                        weights,
+                                                        cls_conv_w,
+                                                        cls_conv_b,
+                                                        reg_conv_w,
+                                                        reg_conv_b,
+                                                        weights,
+                                                        weights,
+                                                        weights,
+                                                        weights,
+                                                        weights,
+                                                        weights),
+                 NK_ERR_INVALID_ARGUMENT,
+                 "yolox head init null cnn");
+
+    ExpectStatus(nk_cnn_init_activation_buffers(&cnn, &arena, 2, 2, 4),
+                 NK_OK,
+                 "yolox head activation buffers");
+    ExpectTrue(nk_cnn_has_activation_buffers(&cnn), "yolox head buffers ready");
+
+    uint32_t input_shape[3] = {2, 2, 4};
+    nk_tensor_t input_tensor;
+    nk_tensor_t output_tensor = {0};
+
+    ExpectStatus(nk_tensor_create_nd(&arena, 3, input_shape, &input_tensor),
+                 NK_OK,
+                 "yolox head input tensor");
+    ExpectStatus(nk_cnn_forward(&cnn, &arena, &input_tensor, &output_tensor),
+                 NK_OK,
+                 "yolox head forward");
+    ExpectTrue(output_tensor.rank == 3, "yolox head output rank");
+    ExpectTrue(output_tensor.num_elements == 28, "yolox head output elements");
 }
 
 static void TestRegression(void)
@@ -433,6 +523,7 @@ int main(void)
     TestManualMlpActivationBuffers();
     TestCnnLoadHasBuffers();
     TestCnnExtendedOpsLoad();
+    TestManualYoloxDecoupledHeadLayer();
     TestCompositeBlockLoad();
     TestRegression();
 

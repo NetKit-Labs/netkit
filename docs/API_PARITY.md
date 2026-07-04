@@ -139,6 +139,7 @@ Both suites exercise the same **88 embedded `.nk` inference cases**; `nk_run_all
 | `InitConvNeXtV2BlockLayer` | `nk_cnn_init_convnextv2_block_layer` |
 | `InitMobilenetV4UibLayer` | `nk_cnn_init_mobilenetv4_uib_layer` |
 | `InitResNetBasicBlockLayer` | `nk_cnn_init_resnet_basic_block_layer` |
+| `InitYoloxDecoupledHeadLayer` | `nk_cnn_init_yolox_decoupled_head_layer` |
 | `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |
 | `InitActivationBuffers` | `nk_cnn_init_activation_buffers` |
