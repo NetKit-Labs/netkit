@@ -152,17 +152,31 @@ def _peek_fused_activation(
         return Activation.NONE, 0.01, 0
 
     nxt = nodes[index + 1]
-    if nxt.op_type == "Relu":
+    return _activation_from_node(nxt, initializers)
+
+
+def _activation_at(
+    nodes, index: int, initializers: dict[str, np.ndarray]
+) -> tuple[Activation, float, int]:
+    if index >= len(nodes):
+        return Activation.NONE, 0.01, 0
+    return _activation_from_node(nodes[index], initializers)
+
+
+def _activation_from_node(
+    node, initializers: dict[str, np.ndarray]
+) -> tuple[Activation, float, int]:
+    if node.op_type == "Relu":
         return Activation.RELU, 0.01, 1
-    if nxt.op_type == "Softmax":
+    if node.op_type == "Softmax":
         return Activation.SOFTMAX, 0.01, 1
-    if nxt.op_type == "Sigmoid":
+    if node.op_type == "Sigmoid":
         return Activation.SIGMOID, 0.01, 1
-    if nxt.op_type == "Tanh":
+    if node.op_type == "Tanh":
         return Activation.TANH, 0.01, 1
-    if nxt.op_type == "LeakyRelu":
-        return Activation.LEAKY_RELU, _attr_float(nxt, "alpha", 0.01), 1
-    if nxt.op_type == "Clip" and _clip_is_relu6(nxt, initializers):
+    if node.op_type == "LeakyRelu":
+        return Activation.LEAKY_RELU, _attr_float(node, "alpha", 0.01), 1
+    if node.op_type == "Clip" and _clip_is_relu6(node, initializers):
         return Activation.RELU6, 0.01, 1
     return Activation.NONE, 0.01, 0
 
@@ -188,8 +202,15 @@ def _optional_bias_graph(graph, node) -> np.ndarray | None:
     return graph.initializers.get(name)
 
 
-def _has_graph_branches(nodes) -> bool:
-    return any(node.op_type == "Add" for node in nodes)
+def _has_graph_branches(nodes, initializers: dict[str, np.ndarray]) -> bool:
+    """True when the graph has residual/skip Add nodes, not fused MatMul/Gemm bias adds."""
+    for node in nodes:
+        if node.op_type != "Add":
+            continue
+        if len(node.input) >= 2 and node.input[1] in initializers:
+            continue
+        return True
+    return False
 
 
 def _peek_fused_activation_graph(graph, node_index: int) -> tuple[Activation, float, set[int]]:
@@ -242,7 +263,7 @@ def _emit_cnn_primitive(
     weight_tensors: list[np.ndarray] = []
     bias_tensors: list[np.ndarray] = []
 
-    if node.op_type in {"Identity", "Dropout"}:
+    if node.op_type in {"Identity", "Dropout", "Reshape", "Squeeze", "Unsqueeze", "Transpose"}:
         consumed.add(node_index)
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
@@ -392,6 +413,23 @@ def _emit_cnn_primitive(
         consumed.add(node_index)
         return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
 
+    if node.op_type == "MatMul":
+        if node.input[1] not in initializers:
+            raise ValueError("MatMul weight must be an initializer for CNN import")
+        weight = initializers[node.input[1]]
+        packed_w, out_features = _matmul_weight_to_netkit(weight)
+        bias, bias_nodes = _peek_fused_bias_add_graph(graph, node_index, initializers)
+        consumed.update(bias_nodes)
+        layers.append(
+            LayerSpec(kind="dense", units=out_features, activation=activation, alpha=alpha)
+        )
+        weight_tensors.append(packed_w)
+        bias_tensors.append(
+            bias.astype(np.float32) if bias is not None else np.zeros(out_features, dtype=np.float32)
+        )
+        consumed.add(node_index)
+        return layers, weight_tensors, bias_tensors, spatial_h, spatial_w, channels, consumed
+
     if node.op_type == "Add":
         raise ValueError(
             "unsupported Add node — enable composite fusion or simplify the ONNX graph"
@@ -446,7 +484,16 @@ def _primitive_shape_delta(
         return spatial_h, spatial_w, channels
     if node.op_type == "GlobalAveragePool":
         return 1, 1, channels
-    if node.op_type in {"BatchNormalization", "Flatten", "Gemm", "Reshape", "Squeeze", "Unsqueeze"}:
+    if node.op_type in {
+        "BatchNormalization",
+        "Flatten",
+        "Gemm",
+        "MatMul",
+        "Reshape",
+        "Squeeze",
+        "Unsqueeze",
+        "Transpose",
+    }:
         return spatial_h, spatial_w, channels
     return None
 
@@ -552,6 +599,20 @@ def _peek_fused_bias_add(
     return initializers[bias_name].astype(np.float32).reshape(-1), 1
 
 
+def _peek_fused_bias_add_graph(
+    graph, node_index: int, initializers: dict[str, np.ndarray]
+) -> tuple[np.ndarray | None, set[int]]:
+    if node_index + 1 >= len(graph.nodes):
+        return None, set()
+    nxt = graph.node(node_index + 1)
+    if nxt.op_type != "Add" or len(nxt.input) < 2:
+        return None, set()
+    bias_name = nxt.input[1]
+    if bias_name not in initializers:
+        return None, set()
+    return initializers[bias_name].astype(np.float32).reshape(-1), {node_index + 1}
+
+
 def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> ModelSpec:
     model = onnx.load(onnx_path)
     network, input_shape = _resolve_input_shape(model)
@@ -587,8 +648,10 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
                     raise ValueError("MatMul weight must be an initializer for MLP import")
                 weight = initializers[node.input[1]]
                 packed_w, out_features = _matmul_weight_to_netkit(weight)
-                bias, bias_skip = _peek_fused_bias_add(nodes, i + act_skip, initializers)
-                i += 1 + act_skip + bias_skip
+                bias, bias_skip = _peek_fused_bias_add(nodes, i, initializers)
+                post_bias = i + 1 + bias_skip
+                activation, alpha, act_skip = _activation_at(nodes, post_bias, initializers)
+                i = post_bias + act_skip
             else:
                 raise ValueError(f"unsupported ONNX op for MLP: {node.op_type}")
 
@@ -609,7 +672,7 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             bias_tensors=bias_tensors,
         )
 
-    if network == "cnn" and fuse_composite and _has_graph_branches(nodes):
+    if network == "cnn" and fuse_composite and _has_graph_branches(nodes, initializers):
         return _onnx_to_spec_cnn_fused(model)
 
     # CNN (linear scan)
@@ -623,7 +686,7 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             i += 1
             continue
 
-        if node.op_type in {"Reshape", "Squeeze", "Unsqueeze", "Identity", "Dropout"}:
+        if node.op_type in {"Reshape", "Squeeze", "Unsqueeze", "Identity", "Dropout", "Transpose"}:
             i += 1
             continue
 
@@ -785,6 +848,23 @@ def onnx_to_spec(onnx_path: str | Path, *, fuse_composite: bool = True) -> Model
             i += 1 + skip
             continue
 
+        if node.op_type == "MatMul":
+            if node.input[1] not in initializers:
+                raise ValueError("MatMul weight must be an initializer for CNN import")
+            weight = initializers[node.input[1]]
+            packed_w, out_features = _matmul_weight_to_netkit(weight)
+            bias, bias_skip = _peek_fused_bias_add(nodes, i + skip, initializers)
+            layers.append(
+                LayerSpec(kind="dense", units=out_features, activation=activation, alpha=alpha)
+            )
+            weight_tensors.append(packed_w)
+            bias_tensors.append(
+                bias.astype(np.float32) if bias is not None else np.zeros(out_features, dtype=np.float32)
+            )
+            dense_in = out_features
+            i += 1 + skip + bias_skip
+            continue
+
         raise ValueError(f"unsupported ONNX op for CNN: {node.op_type}")
 
     return ModelSpec(
@@ -811,8 +891,20 @@ def convert_onnx_to_nk(
     output_path = Path(output_path) if output_path else onnx_path.with_suffix(".nk")
     spec = onnx_to_spec(onnx_path, fuse_composite=fuse_composite)
     if optimize:
+        from .nk_optimize import OptimizeOptions
+
         arch, weights = read_nk_bytes(write_nk_bytes(spec))
-        opt = optimize_nk(arch, weights)
+        opt = optimize_nk(
+            arch,
+            weights,
+            options=OptimizeOptions(fuse_composite=fuse_composite),
+        )
         spec = _arch_to_spec(opt.arch, opt.weights)
+    elif fuse_composite:
+        from .nk_fuse import fuse_composite_blocks
+
+        arch, weights = read_nk_bytes(write_nk_bytes(spec))
+        fused = fuse_composite_blocks(arch, weights)
+        spec = _arch_to_spec(fused.arch, fused.weights)
     write_nk(output_path, spec)
     return output_path

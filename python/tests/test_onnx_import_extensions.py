@@ -88,6 +88,44 @@ def test_matmul_mlp_import():
         assert len(out) == 3
 
 
+def test_cnn_matmul_head_import():
+    with tempfile.TemporaryDirectory() as tmp:
+        onnx_path = Path(tmp) / "cnn_head.onnx"
+        nk_path = Path(tmp) / "cnn_head.nk"
+        x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 1, 4, 4])
+        y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 2])
+        w_conv = numpy_helper.from_array(np.ones((1, 1, 3, 3), dtype=np.float32), "w_conv")
+        b_conv = numpy_helper.from_array(np.zeros((1,), dtype=np.float32), "b_conv")
+        conv = helper.make_node(
+            "Conv",
+            ["x", "w_conv", "b_conv"],
+            ["conv"],
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[1, 1, 1, 1],
+        )
+        flat = helper.make_node("Flatten", ["conv"], ["flat"], axis=1)
+        shape = numpy_helper.from_array(np.array([1, 16], dtype=np.int64), "shape")
+        reshape = helper.make_node("Reshape", ["flat", "shape"], ["rs"])
+        w_head = numpy_helper.from_array(np.eye(16, 2, dtype=np.float32), "w_head")
+        b_head = numpy_helper.from_array(np.zeros(2, dtype=np.float32), "b_head")
+        mm = helper.make_node("MatMul", ["rs", "w_head"], ["mm"])
+        add = helper.make_node("Add", ["mm", "b_head"], ["y"])
+        graph = helper.make_graph(
+            [conv, flat, reshape, mm, add],
+            "g",
+            [x],
+            [y],
+            [w_conv, b_conv, shape, w_head, b_head],
+        )
+        onnx.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)]), str(onnx_path))
+        convert_onnx_to_nk(onnx_path, nk_path, optimize=False)
+        arch, weights = read_nk(nk_path)
+        assert arch["layers"][-1]["type"] == "dense"
+        out = forward_cnn(np.ones(16, dtype=np.float32), arch, weights)
+        assert len(out) == 2
+
+
 def test_convert_runs_optimize_by_default():
     with tempfile.TemporaryDirectory() as tmp:
         onnx_path = Path(tmp) / "avg_bn.onnx"

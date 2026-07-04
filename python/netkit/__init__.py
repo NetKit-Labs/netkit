@@ -2,6 +2,7 @@
 
 from .aot_compile import AotCompileResult, AotLanguage, compile_aot
 from .arch_writer import write_nk_from_arch
+from .nk_fuse import FuseArchResult, FuseOptions, fuse_composite_blocks
 from .nk_optimize import OptimizeOptions, OptimizeResult, optimize_nk
 from .onnx_convert import convert_onnx_to_nk
 from .inspect import inspect_nk
@@ -13,6 +14,9 @@ __all__ = [
     "AotLanguage",
     "compile_aot",
     "convert_onnx_to_nk",
+    "fuse_composite_blocks",
+    "FuseArchResult",
+    "FuseOptions",
     "inspect_nk",
     "optimize_nk",
     "OptimizeOptions",

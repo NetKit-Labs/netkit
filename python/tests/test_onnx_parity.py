@@ -24,9 +24,13 @@ PARITY_PAIRS = [
     ("deep_mlp.nk", "deep_mlp.onnx"),
     ("mnist_mlp.nk", "mnist_mlp.onnx"),
     ("mnist_cnn.nk", "mnist_cnn.onnx"),
+    ("import_asym_conv.nk", "import_asym_conv.onnx"),
+    ("import_rect_pool.nk", "import_rect_pool.onnx"),
+    ("import_matmul_mlp.nk", "import_matmul_mlp.onnx"),
+    ("import_cnn_matmul_head.nk", "import_cnn_matmul_head.onnx"),
 ]
 
-EXPECTED_CASES = 49
+EXPECTED_CASES = 61
 
 
 def _nk_infer_bin() -> Path:
@@ -140,6 +144,7 @@ class TestOnnxParity(unittest.TestCase):
                     passed += 1
 
         self.assertEqual(passed, expected)
+        self.assertEqual(passed, EXPECTED_CASES)
 
 
 if __name__ == "__main__":

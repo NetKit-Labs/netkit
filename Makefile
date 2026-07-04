@@ -347,6 +347,9 @@ export-op-matrix:
 	PYTHONPATH=python python3 tools/write_op_matrix_models.py
 	PYTHONPATH=python python3 tools/export_onnx_test_models.py
 
+export-import-parity:
+	PYTHONPATH=python python3 tools/write_import_parity_models.py
+
 export-onnx-test:
 	PYTHONPATH=python python3 tools/export_onnx_test_models.py
 

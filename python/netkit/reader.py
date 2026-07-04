@@ -183,7 +183,11 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     for w, b in zip(weight_arrays, bias_arrays):
         flat_parts.append(w.reshape(-1))
         flat_parts.append(b.reshape(-1))
-    flat_weights = np.concatenate(flat_parts).astype(np.float32)
+    flat_weights = (
+        np.concatenate(flat_parts).astype(np.float32)
+        if flat_parts
+        else np.array([], dtype=np.float32)
+    )
 
     arch = _layers_to_arch(network, input_shape, layers)
     return arch, flat_weights

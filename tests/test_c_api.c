@@ -390,8 +390,8 @@ static void TestRegression(void)
 
     const nk_test_summary_t summary = nk_run_all_tests();
     ExpectTrue(summary.failed == 0, "regression failed count");
-    ExpectTrue(summary.passed == 59,
-               "regression passed count (59 embedded cases)");
+    ExpectTrue(summary.passed == 71,
+               "regression passed count (71 embedded cases)");
 #else
     printf("\n--- regression (skipped: NETKIT_TARGET is not cpu) ---\n");
 #endif

@@ -39,6 +39,10 @@ MODEL_NKS = [
     "deep_mlp.nk",
     "mnist_mlp.nk",
     "mnist_cnn.nk",
+    "import_asym_conv.nk",
+    "import_rect_pool.nk",
+    "import_matmul_mlp.nk",
+    "import_cnn_matmul_head.nk",
 ]
 
 

@@ -77,7 +77,7 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 | Kind | Value | Extra fields |
 |------|------:|--------------|
 | `dense` | 1 | `units u32`, `activation u8`, pad×3, `alpha f32` |
-| `conv2d` | 2 | `kernel u32`, `stride u32`, `filters u32`, `activation u8`, `pad_h u8`, `pad_w u8`, `reserved u8`, `alpha f32` |
+| `conv2d` | 2 | `kernel u32`, `stride u32`, `filters u32`, `activation u8`, `pad_h u8`, `pad_w u8`, `pad_extra u8`, `alpha f32` |
 | `depthwise_conv2d` | 7 | `kernel_h u32`, `stride u32`, `channels u32`, `activation u8`, `pad_h u8`, `pad_w u8`, `kernel_w u8`, `alpha f32` |
 | `max_pool2d` | 3 | `pool_size u32`, `stride u32`, `pad_h u8`, `pad_w u8`, `reserved u16` |
 | `flatten` | 4 | (none) |
@@ -117,6 +117,31 @@ Example depthwise conv weight: `rank=3`, `dims=[C,Kh,Kw]` per channel.
 **1D depthwise:** there is no separate `depthwise_conv1d` kind. Use `depthwise_conv2d` with independent `kernel_h` / `kernel_w`. For a sequence axis of length `T` with `W=1`, set input shape `[T,1,C]` and e.g. `kernel_h=5`, `kernel_w=1`, `pad_h=2`, `pad_w=0` (weights `[C,5,1]`).
 
 Example conv weight: `rank=4`, `dims=[O,Kh,Kw,I]` in **netkit** layout `[out, kernel, kernel, in_channels]`.
+
+### Asymmetric padding and non-square pools
+
+ONNX `pads` are four values `(top, left, bottom, right)`. The `.nk` format stores **top/left** in `pad_h` / `pad_w` and packs **extra bottom/right** into a single byte so symmetric padding stays backward compatible.
+
+**Conv2D `pad_extra` byte** (field named `kernel_w` in depthwise layers — do not reuse there):
+
+| Nibble | Meaning |
+|--------|---------|
+| low 4 bits | `pad_h_end - pad_h` (extra bottom padding, 0–15) |
+| high 4 bits | `pad_w_end - pad_w` (extra right padding, 0–15) |
+
+Decode: `pad_h_end = pad_h + (pad_extra & 0xF)`, `pad_w_end = pad_w + ((pad_extra >> 4) & 0xF)`.
+
+Output height/width use per-side padding: `(size + pad_before + pad_after - kernel) // stride + 1`.
+
+**Pool `reserved u16`** (max/avg pool):
+
+| Bits | Meaning |
+|------|---------|
+| low 8 bits | `pool_w` when different from `pool_size` (`pool_h`); `0` means square kernel |
+| bits 8–11 | extra bottom padding (`pad_h_end - pad_h`) |
+| bits 12–15 | extra right padding (`pad_w_end - pad_w`) |
+
+Python encode/decode: `python/netkit/pad_encoding.py` (`encode_pad_extra`, `encode_pool_reserved`). C++: `include/nk_op_detail.hpp` (`DecodeConvPadExtra`, `DecodePoolMeta`).
 
 ## Payload
 

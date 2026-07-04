@@ -443,6 +443,8 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                     alpha=alpha,
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
+                    pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                    pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
                 )
             )
         elif layer_type == "depthwise_conv2d":
@@ -468,6 +470,9 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                     stride=layer.get("stride", layer["pool_size"]),
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
+                    pool_w=layer.get("pool_w", layer["pool_size"]),
+                    pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                    pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
                 )
             )
         elif layer_type == "avg_pool2d":
@@ -478,6 +483,9 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                     stride=layer.get("stride", layer["pool_size"]),
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
+                    pool_w=layer.get("pool_w", layer["pool_size"]),
+                    pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                    pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
                 )
             )
         elif layer_type == "batch_norm2d":

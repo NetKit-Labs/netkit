@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from .cnn_layers import depthwise_kernel_hw
 from .reference_forward import forward_cnn, forward_mlp, pack_cnn_weights, pack_mlp_weights
 
 
@@ -18,6 +19,7 @@ class OptimizeOptions:
     fold_batch_norm_into_dense: bool = True
     merge_linear_dense: bool = True
     remove_identity_batch_norm: bool = True
+    fuse_composite: bool = False
 
 
 @dataclass
@@ -100,6 +102,20 @@ def _decompose_cnn(arch: dict[str, Any], weights: np.ndarray) -> tuple[list[_Gra
             height = _out_dim(height, k, stride, pad_h)
             width = _out_dim(width, k, stride, pad_w)
             channels = out_c
+        elif layer_type == "depthwise_conv2d":
+            kh, kw = depthwise_kernel_hw(layer)
+            stride = layer.get("stride", 1)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            ch = layer["filters"]
+            kernel_elems = kh * kw * ch
+            w = weights[offset : offset + kernel_elems].reshape(ch, kh, kw).copy()
+            offset += kernel_elems
+            b = weights[offset : offset + ch].copy()
+            offset += ch
+            layers.append(_GraphLayer(spec=dict(layer), tensors=_TensorPair(weight=w, bias=b)))
+            height = _out_dim(height, kh, stride, pad_h)
+            width = _out_dim(width, kw, stride, pad_w)
         elif layer_type in {"max_pool2d", "avg_pool2d"}:
             pool = layer["pool_size"]
             stride = layer.get("stride", pool)
@@ -152,7 +168,7 @@ def _compose_cnn(arch: dict[str, Any], layers: list[_GraphLayer]) -> tuple[dict[
         layer_type = layer.spec["type"]
         if layer_type in {"max_pool2d", "avg_pool2d", "flatten"}:
             tensors.append(None)
-        elif layer_type in {"conv2d", "batch_norm2d", "dense"}:
+        elif layer_type in {"conv2d", "depthwise_conv2d", "batch_norm2d", "dense"}:
             assert layer.tensors.weight is not None and layer.tensors.bias is not None
             tensors.append((layer.tensors.weight, layer.tensors.bias))
         else:
@@ -185,6 +201,13 @@ def _simulate_shape(arch: dict[str, Any]) -> dict[int, _ShapeState]:
             height = _out_dim(height, k, stride, pad_h)
             width = _out_dim(width, k, stride, pad_w)
             channels = layer["filters"]
+        elif layer_type == "depthwise_conv2d":
+            kh, kw = depthwise_kernel_hw(layer)
+            stride = layer.get("stride", 1)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            height = _out_dim(height, kh, stride, pad_h)
+            width = _out_dim(width, kw, stride, pad_w)
         elif layer_type in {"max_pool2d", "avg_pool2d"}:
             pool = layer["pool_size"]
             stride = layer.get("stride", pool)
@@ -323,6 +346,17 @@ def _forward(arch: dict[str, Any], weights: np.ndarray, flat_input: np.ndarray) 
     return np.asarray(forward_cnn(flat_input, arch, weights), dtype=np.float32)
 
 
+def _optimization_passes_enabled(opts: OptimizeOptions) -> bool:
+    return any(
+        (
+            opts.fold_conv_batch_norm,
+            opts.fold_batch_norm_into_dense,
+            opts.merge_linear_dense,
+            opts.remove_identity_batch_norm,
+        )
+    )
+
+
 def optimize_nk(
     arch: dict[str, Any],
     weights: np.ndarray,
@@ -347,7 +381,7 @@ def optimize_nk(
     current_weights = weights
     applied: list[str] = []
 
-    while True:
+    while _optimization_passes_enabled(opts):
         layers, _ = _decompose(current_arch, current_weights)
         changed = False
         if opts.remove_identity_batch_norm and _remove_identity_batch_norm(layers):
@@ -380,5 +414,18 @@ def optimize_nk(
         if name not in seen:
             seen.add(name)
             unique_applied.append(name)
+
+    if opts.fuse_composite and current_arch.get("network") == "cnn":
+        from .nk_fuse import fuse_composite_blocks
+
+        fused = fuse_composite_blocks(
+            current_arch,
+            current_weights,
+            atol=atol,
+            verify_output=False,
+        )
+        current_arch = fused.arch
+        current_weights = fused.weights
+        unique_applied.extend(fused.applied)
 
     return OptimizeResult(arch=current_arch, weights=current_weights, applied=unique_applied)

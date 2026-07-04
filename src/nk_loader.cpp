@@ -61,8 +61,16 @@ namespace NkLoader
                     case NkFormat::LayerKind::Conv2D:
                     {
                         const NkFormat::ConvLayerDesc& layer = model.layers[i].conv;
-                        h = (h + 2 * layer.pad_h - layer.kernel_size) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - layer.kernel_size) / layer.stride + 1;
+                        int pad_h_end = static_cast<int>(layer.pad_h);
+                        int pad_w_end = static_cast<int>(layer.pad_w);
+                        nk_op_detail::DecodeConvPadExtra(
+                            layer.pad_h, layer.pad_w, layer.kernel_w, pad_h_end, pad_w_end);
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, static_cast<int>(layer.kernel_size), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_h), pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, static_cast<int>(layer.kernel_size), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_w), pad_w_end);
                         c = layer.filters;
                         features = h * w * c;
                         break;
@@ -81,8 +89,13 @@ namespace NkLoader
                     case NkFormat::LayerKind::AvgPool2D:
                     {
                         const NkFormat::PoolLayerDesc& layer = model.layers[i].pool;
-                        h = (h + 2 * layer.pad_h - layer.pool_size) / layer.stride + 1;
-                        w = (w + 2 * layer.pad_w - layer.pool_size) / layer.stride + 1;
+                        const nk_op_detail::PoolMeta pool_meta = nk_op_detail::DecodePoolMeta(layer);
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, pool_meta.pool_h, static_cast<int>(layer.stride), pool_meta.pad_h,
+                            pool_meta.pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, pool_meta.pool_w, static_cast<int>(layer.stride), pool_meta.pad_w,
+                            pool_meta.pad_w_end);
                         features = h * w * c;
                         break;
                     }
@@ -657,6 +670,13 @@ namespace NkLoader
 
             if (!blob || blob_size < needed)
                 return Fail(LoadStatus::TruncatedFile, ".nk buffer too small for payload");
+
+            if (total_bytes == 0)
+            {
+                weights = nullptr;
+                biases = nullptr;
+                return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
+            }
 
             float* storage = static_cast<float*>(arena.alloc(total_bytes, alignof(float)));
             if (!storage)
@@ -1824,12 +1844,17 @@ namespace NkLoader
         const std::size_t biases_bytes = parsed.header.biases_bytes;
         const std::size_t total_bytes = weights_bytes + biases_bytes;
 
-        float* storage = static_cast<float*>(arena.alloc(total_bytes, alignof(float)));
-        if (!storage)
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
+        float* weights = nullptr;
+        float* biases = nullptr;
+        if (total_bytes > 0)
+        {
+            float* storage = static_cast<float*>(arena.alloc(total_bytes, alignof(float)));
+            if (!storage)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
 
-        float* weights = storage;
-        float* biases = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(storage) + weights_bytes);
+            weights = storage;
+            biases = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(storage) + weights_bytes);
+        }
 
         std::FILE* file = std::fopen(nk_path, "rb");
         if (!file)
@@ -1900,12 +1925,17 @@ namespace NkLoader
         const std::size_t biases_bytes = parsed.header.biases_bytes;
         const std::size_t total_bytes = weights_bytes + biases_bytes;
 
-        float* storage = static_cast<float*>(arena.alloc(total_bytes, alignof(float)));
-        if (!storage)
-            return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
+        float* weights = nullptr;
+        float* biases = nullptr;
+        if (total_bytes > 0)
+        {
+            float* storage = static_cast<float*>(arena.alloc(total_bytes, alignof(float)));
+            if (!storage)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
 
-        float* weights = storage;
-        float* biases = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(storage) + weights_bytes);
+            weights = storage;
+            biases = reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(storage) + weights_bytes);
+        }
 
         std::FILE* file = std::fopen(nk_path, "rb");
         if (!file)

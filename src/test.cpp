@@ -73,6 +73,14 @@ NkRegression::RunSummary run_all_tests()
     merge(NkRegression::RunModelTests("models/cnn_extended_ops.nk"));
     merge(NkRegression::RunModelTests("models/deep_mlp.nk"));
 
+    std::cout << "\n============================\n";
+    std::cout << " ONNX IMPORT EXTENSION TESTS\n";
+    std::cout << "============================\n";
+    merge(NkRegression::RunModelTests("models/import_asym_conv.nk"));
+    merge(NkRegression::RunModelTests("models/import_rect_pool.nk"));
+    merge(NkRegression::RunModelTests("models/import_matmul_mlp.nk"));
+    merge(NkRegression::RunModelTests("models/import_cnn_matmul_head.nk"));
+
     NkRegression::EndRegressionArena();
 
     return total;
