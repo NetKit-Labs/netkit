@@ -45,3 +45,9 @@ void CmsisBumpDepthwiseConv2dWorkspace(uint32_t in_h,
                                        int channels);
 
 void CmsisBumpGeluWorkspace(uint32_t num_elements);
+
+void CmsisBumpConv2dIm2ColWorkspace(uint32_t out_h,
+                                    uint32_t out_w,
+                                    uint32_t kernel_h,
+                                    uint32_t kernel_w,
+                                    uint32_t in_channels);

@@ -203,6 +203,10 @@ public:
 
     // Hidden layers use ping-pong buffers allocated at load; final layer writes to output
     void forward(const Tensor& input, Tensor& output, Arena& arena);
+
+    // Benchmark-only: same as forward but invokes timing_fn(layer_idx, tag, elapsed_us, user_data) per layer
+    void forward_timed(const Tensor& input, Tensor& output, LayerTimingFn timing_fn, void* user_data);
+
     MLPLayer& GetLayer(uint32_t idx);
 };
 ```

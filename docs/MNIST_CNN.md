@@ -39,6 +39,10 @@ The MNIST CNN suite uses a **4 MiB** dedicated arena in `src/nk_regression.cpp`.
 
 Part of `make test` / `./netkit test` — see [TESTING.md](TESTING.md).
 
+## Benchmarks
+
+Same 10 TCAS vectors as the MLP suite; compared against TFLM in [benchmark/README.md](../benchmark/README.md). CNN invoke and per-op profile tables (Conv2D vs pool vs FC) are produced by `./benchmark/compare.sh`. On host builds both runtimes use reference conv kernels — CMSIS-NN applies only on MCU targets.
+
 ## Regenerating
 
 ```bash

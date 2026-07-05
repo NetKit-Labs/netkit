@@ -185,7 +185,8 @@ namespace detail
                                             in_channels,
                                             out_channels,
                                             fuse_activation,
-                                            output);
+                                            output,
+                                            nullptr);
     }
 
     template<typename LayerFast>
@@ -251,7 +252,22 @@ namespace detail
         else if constexpr (NkAcceleratedKernel<VectorFast>)
         {
             if (VectorFast::TryFullyConnectedWithBias(input, weights, bias, output))
+            {
+                if (kernel_activation_is_fused(fuse_activation))
+                {
+                    if (fuse_activation == NetkitKernelActivation::ReLU)
+                    {
+                        if (VectorFast::TryClip(output, output, 0.0f, FLT_MAX))
+                            return true;
+                    }
+                    else if (fuse_activation == NetkitKernelActivation::ReLU6)
+                    {
+                        if (VectorFast::TryClip(output, output, 0.0f, 6.0f))
+                            return true;
+                    }
+                }
                 return false;
+            }
         }
         return ReferenceKernel::FullyConnectedWithBiasImpl(input, weights, bias, fuse_activation, output);
     }
@@ -387,22 +403,45 @@ namespace detail
                                       int stride,
                                       int pad_h,
                                       int pad_w,
+                                      int pad_h_end,
+                                      int pad_w_end,
                                       int in_channels,
                                       int out_channels,
                                       NetkitKernelActivation fuse_activation,
                                       Tensor& output)
         {
-            return TryLayerConv<LayerFast>(input,
-                                             weights,
-                                             bias,
-                                             kernel_size,
-                                             stride,
-                                             pad_h,
-                                             pad_w,
-                                             in_channels,
-                                             out_channels,
-                                             fuse_activation,
-                                             output);
+            if constexpr (NkAcceleratedKernel<LayerFast>)
+            {
+                if (pad_h_end == pad_h && pad_w_end == pad_w)
+                {
+                    if (LayerFast::TryConv2dForward(input,
+                                                    weights,
+                                                    bias,
+                                                    kernel_size,
+                                                    stride,
+                                                    pad_h,
+                                                    pad_w,
+                                                    in_channels,
+                                                    out_channels,
+                                                    fuse_activation,
+                                                    output))
+                        return true;
+                }
+            }
+            return ReferenceKernel::Conv2dForwardImpl(input,
+                                                      weights,
+                                                      bias,
+                                                      kernel_size,
+                                                      stride,
+                                                      pad_h,
+                                                      pad_w,
+                                                      pad_h_end,
+                                                      pad_w_end,
+                                                      in_channels,
+                                                      out_channels,
+                                                      fuse_activation,
+                                                      output,
+                                                      nullptr);
         }
 
         static bool DepthwiseConv2dForwardImpl(const Tensor& input,
@@ -435,40 +474,54 @@ namespace detail
         }
 
         static void MaxPool2dForwardImpl(const Tensor& input,
-                                         int pool_size,
+                                         int pool_h,
+                                         int pool_w,
                                          int stride,
                                          int pad_h,
                                          int pad_w,
+                                         int pad_h_end,
+                                         int pad_w_end,
                                          Tensor& output)
         {
             if constexpr (NkAcceleratedKernel<LayerFast>)
             {
-                if (!LayerFast::TryMaxPool2dForward(
-                        input, pool_size, stride, pad_h, pad_w, NetkitKernelActivation::None, output))
-                    ReferenceKernel::MaxPool2dForwardImpl(
-                        input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
+                if (pad_h_end == pad_h && pad_w_end == pad_w && pool_h == pool_w)
+                {
+                    if (LayerFast::TryMaxPool2dForward(input,
+                                                       pool_h,
+                                                       stride,
+                                                       pad_h,
+                                                       pad_w,
+                                                       NetkitKernelActivation::None,
+                                                       output))
+                        return;
+                }
             }
-            else
-                ReferenceKernel::MaxPool2dForwardImpl(
-                    input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
+            ReferenceKernel::MaxPool2dForwardImpl(
+                input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
         }
 
         static void AvgPool2dForwardImpl(const Tensor& input,
-                                         int pool_size,
+                                         int pool_h,
+                                         int pool_w,
                                          int stride,
                                          int pad_h,
                                          int pad_w,
+                                         int pad_h_end,
+                                         int pad_w_end,
                                          Tensor& output)
         {
             if constexpr (NkAcceleratedKernel<LayerFast>)
             {
-                if (!LayerFast::TryAvgPool2dForward(input, pool_size, stride, pad_h, pad_w, output))
-                    ReferenceKernel::AvgPool2dForwardImpl(
-                        input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
+                if (pad_h_end == pad_h && pad_w_end == pad_w && pool_h == pool_w)
+                {
+                    if (LayerFast::TryAvgPool2dForward(
+                            input, pool_h, stride, pad_h, pad_w, output))
+                        return;
+                }
             }
-            else
-                ReferenceKernel::AvgPool2dForwardImpl(
-                    input, pool_size, pool_size, stride, pad_h, pad_w, pad_h, pad_w, output);
+            ReferenceKernel::AvgPool2dForwardImpl(
+                input, pool_h, pool_w, stride, pad_h, pad_w, pad_h_end, pad_w_end, output);
         }
 
         static void BatchNorm2dForwardImpl(const Tensor& input,

@@ -1,8 +1,235 @@
 #include "reference_kernel.hpp"
+#include "conv2d_layout.hpp"
+#include "kernel_activation.hpp"
 #include "netkit_loop_unroll.hpp"
 #include "tensor_access.hpp"
 #include <cmath>
 #include <cfloat>
+
+namespace
+{
+    float BiasAt(const Tensor& bias, uint32_t out_channel)
+    {
+        if (!bias.data)
+            return 0.0f;
+
+        const float* bias_data = static_cast<const float*>(bias.data);
+        if (bias.rank == 1)
+            return bias_data[out_channel * bias.stride[0]];
+
+        return bias_data[out_channel * bias.stride[1]];
+    }
+
+    float ConvOutputValue(float sum, NetkitKernelActivation fuse_activation)
+    {
+        return ApplyKernelActivation(sum, fuse_activation);
+    }
+
+    bool fc_tensors_dense_row_major(const Tensor& input,
+                                    const Tensor& weights,
+                                    const Tensor& bias,
+                                    const Tensor& output)
+    {
+        if (input.rank != 2 || weights.rank != 2 || output.rank != 2 || bias.rank != 2 || !bias.data)
+            return false;
+
+        const uint32_t batch = input.shape[0];
+        const uint32_t in_features = input.shape[1];
+        const uint32_t out_features = weights.shape[0];
+
+        if (weights.shape[1] != in_features || output.shape[0] != batch || output.shape[1] != out_features ||
+            bias.shape[0] != 1 || bias.shape[1] != out_features)
+            return false;
+
+        return input.stride[0] == in_features && input.stride[1] == 1 && weights.stride[0] == in_features &&
+               weights.stride[1] == 1 && output.stride[0] == out_features && output.stride[1] == 1 &&
+               bias.stride[0] == out_features && bias.stride[1] == 1;
+    }
+
+    bool fully_connected_dense_with_bias(const float* in,
+                                         const float* wt,
+                                         const float* bias,
+                                         float* out,
+                                         uint32_t batch,
+                                         uint32_t in_features,
+                                         uint32_t out_features,
+                                         NetkitKernelActivation fuse_activation)
+    {
+        const bool fuse_in_kernel = kernel_activation_is_fused(fuse_activation);
+
+        for (uint32_t b = 0; b < batch; ++b)
+        {
+            const float* in_row = in + b * in_features;
+            float* out_row = out + b * out_features;
+
+            for (uint32_t oc = 0; oc < out_features; ++oc)
+            {
+                const float sum =
+                    NetkitLoopUnroll::dot_contiguous(in_row, wt + oc * in_features, in_features);
+                const float value = ApplyKernelActivation(sum + bias[oc], fuse_activation);
+                out_row[oc] = value;
+            }
+        }
+
+        return fuse_in_kernel;
+    }
+
+    bool conv_padding_zero(int pad_h, int pad_w, int pad_h_end, int pad_w_end)
+    {
+        return pad_h == 0 && pad_w == 0 && pad_h_end == 0 && pad_w_end == 0;
+    }
+
+    bool Conv2dForward3x3S1P0(const float* in,
+                               float* weights,
+                               const float* bias,
+                               float* out,
+                               uint32_t in_w,
+                               uint32_t in_ch,
+                               uint32_t out_h,
+                               uint32_t out_w,
+                               uint32_t out_ch,
+                               int out_channels,
+                               NetkitKernelActivation fuse_activation)
+    {
+        const uint32_t filter_elems = 9u * in_ch;
+
+        for (uint32_t oh = 0; oh < out_h; ++oh)
+        {
+            const uint32_t ih0 = oh;
+            const uint32_t in_row0 = ih0 * in_w;
+            const uint32_t in_row1 = (ih0 + 1u) * in_w;
+            const uint32_t in_row2 = (ih0 + 2u) * in_w;
+
+            for (uint32_t ow = 0; ow < out_w; ++ow)
+            {
+                const uint32_t iw0 = ow;
+                const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
+
+                for (int oc = 0; oc < out_channels; ++oc)
+                {
+                    const float* filter = weights + static_cast<uint32_t>(oc) * filter_elems;
+                    float sum = bias ? bias[oc] : 0.0f;
+
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row0 + iw0) * in_ch, filter + 0u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row0 + iw0 + 1u) * in_ch, filter + 1u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row0 + iw0 + 2u) * in_ch, filter + 2u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row1 + iw0) * in_ch, filter + 3u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row1 + iw0 + 1u) * in_ch, filter + 4u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row1 + iw0 + 2u) * in_ch, filter + 5u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row2 + iw0) * in_ch, filter + 6u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row2 + iw0 + 1u) * in_ch, filter + 7u * in_ch, in_ch);
+                    sum += NetkitLoopUnroll::dot_contiguous(
+                        in + (in_row2 + iw0 + 2u) * in_ch, filter + 8u * in_ch, in_ch);
+
+                    out[out_spatial_base + static_cast<uint32_t>(oc)] =
+                        ConvOutputValue(sum, fuse_activation);
+                }
+            }
+        }
+
+        return kernel_activation_is_fused(fuse_activation);
+    }
+
+    bool Conv2dForwardNoPad(const float* in,
+                            float* weights,
+                            const float* bias,
+                            float* out,
+                            uint32_t in_w,
+                            uint32_t in_ch,
+                            uint32_t out_h,
+                            uint32_t out_w,
+                            uint32_t out_ch,
+                            int kernel_size,
+                            int stride,
+                            int out_channels,
+                            NetkitKernelActivation fuse_activation)
+    {
+        const uint32_t k_kernel = static_cast<uint32_t>(kernel_size);
+        const uint32_t filter_spatial = k_kernel * k_kernel;
+
+        for (uint32_t oh = 0; oh < out_h; ++oh)
+        {
+            const uint32_t ih_base = static_cast<uint32_t>(oh) * static_cast<uint32_t>(stride);
+
+            for (uint32_t ow = 0; ow < out_w; ++ow)
+            {
+                const uint32_t iw_base = static_cast<uint32_t>(ow) * static_cast<uint32_t>(stride);
+                const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
+
+                for (int oc = 0; oc < out_channels; ++oc)
+                {
+                    float sum = bias ? bias[oc] : 0.0f;
+                    const uint32_t oc_u = static_cast<uint32_t>(oc);
+
+                    for (uint32_t kh = 0; kh < k_kernel; ++kh)
+                    {
+                        const uint32_t in_row = (ih_base + kh) * in_w;
+
+                        for (uint32_t kw = 0; kw < k_kernel; ++kw)
+                        {
+                            const uint32_t in_base = (in_row + iw_base + kw) * in_ch;
+                            const uint32_t w_base =
+                                (oc_u * filter_spatial + kh * k_kernel + kw) * in_ch;
+                            sum += NetkitLoopUnroll::dot_contiguous(in + in_base, weights + w_base, in_ch);
+                        }
+                    }
+
+                    out[out_spatial_base + oc_u] = ConvOutputValue(sum, fuse_activation);
+                }
+            }
+        }
+
+        return kernel_activation_is_fused(fuse_activation);
+    }
+
+    void MaxPool2dForward2x2S2P0(const float* in,
+                                 float* out,
+                                 uint32_t in_w,
+                                 uint32_t channels,
+                                 uint32_t out_h,
+                                 uint32_t out_w)
+    {
+        for (uint32_t oh = 0; oh < out_h; ++oh)
+        {
+            const uint32_t ih0 = oh * 2u;
+            const uint32_t row0 = ih0 * in_w;
+            const uint32_t row1 = (ih0 + 1u) * in_w;
+
+            for (uint32_t ow = 0; ow < out_w; ++ow)
+            {
+                const uint32_t iw0 = ow * 2u;
+                const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
+                const uint32_t base0 = (row0 + iw0) * channels;
+                const uint32_t base1 = base0 + channels;
+                const uint32_t base2 = (row1 + iw0) * channels;
+                const uint32_t base3 = base2 + channels;
+
+                for (uint32_t c = 0; c < channels; ++c)
+                {
+                    float max_val = in[base0 + c];
+                    const float v1 = in[base1 + c];
+                    if (v1 > max_val)
+                        max_val = v1;
+                    const float v2 = in[base2 + c];
+                    if (v2 > max_val)
+                        max_val = v2;
+                    const float v3 = in[base3 + c];
+                    if (v3 > max_val)
+                        max_val = v3;
+                    out[out_spatial_base + c] = max_val;
+                }
+            }
+        }
+    }
+}
 
 void ReferenceKernel::MulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
@@ -112,12 +339,43 @@ void ReferenceKernel::FullyConnectedImpl(const Tensor& input, const Tensor& kern
 bool ReferenceKernel::FullyConnectedWithBiasImpl(const Tensor& input,
                                                  const Tensor& weights,
                                                  const Tensor& bias,
-                                                 NetkitKernelActivation /*fuse_activation*/,
+                                                 NetkitKernelActivation fuse_activation,
                                                  Tensor& output)
 {
-    FullyConnectedImpl(input, weights, output);
-    MatAddImpl(output, bias, output);
-    return false;
+    if (fc_tensors_dense_row_major(input, weights, bias, output))
+    {
+        return fully_connected_dense_with_bias(static_cast<const float*>(input.data),
+                                               static_cast<const float*>(weights.data),
+                                               static_cast<const float*>(bias.data),
+                                               static_cast<float*>(output.data),
+                                               input.shape[0],
+                                               input.shape[1],
+                                               weights.shape[0],
+                                               fuse_activation);
+    }
+
+    const float* in = static_cast<const float*>(input.data);
+    const float* wt = static_cast<const float*>(weights.data);
+    float* out = static_cast<float*>(output.data);
+
+    const uint32_t batch = input.shape[0];
+    const uint32_t in_features = input.shape[1];
+    const uint32_t out_features = weights.shape[0];
+
+    for (uint32_t b = 0; b < batch; ++b)
+    {
+        const float* in_row = in + b * input.stride[0];
+        for (uint32_t oc = 0; oc < out_features; ++oc)
+        {
+            const float* wt_row = wt + oc * weights.stride[0];
+            const float sum =
+                NetkitLoopUnroll::dot_strided(in_row, input.stride[1], wt_row, weights.stride[1], in_features);
+            const float value = ApplyKernelActivation(sum + BiasAt(bias, oc), fuse_activation);
+            out[b * output.stride[0] + oc * output.stride[1]] = value;
+        }
+    }
+
+    return kernel_activation_is_fused(fuse_activation);
 }
 
 void ReferenceKernel::ReLUImpl(const Tensor& a, Tensor& c)
@@ -274,22 +532,147 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
                                         int pad_w_end,
                                         int in_channels,
                                         int out_channels,
-                                        NetkitKernelActivation /*fuse_activation*/,
-                                        Tensor& output)
+                                        NetkitKernelActivation fuse_activation,
+                                        Tensor& output,
+                                        const float* weights_hwio)
 {
-    (void)pad_h_end;
-    (void)pad_w_end;
-
     float* in = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
 
+    const uint32_t in_h = input.shape[0];
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
-    const int in_h = static_cast<int>(input.shape[0]);
-    const int in_w = static_cast<int>(input.shape[1]);
     const uint32_t in_w_u = input.shape[1];
     const uint32_t in_ch = static_cast<uint32_t>(in_channels);
     const uint32_t out_ch = static_cast<uint32_t>(out_channels);
+    const uint32_t k_kernel = static_cast<uint32_t>(kernel_size);
+
+    if (conv_padding_zero(pad_h, pad_w, pad_h_end, pad_w_end))
+    {
+        if (kernel_size == 3 && stride == 1)
+        {
+            return Conv2dForward3x3S1P0(in,
+                                        weights,
+                                        bias,
+                                        out,
+                                        in_w_u,
+                                        in_ch,
+                                        out_h,
+                                        out_w,
+                                        out_ch,
+                                        out_channels,
+                                        fuse_activation);
+        }
+
+        if (Conv2dTryIm2ColForward(in,
+                                   weights,
+                                   bias,
+                                   out,
+                                   in_h,
+                                   in_w_u,
+                                   in_ch,
+                                   out_h,
+                                   out_w,
+                                   out_ch,
+                                   k_kernel,
+                                   k_kernel,
+                                   stride,
+                                   pad_h,
+                                   pad_w,
+                                   pad_h_end,
+                                   pad_w_end,
+                                   out_channels,
+                                   fuse_activation))
+        {
+            return kernel_activation_is_fused(fuse_activation);
+        }
+
+        if (Conv2dTryInputStationaryForward(in,
+                                            weights_hwio,
+                                            bias,
+                                            out,
+                                            in_h,
+                                            in_w_u,
+                                            in_ch,
+                                            out_h,
+                                            out_w,
+                                            out_ch,
+                                            k_kernel,
+                                            k_kernel,
+                                            stride,
+                                            pad_h,
+                                            pad_w,
+                                            pad_h_end,
+                                            pad_w_end,
+                                            out_channels,
+                                            fuse_activation))
+        {
+            return kernel_activation_is_fused(fuse_activation);
+        }
+
+        return Conv2dForwardNoPad(in,
+                                  weights,
+                                  bias,
+                                  out,
+                                  in_w_u,
+                                  in_ch,
+                                  out_h,
+                                  out_w,
+                                  out_ch,
+                                  kernel_size,
+                                  stride,
+                                  out_channels,
+                                  fuse_activation);
+    }
+
+    if (Conv2dTryIm2ColForward(in,
+                               weights,
+                               bias,
+                               out,
+                               in_h,
+                               in_w_u,
+                               in_ch,
+                               out_h,
+                               out_w,
+                               out_ch,
+                               k_kernel,
+                               k_kernel,
+                               stride,
+                               pad_h,
+                               pad_w,
+                               pad_h_end,
+                               pad_w_end,
+                               out_channels,
+                               fuse_activation))
+    {
+        return kernel_activation_is_fused(fuse_activation);
+    }
+
+    if (Conv2dTryInputStationaryForward(in,
+                                        weights_hwio,
+                                        bias,
+                                        out,
+                                        in_h,
+                                        in_w_u,
+                                        in_ch,
+                                        out_h,
+                                        out_w,
+                                        out_ch,
+                                        k_kernel,
+                                        k_kernel,
+                                        stride,
+                                        pad_h,
+                                        pad_w,
+                                        pad_h_end,
+                                        pad_w_end,
+                                        out_channels,
+                                        fuse_activation))
+    {
+        return kernel_activation_is_fused(fuse_activation);
+    }
+
+    const int in_h_i = static_cast<int>(input.shape[0]);
+    const int in_w = static_cast<int>(input.shape[1]);
 
     for (uint32_t oh = 0; oh < out_h; oh++)
     {
@@ -304,7 +687,7 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
                 for (int kh = 0; kh < kernel_size; kh++)
                 {
                     const int ih = static_cast<int>(oh) * stride + kh - pad_h;
-                    if (ih < 0 || ih >= in_h)
+                    if (ih < 0 || ih >= in_h_i)
                         continue;
 
                     const uint32_t in_row = static_cast<uint32_t>(ih) * in_w_u;
@@ -323,17 +706,16 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
                              static_cast<uint32_t>(kw)) *
                             in_ch;
 
-                        for (uint32_t ic = 0; ic < in_ch; ++ic)
-                            sum += in[in_base + ic] * weights[w_base + ic];
+                        sum += NetkitLoopUnroll::dot_contiguous(in + in_base, weights + w_base, in_ch);
                     }
                 }
 
-                out[out_spatial_base + static_cast<uint32_t>(oc)] = sum;
+                out[out_spatial_base + static_cast<uint32_t>(oc)] = ConvOutputValue(sum, fuse_activation);
             }
         }
     }
 
-    return false;
+    return kernel_activation_is_fused(fuse_activation);
 }
 
 bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
@@ -347,7 +729,7 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                                                  int /*pad_h_end*/,
                                                  int /*pad_w_end*/,
                                                  int channels,
-                                                 NetkitKernelActivation /*fuse_activation*/,
+                                                 NetkitKernelActivation fuse_activation,
                                                  Tensor& output)
 {
     float* in = tensor_data_f32(const_cast<Tensor&>(input));
@@ -395,12 +777,12 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                     }
                 }
 
-                out[out_spatial_base + static_cast<uint32_t>(c)] = sum;
+                out[out_spatial_base + static_cast<uint32_t>(c)] = ConvOutputValue(sum, fuse_activation);
             }
         }
     }
 
-    return false;
+    return kernel_activation_is_fused(fuse_activation);
 }
 
 void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
@@ -409,18 +791,26 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
                                           int stride,
                                           int pad_h,
                                           int pad_w,
-                                          int /*pad_h_end*/,
-                                          int /*pad_w_end*/,
+                                          int pad_h_end,
+                                          int pad_w_end,
                                           Tensor& output)
 {
     const float* in = tensor_data_f32(const_cast<Tensor&>(input));
     float* out = tensor_data_f32(output);
 
-    const uint32_t in_h = input.shape[0];
     const uint32_t in_w = input.shape[1];
     const uint32_t channels = input.shape[2];
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
+
+    if (pool_h == 2 && pool_w == 2 && stride == 2 && pad_h == 0 && pad_w == 0 && pad_h_end == 0 &&
+        pad_w_end == 0)
+    {
+        MaxPool2dForward2x2S2P0(in, out, in_w, channels, out_h, out_w);
+        return;
+    }
+
+    const uint32_t in_h = input.shape[0];
 
     for (uint32_t oh = 0; oh < out_h; ++oh)
     {

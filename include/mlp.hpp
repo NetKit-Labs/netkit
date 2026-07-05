@@ -32,6 +32,9 @@ private:
     float* ping_a{};
     float* ping_b{};
     uint32_t max_activation_elements{};
+    Tensor hidden_activation_{};
+    Tensor ping_view_a_{};
+    Tensor ping_view_b_{};
 
 public:
     // Constructor allocates from Arena — no heap fragmentation
@@ -57,6 +60,11 @@ public:
 
     // Forward pass through entire network (hidden activations reuse ping_a / ping_b)
     void forward(const Tensor& input, Tensor& output, Arena& arena);
+
+    using LayerTimingFn = void (*)(const char* tag, uint64_t duration_ns, void* user_data);
+
+    // Benchmark-only: per-layer timing callback (tag is "FullyConnected" per dense layer).
+    void forward_timed(const Tensor& input, Tensor& output, LayerTimingFn timing_fn, void* user_data);
 
     // Get a specific layer
     MLPLayer& GetLayer(uint32_t idx) { return layers[idx]; }

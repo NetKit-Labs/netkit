@@ -2,6 +2,7 @@
 
 #include "cmsis_buffer_size.hpp"
 #include "cnn.hpp"
+#include "conv2d_layout.hpp"
 #include "nk_op_detail.hpp"
 #include "tensor_factory.hpp"
 #include <array>
@@ -25,6 +26,11 @@ bool NkPlanConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
                              block.conv.conv.pad_w,
                              block.conv.conv.in_channels,
                              block.conv.conv.out_channels);
+    CmsisBumpConv2dIm2ColWorkspace(out_h,
+                                   out_w,
+                                   static_cast<uint32_t>(block.conv.conv.kernel_size),
+                                   static_cast<uint32_t>(block.conv.conv.kernel_size),
+                                   static_cast<uint32_t>(block.conv.conv.in_channels));
     plan.h = out_h;
     plan.w = out_w;
     plan.channels = out_c;

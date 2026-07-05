@@ -55,6 +55,27 @@ inline void scale_contiguous(float* c, float scalar, uint32_t count)
     for_count(count, [&](uint32_t i) { c[i] *= scalar; });
 }
 
+inline float dot_contiguous(const float* a, const float* b, uint32_t count)
+{
+    float sum = 0.0f;
+#if NETKIT_LOOP_UNROLL
+    uint32_t t = 0;
+    for (; t + 4u <= count; t += 4u)
+    {
+        sum += a[t] * b[t];
+        sum += a[t + 1u] * b[t + 1u];
+        sum += a[t + 2u] * b[t + 2u];
+        sum += a[t + 3u] * b[t + 3u];
+    }
+    for (; t < count; ++t)
+        sum += a[t] * b[t];
+#else
+    for (uint32_t t = 0; t < count; ++t)
+        sum += a[t] * b[t];
+#endif
+    return sum;
+}
+
 inline float dot_strided(const float* a,
                          uint32_t a_stride,
                          const float* b,

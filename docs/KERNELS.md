@@ -155,6 +155,23 @@ Without enabling `NETKIT_LOOP_UNROLL`, reference spatial ops follow a few low-co
 
 No extra code-size toggle — these apply whenever reference kernels run (including CMSIS fallback). Runtime inference has **no `while` loops** on the hot path; padding uses structured `for` loops with early row skip, not unbounded control flow.
 
+### Reference Conv2D fast paths (`conv2d_layout.hpp`)
+
+When CMSIS-NN is off or `TryConv2dForward` returns false, `ReferenceKernel::Conv2dForwardImpl` selects among several reference implementations (see `src/reference_kernel.cpp`):
+
+| Path | When selected | Notes |
+|------|---------------|-------|
+| **3×3 stride-1 pad-0 specialist** | Fixed geometry | Hand-tuned inner loops for the common MNIST/tutorial case |
+| **im2col + GEMM** | `Conv2dShouldUseIm2Col` — patch volume `kh·kw·in_ch ≥ 2048` | Builds column matrix in workspace, calls `MatMul`; best for large spatial or channel counts |
+| **Input-stationary (HWIO)** | `Conv2dShouldUseInputStationary` — `out_ch ≥ 16` and repacked weights present | Reads input once per output pixel; uses **HWIO** layout |
+| **Spatial loop (OIHW)** | Fallback | Default NHWC-friendly `oh, ow, oc` loops with channel-inner reduction |
+
+**Weight repack at load:** `CNNNetwork::InitActivationBuffers` calls `RepackConv2dWeights` for each conv layer, allocating `[kh, kw, in, out]` (**HWIO**) beside the stored `[out, kh, kw, in]` (**OIHW**) blob. Repack is one-time arena cost; inference reads `weights_hwio` when the input-stationary path applies.
+
+**im2col workspace:** `Conv2dIm2ColWorkspaceBytes` sizes scratch per conv; `CNNNetwork` / `NkConv2DOp` planning takes the max across layers (also reflected in `inspect --full` kernel workspace when non-zero). Workspace is arena-backed on the interpreter path.
+
+Dispatch order is fixed: specialist → im2col → input-stationary → padded/unpadded spatial fallbacks. Padding uses inclusive input bounds (`ih ∈ [0, in_h)`, `iw ∈ [0, in_w)`) consistent with the spatial reference kernel.
+
 ## Adding a new kernel op
 
 1. Add `OpImpl` to `ReferenceKernel` and declare on `KernelBase`.

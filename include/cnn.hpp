@@ -152,6 +152,7 @@ private:
     float* ping_a{};
     float* ping_b{};
     uint32_t max_activation_elements{};
+    Tensor* layer_output_views_{};
     uint8_t* kernel_workspace_{};
     std::size_t kernel_workspace_bytes_{};
     Tensor output_cache_{};
@@ -175,7 +176,7 @@ public:
     {
         if (num_layers == 0)
             return false;
-        return ping_a != nullptr && ping_b != nullptr;
+        return ping_a != nullptr && ping_b != nullptr && layer_output_views_ != nullptr;
     }
 
     // Preallocate two ping-pong activation buffers sized to the largest layer output.
@@ -326,6 +327,12 @@ public:
                         float leaky_alpha = 0.01f);
 
     Tensor& forward(const Tensor& input, Arena& arena);
+
+    using LayerTimingFn = void (*)(const char* tag, uint64_t duration_ns, void* user_data);
+
+    // Benchmark-only: same as forward(), but records per-layer eval time via callback.
+    Tensor& forward_timed(const Tensor& input, Arena& arena, LayerTimingFn timing_fn,
+                          void* user_data);
 
     std::size_t KernelWorkspaceBytes() const { return kernel_workspace_bytes_; }
 

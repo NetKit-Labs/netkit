@@ -1,11 +1,14 @@
 #include "cnn.hpp"
 #include "active_kernel.hpp"
 #include "activation_followup.hpp"
+#include "conv2d_layout.hpp"
 #include "kernel_workspace.hpp"
 #include "cmsis_buffer_size.hpp"
 #include "ops_resolver.hpp"
 #include "reference_kernel.hpp"
 #include "tensor_factory.hpp"
+#include <array>
+#include <chrono>
 #include <cstring>
 
 using namespace TensorFactory;
@@ -96,10 +99,20 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
     kernel_workspace_ = nullptr;
     kernel_workspace_bytes_ = 0;
     max_activation_elements = 0;
+    layer_output_views_ = nullptr;
     output_cache_ = {};
 
     if (!blocks || num_layers == 0)
         return blocks != nullptr;
+
+    for (uint32_t i = 0; i < num_layers; ++i)
+    {
+        if (blocks[i].type == CnnBlockType::Conv2D &&
+            !RepackConv2dWeights(blocks[i].conv.conv, arena))
+        {
+            return false;
+        }
+    }
 
     const NkOpsResolver& resolver = GetOpsResolver();
     std::size_t max_kernel_workspace_bytes = 0;
@@ -146,6 +159,30 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
         kernel_workspace_bytes_ = max_kernel_workspace_bytes;
     }
 
+    layer_output_views_ =
+        static_cast<Tensor*>(arena.alloc(sizeof(Tensor) * num_layers, alignof(Tensor)));
+    if (!layer_output_views_)
+        return false;
+
+    const std::array<uint32_t, 3> input_shape = {in_h, in_w, in_c};
+    Tensor current_input = ViewND(nullptr, 3, input_shape);
+    for (uint32_t i = 0; i < num_layers; ++i)
+    {
+        const NkLayerOpRegistration* registration =
+            resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
+        if (!registration || !registration->prepare_output)
+            return false;
+
+        layer_output_views_[i] = {};
+        NkCnnOpContext ctx{
+            blocks[i], current_input, layer_output_views_[i], ping_a, max_activation_elements};
+        if (!registration->prepare_output(ctx))
+            return false;
+
+        current_input = layer_output_views_[i];
+        current_input.data = nullptr;
+    }
+
     return true;
 }
 
@@ -176,6 +213,7 @@ void CNNNetwork::InitConvLayer(uint32_t layer_idx,
     blocks[layer_idx].conv.conv.in_channels = in_channels;
     blocks[layer_idx].conv.conv.out_channels = out_channels;
     blocks[layer_idx].conv.conv.weights = weights;
+    blocks[layer_idx].conv.conv.weights_hwio = nullptr;
     blocks[layer_idx].conv.conv.bias = bias;
     blocks[layer_idx].conv.activation = activation;
     blocks[layer_idx].conv.leaky_alpha = leaky_alpha;
@@ -548,15 +586,85 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
     {
         const NkLayerOpRegistration* registration =
             resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
-        if (!registration || !registration->prepare_output || !registration->eval)
+        if (!registration || !registration->eval)
             return empty;
 
-        Tensor layer_output{};
-        NkCnnOpContext ctx{blocks[i], current_input, layer_output, write_buffer, max_activation_elements};
-        if (!registration->prepare_output(ctx) || !layer_output.data)
+        Tensor& layer_output = layer_output_views_[i];
+        layer_output.data = write_buffer;
+        if (!layer_output.data || layer_output.num_elements > max_activation_elements)
             return empty;
 
         registration->eval(blocks[i], current_input, layer_output);
+
+        current_input = layer_output;
+        output_cache_ = layer_output;
+        write_buffer = (write_buffer == ping_a) ? ping_b : ping_a;
+    }
+
+    return output_cache_;
+}
+
+namespace {
+
+const char* ProfileTagForBlock(const CnnBlock& block)
+{
+    switch (block.type)
+    {
+    case CnnBlockType::Conv2D:
+        return "Conv2D";
+    case CnnBlockType::MaxPool2D:
+        return "MaxPool2D";
+    case CnnBlockType::Flatten:
+        return "Reshape";
+    case CnnBlockType::Dense:
+        return "FullyConnected";
+    default:
+        return "Unknown";
+    }
+}
+
+}  // namespace
+
+Tensor& CNNNetwork::forward_timed(const Tensor& input, Arena& /*arena*/, LayerTimingFn timing_fn,
+                                  void* user_data)
+{
+    static Tensor empty{};
+
+    if (!IsValid() || !HasActivationBuffers() || num_layers == 0)
+        return empty;
+
+    KernelWorkspace workspace{kernel_workspace_, kernel_workspace_bytes_};
+    KernelWorkspaceScope workspace_scope(&workspace);
+
+    const NkOpsResolver& resolver = GetOpsResolver();
+    output_cache_ = {};
+    Tensor current_input = input;
+    float* write_buffer = ping_a;
+
+    for (uint32_t i = 0; i < num_layers; ++i)
+    {
+        const NkLayerOpRegistration* registration =
+            resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
+        if (!registration || !registration->eval)
+            return empty;
+
+        Tensor& layer_output = layer_output_views_[i];
+        layer_output.data = write_buffer;
+        if (!layer_output.data || layer_output.num_elements > max_activation_elements)
+            return empty;
+
+        const char* tag = ProfileTagForBlock(blocks[i]);
+        const auto layer_start = std::chrono::steady_clock::now();
+        registration->eval(blocks[i], current_input, layer_output);
+        const auto layer_end = std::chrono::steady_clock::now();
+
+        if (timing_fn)
+        {
+            const uint64_t duration_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(layer_end - layer_start)
+                    .count());
+            timing_fn(tag, duration_ns, user_data);
+        }
 
         current_input = layer_output;
         output_cache_ = layer_output;

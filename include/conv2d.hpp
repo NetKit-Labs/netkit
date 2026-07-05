@@ -14,8 +14,9 @@ struct Conv2D
     int in_channels;
     int out_channels;
 
-    float* weights; // [out][kh][kw][in]
-    float* bias;    // [out]
+    float* weights;       // [out][kh][kw][in] from .nk blob (OIHW)
+    float* weights_hwio;  // [kh][kw][in][out] repacked at CNN load; null until repack
+    float* bias;          // [out]
 
     bool forward(const Tensor& input,
                  Tensor& output,

@@ -250,14 +250,24 @@ class TestAotCompile(unittest.TestCase):
             self.assertIn("NETKIT_AOT_FLASH_CONST", cpp_source)
             self.assertIn('section(".rodata")', cpp_source)
             self.assertIn("defined(__ELF__)", cpp_source)
+            self.assertTrue(cpp.lowered)
+            self.assertIn("kLowered = true", cpp_header)
+            self.assertIn("Kernels::FullyConnectedWithBias", cpp_source)
+            self.assertNotIn("LoadMLPFromBuffer", cpp_source)
 
     def test_aot_mcu_flash_arena_smaller_than_ram_copy(self) -> None:
         nk_path = MODELS / "mlp_hand.nk"
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            ram = compile_aot(nk_path, tmp / "ram", language=AotLanguage.CPP, weights_in_ram=True)
+            ram = compile_aot(
+                nk_path, tmp / "ram", language=AotLanguage.CPP, weights_in_ram=True, lower=False
+            )
             flash = compile_aot(
-                nk_path, tmp / "flash", language=AotLanguage.CPP, weights_in_ram=False
+                nk_path,
+                tmp / "flash",
+                language=AotLanguage.CPP,
+                weights_in_ram=False,
+                lower=False,
             )
             header = unpack_header(Path(nk_path).read_bytes()[:HEADER_BYTES])
             payload_bytes = weight_payload_bytes(header)
@@ -345,6 +355,16 @@ class TestAotCompile(unittest.TestCase):
                 )
         finally:
             subprocess.run(["make", "NETKIT_TARGET=cpu", "lib"], cwd=ROOT, check=True)
+
+    def test_aot_embed_interpreter_path_still_available(self) -> None:
+        nk_path = MODELS / "test_mlp.nk"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            result = compile_aot(nk_path, tmp / "embed", language=AotLanguage.CPP, lower=False)
+            source = result.source_path.read_text(encoding="utf-8")
+            self.assertFalse(result.lowered)
+            self.assertIn("LoadMLPFromBuffer", source)
+            self.assertIn("kNkBlob", source)
 
     def test_aot_optimize_matches_reference(self) -> None:
         nk_path = MODELS / "cnn_extended_ops.nk"

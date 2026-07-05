@@ -77,9 +77,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Extra arena headroom %% above measured forward peak (default: 12)",
     )
     aot.add_argument(
+        "--no-lower",
+        action="store_true",
+        help="Embed .nk blob and use runtime loader (C++ only; default is static kernel lowering)",
+    )
+    aot.add_argument(
         "--no-flash-section",
         action="store_true",
-        help="Do not place the .nk blob in a GCC .rodata section",
+        help="Do not place embedded coefs in a GCC .rodata section",
     )
     aot.add_argument(
         "--target",
@@ -200,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.weights_in_ram is not None
                 else args.target != "mcu"
             ),
+            lower=not args.no_lower,
         )
         print(f"Wrote {result.header_path}")
         print(f"Wrote {result.source_path}")
@@ -207,6 +213,8 @@ def main(argv: list[str] | None = None) -> int:
             f"network={result.network} input={result.input_elements} "
             f"output={result.output_elements} bytes={result.nk_bytes} language={result.language.value}"
         )
+        if result.lowered:
+            print("lowered=true (static Kernels:: call chain)")
         print(
             f"arena_after_load={result.arena_bytes_after_load} "
             f"arena_after_forward={result.arena_bytes_after_forward} "

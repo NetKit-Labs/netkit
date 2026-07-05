@@ -16,6 +16,12 @@ import numpy as np
 from .arch_writer import arch_to_nk_bytes
 from .format import HEADER_BYTES, unpack_header, weight_payload_bytes
 from .nk_optimize import OptimizeOptions, optimize_nk
+from .aot_lower import (
+    can_lower_arch,
+    plan_lowered,
+    render_lowered_cpp_header,
+    render_lowered_cpp_source,
+)
 from .reader import read_nk, read_test_suite
 from .reference_forward import forward_cnn, forward_mlp
 
@@ -44,6 +50,7 @@ class AotCompileResult:
     arena_bytes_recommended: int
     optimized: bool = False
     optimizations_applied: tuple[str, ...] = ()
+    lowered: bool = False
 
 
 def _sanitize_symbol(name: str) -> str:
@@ -233,6 +240,7 @@ def compile_aot(
     arena_headroom_percent: int = 12,
     flash_section: bool = True,
     weights_in_ram: bool = True,
+    lower: bool = True,
 ) -> AotCompileResult:
     """Compile a .nk model into embeddable C or C++ source files.
 
@@ -246,6 +254,11 @@ def compile_aot(
     zero-input forward; otherwise a conservative estimate is used. When
     ``weights_in_ram=False`` (MCU flash default), ``weights_bytes + biases_bytes`` are
     subtracted from probe/estimate peaks because coefs stay in the embedded blob.
+
+    C++ output is lowered by default (``lower=True``): static ``Kernels::`` call chain
+    with embedded weight arrays, no ``.nk`` blob, loader, or ops resolver. Pass
+    ``lower=False`` for the legacy embed-and-interpreter path. Lowering applies only
+    to C++; C output always embeds the ``.nk`` blob.
     """
     path = Path(nk_path)
     out_dir = Path(output_dir)
@@ -269,16 +282,24 @@ def compile_aot(
     input_elements, output_elements = _compute_io(arch, weights)
     network = arch["network"]
     input_shape = arch["input"]
-    after_load, after_forward, arena_recommended = _resolve_arena_bytes(
-        path,
-        len(nk_bytes),
-        input_elements,
-        output_elements,
-        headroom_percent=arena_headroom_percent,
-        weights_in_ram=weights_in_ram,
-        payload_bytes=payload_bytes,
-        network=network,
-    )
+    use_lowered = lang is AotLanguage.CPP and lower and can_lower_arch(arch)
+
+    if use_lowered:
+        plan = plan_lowered(arch, weights)
+        after_load = plan.arena_after_load
+        after_forward = plan.arena_after_forward
+        arena_recommended = max(64, _recommend_arena_bytes(after_forward, headroom_percent=0))
+    else:
+        after_load, after_forward, arena_recommended = _resolve_arena_bytes(
+            path,
+            len(nk_bytes),
+            input_elements,
+            output_elements,
+            headroom_percent=arena_headroom_percent,
+            weights_in_ram=weights_in_ram,
+            payload_bytes=payload_bytes,
+            network=network,
+        )
 
     blob_lines = _format_byte_array(nk_bytes)
 
@@ -290,34 +311,58 @@ def compile_aot(
     if lang is AotLanguage.CPP:
         header_path = out_dir / f"{symbol}_aot.hpp"
         source_path = out_dir / f"{symbol}_aot.cpp"
-        header_path.write_text(
-            _render_cpp_header(
-                symbol,
-                network,
-                input_elements,
-                output_elements,
-                input_shape,
-                after_load,
-                after_forward,
-                arena_recommended,
-            ),
-            encoding="utf-8",
-        )
-        source_path.write_text(
-            opt_comment
-            + _render_cpp_source(
-                symbol,
-                network,
-                input_elements,
-                output_elements,
-                input_shape,
-                len(nk_bytes),
-                blob_lines,
-                include_main,
-                flash_section,
-            ),
-            encoding="utf-8",
-        )
+        if use_lowered:
+            header_path.write_text(
+                render_lowered_cpp_header(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    plan,
+                    arena_recommended,
+                ),
+                encoding="utf-8",
+            )
+            source_path.write_text(
+                opt_comment
+                + render_lowered_cpp_source(
+                    symbol,
+                    plan,
+                    include_main,
+                    flash_section,
+                ),
+                encoding="utf-8",
+            )
+        else:
+            header_path.write_text(
+                _render_cpp_header(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    after_load,
+                    after_forward,
+                    arena_recommended,
+                ),
+                encoding="utf-8",
+            )
+            source_path.write_text(
+                opt_comment
+                + _render_cpp_source(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    len(nk_bytes),
+                    blob_lines,
+                    include_main,
+                    flash_section,
+                ),
+                encoding="utf-8",
+            )
     else:
         header_path = out_dir / f"{symbol}_aot.h"
         source_path = out_dir / f"{symbol}_aot.c"
@@ -360,6 +405,7 @@ def compile_aot(
         arena_bytes_recommended=arena_recommended,
         optimized=bool(optimizations_applied),
         optimizations_applied=optimizations_applied,
+        lowered=use_lowered,
     )
 
 

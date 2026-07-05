@@ -1,0 +1,2 @@
+mnist_*_bench*
+src/*.o

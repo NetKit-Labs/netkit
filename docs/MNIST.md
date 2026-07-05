@@ -44,3 +44,7 @@ Commit `models/mnist_mlp.nk` and `models/mnist_mlp.onnx` after regenerating so t
 ## Running
 
 Part of `make test` / `./netkit test` — see [TESTING.md](TESTING.md).
+
+## Benchmarks
+
+Host invoke latency vs TensorFlow Lite Micro on the same 10 embedded test vectors: [benchmark/README.md](../benchmark/README.md). Run `./benchmark/compare.sh` after `make export-mnist` and TFLM asset export. Results are for desktop regression tracking — see the **host vs MCU** section there before extrapolating to Cortex-M firmware.

@@ -8,18 +8,22 @@ bool Conv2D::forward(const Tensor& input, Tensor& output, NetkitKernelActivation
     const int pad_w_end = this->pad_w_end;
     if (pad_h_end == pad_h && pad_w_end == pad_w)
     {
-        return Kernels::Conv2dForward(input,
-                                      weights,
-                                      bias,
-                                      kernel_size,
-                                      stride,
-                                      pad_h,
-                                      pad_w,
-                                      in_channels,
-                                      out_channels,
-                                      fuse_activation,
-                                      output);
+        if (Kernels::Conv2dForward(input,
+                                   weights,
+                                   bias,
+                                   kernel_size,
+                                   stride,
+                                   pad_h,
+                                   pad_w,
+                                   in_channels,
+                                   out_channels,
+                                   fuse_activation,
+                                   output))
+        {
+            return true;
+        }
     }
+
     return ReferenceKernel::Conv2dForwardImpl(input,
                                               weights,
                                               bias,
@@ -32,5 +36,6 @@ bool Conv2D::forward(const Tensor& input, Tensor& output, NetkitKernelActivation
                                               in_channels,
                                               out_channels,
                                               fuse_activation,
-                                              output);
+                                              output,
+                                              weights_hwio);
 }

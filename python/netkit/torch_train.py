@@ -171,6 +171,7 @@ def select_digit_cases(
 
     if len(cases) < num_cases:
         raise RuntimeError(f"only found {len(cases)} test cases; train longer or relax selection")
+    cases.sort(key=lambda c: c.label)
     return cases
 
 

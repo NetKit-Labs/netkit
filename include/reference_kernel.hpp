@@ -38,7 +38,8 @@ struct ReferenceKernel : KernelBase<ReferenceKernel>
                                   int in_channels,
                                   int out_channels,
                                   NetkitKernelActivation fuse_activation,
-                                  Tensor& output);
+                                  Tensor& output,
+                                  const float* weights_hwio = nullptr);
 
     static bool DepthwiseConv2dForwardImpl(const Tensor& input,
                                           float* weights,
