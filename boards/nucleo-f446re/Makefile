@@ -12,7 +12,8 @@
 NETKIT_ROOT := $(abspath ../..)
 BOARD_ROOT := $(abspath .)
 
-CROSS_COMPILE ?= arm-none-eabi- (Homebrew arm-none-eabi-gcc lacks newlib).
+CROSS_COMPILE ?= arm-none-eabi-
+# Homebrew arm-none-eabi-gcc lacks newlib.
 TOOLCHAIN_BIN := $(shell ./scripts/setup-toolchain.sh 2>/dev/null || true)
 ifneq ($(TOOLCHAIN_BIN),)
   CC := $(TOOLCHAIN_BIN)/arm-none-eabi-gcc

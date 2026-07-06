@@ -18,7 +18,20 @@ Runs the **same MNIST MLP benchmark** as `benchmark/netkit/`:
 | Weights | **Flash** — lowered AOT embeds coef arrays in `.rodata` (no SRAM copy; `NETKIT_WEIGHTS_IN_RAM=0` policy) |
 | Deployment | **Lowered AOT** — static `Kernels::` FC chain (no runtime `.nk` loader) |
 
-Arena for activations: **512 bytes** (see generated `mnist_mlp_aot.hpp`).
+Arena for activations: **640 bytes** (see generated `mnist_mlp_aot.hpp`).
+
+## Verified on-device results (NUCLEO-F446RE @ 180 MHz)
+
+Captured after `make && ./scripts/run.sh` with the default profile above:
+
+| Metric | Value |
+|--------|-------|
+| Mean invoke | **10,684.7 µs** (~10.7 ms) |
+| Accuracy | 10/10 (final run) |
+| Flash (text + data) | **477,312 B** (~466 KiB) |
+| SRAM (data + bss) | **2,697 B** (~2.6 KiB) |
+
+Compare with host `benchmark/netkit/` and TFLM on the same 10 images via [benchmark/README.md](../../benchmark/README.md).
 
 ## Prerequisites (host)
 
@@ -91,7 +104,7 @@ netkit NUCLEO-F446RE MNIST MLP benchmark
   weights:     flash (embedded coef arrays)
   images:      10 per run
   runs:        100 (discard first invoke each run)
-  arena bytes: 512
+  arena bytes: 640
   sysclk:      180000000 Hz
   accuracy:    10/10 on final run
 
@@ -99,8 +112,8 @@ netkit MNIST mlp benchmark summary (cmsis-dsp)
   method:      100 runs x 10 images, discard first invoke each run
   per-run avg: avg of images 1-9 (us)
 
-  mean:  10685.139 us (10.685 ms)
-BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-dsp mean_us=10685.139 runs=100
+  mean:  10684.683 us (10.685 ms)
+BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-dsp mean_us=10684.683 runs=100
 
 DONE
 ```
