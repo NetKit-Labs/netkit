@@ -1,6 +1,6 @@
 #include "cmsis_buffer_size.hpp"
 
-#include "conv2d_layout.hpp"
+#include "conv_dispatch.hpp"
 #include "netkit_config.h"
 
 namespace
@@ -200,8 +200,9 @@ void CmsisBumpConv2dIm2ColWorkspace(uint32_t out_h,
                                     uint32_t out_w,
                                     uint32_t kernel_h,
                                     uint32_t kernel_w,
-                                    uint32_t in_channels)
+                                    uint32_t in_channels,
+                                    int stride)
 {
     BumpMaxKernelWorkspace(
-        Conv2dIm2ColWorkspaceBytes(out_h, out_w, kernel_h, kernel_w, in_channels));
+        Conv2dWorkspaceBytes(out_h, out_w, kernel_h, kernel_w, in_channels, stride));
 }

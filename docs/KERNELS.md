@@ -155,22 +155,33 @@ Without enabling `NETKIT_LOOP_UNROLL`, reference spatial ops follow a few low-co
 
 No extra code-size toggle — these apply whenever reference kernels run (including CMSIS fallback). Runtime inference has **no `while` loops** on the hot path; padding uses structured `for` loops with early row skip, not unbounded control flow.
 
-### Reference Conv2D fast paths (`conv2d_layout.hpp`)
+### Reference Conv2D lowering (`conv_dispatch.cpp`)
 
-When CMSIS-NN is off or `TryConv2dForward` returns false, `ReferenceKernel::Conv2dForwardImpl` selects among several reference implementations (see `src/reference_kernel.cpp`):
+When CMSIS-NN is off or `TryConv2dForward` returns false, `Conv2dDispatchForward` applies a **compiler-style lowering policy** (not user-configurable). Kernel modules:
 
-| Path | When selected | Notes |
-|------|---------------|-------|
-| **3×3 stride-1 pad-0 specialist** | Fixed geometry | Hand-tuned inner loops for the common MNIST/tutorial case |
-| **im2col + GEMM** | `Conv2dShouldUseIm2Col` — patch volume `kh·kw·in_ch ≥ 2048` | Builds column matrix in workspace, calls `MatMul`; best for large spatial or channel counts |
-| **Input-stationary (HWIO)** | `Conv2dShouldUseInputStationary` — `out_ch ≥ 16` and repacked weights present | Reads input once per output pixel; uses **HWIO** layout |
-| **Spatial loop (OIHW)** | Fallback | Default NHWC-friendly `oh, ow, oc` loops with channel-inner reduction |
+| Module | Role |
+|--------|------|
+| `conv_dispatch.cpp` | Policy selection + orchestration |
+| `conv1x1_kernel.cpp` | 1×1 stride-1 direct dot product (mandatory for 1×1) |
+| `conv_depthwise_kernel.cpp` | Depthwise direct loops (always manual) |
+| `conv_direct_kernel.cpp` | 3×3 specialist, input-stationary, padded/unpadded spatial |
+| `im2col_partial.cpp` | Hybrid: one patch per output pixel + per-filter dots |
+| `im2col_full.cpp` | Full im2col matrix + `MatMul` GEMM |
 
-**Weight repack at load:** `CNNNetwork::InitActivationBuffers` calls `RepackConv2dWeights` for each conv layer, allocating `[kh, kw, in, out]` (**HWIO**) beside the stored `[out, kh, kw, in]` (**OIHW**) blob. Repack is one-time arena cost; inference reads `weights_hwio` when the input-stationary path applies.
+**Hard rules:**
 
-**im2col workspace:** `Conv2dIm2ColWorkspaceBytes` sizes scratch per conv; `CNNNetwork` / `NkConv2DOp` planning takes the max across layers (also reflected in `inspect --full` kernel workspace when non-zero). Workspace is arena-backed on the interpreter path.
+| Case | Policy |
+|------|--------|
+| **1×1, stride 1** | Always **direct** — never im2col |
+| **Depthwise** | Always **direct** — never im2col |
+| **3×3, stride 1** | MCU: direct preferred; partial im2col when patch volume ≥ 2048. MPU/CPU: partial preferred; full GEMM when volume ≥ 32768 |
+| **≥ 5×5 or large generic** | MCU: partial or direct (never full). MPU/CPU: full im2col when volume ≥ 2048 |
 
-Dispatch order is fixed: specialist → im2col → input-stationary → padded/unpadded spatial fallbacks. Padding uses inclusive input bounds (`ih ∈ [0, in_h)`, `iw ∈ [0, in_w)`) consistent with the spatial reference kernel.
+**Weight repack at load:** `CNNNetwork::InitActivationBuffers` calls `RepackConv2dWeights` for each conv layer, allocating `[kh, kw, in, out]` (**HWIO**) beside the stored `[out, kh, kw, in]` (**OIHW**) blob. Repack is one-time arena cost; inference reads `weights_hwio` on the input-stationary direct path.
+
+**Workspace:** `Conv2dWorkspaceBytes` sizes scratch from the selected policy; `CNNNetwork` / `NkConv2DOp` planning takes the max across layers. Workspace is arena-backed on the interpreter path (no heap allocation at inference time).
+
+Padding uses inclusive input bounds (`ih ∈ [0, in_h)`, `iw ∈ [0, in_w)`) consistent with the spatial reference kernel.
 
 ## Adding a new kernel op
 

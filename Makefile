@@ -73,15 +73,17 @@ ifeq ($(NETKIT_HOST_SMOKE),1)
   NETKIT_ARCH_CFLAGS += -D__GNUC_PYTHON__
 endif
 
-CC = clang
-CXX = clang++
+CC ?= clang
+CXX ?= clang++
 CFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c23 -Wall -Wextra -Iinclude
 CXXFLAGS = -fcolor-diagnostics -fansi-escape-codes -g -std=c++26 -Wall -Wextra -Iinclude
 TARGET = netkit
 LIB = libnetkit.a
 
 RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
-                    src/conv2d.cpp src/depthwise_conv2d.cpp src/conv2d_layout.cpp src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/cnn.cpp \
+                    src/conv2d.cpp src/depthwise_conv2d.cpp src/conv2d_layout.cpp src/conv_dispatch.cpp src/conv1x1_kernel.cpp src/conv_depthwise_kernel.cpp \
+                    src/conv_direct_kernel.cpp src/im2col_partial.cpp src/im2col_full.cpp \
+                    src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/cnn.cpp \
                     src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_depthwise_conv2d.cpp \
                     src/layer_ops/nk_op_convnextv2_block.cpp src/layer_ops/nk_op_mobilenetv4_uib.cpp src/layer_ops/nk_op_yolox_decoupled_head.cpp src/layer_ops/nk_op_resnet_basic_block.cpp src/layer_ops/nk_op_layernorm2d.cpp \
                     src/layer_ops/nk_op_max_pool2d.cpp \
@@ -200,7 +202,8 @@ NK_INFER_OBJ = tools/nk_infer.o
 
 TRIM_LIB = libnetkit_trim.a
 TRIM_RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
-                       src/conv2d.cpp src/conv2d_layout.cpp src/mlp.cpp src/cnn.cpp $(TRIM_LAYER_OP_SOURCES) src/ops_resolver.cpp \
+                       src/conv2d.cpp src/conv2d_layout.cpp src/conv_dispatch.cpp src/conv1x1_kernel.cpp src/conv_depthwise_kernel.cpp \
+                       src/conv_direct_kernel.cpp src/im2col_partial.cpp src/im2col_full.cpp src/mlp.cpp src/cnn.cpp $(TRIM_LAYER_OP_SOURCES) src/ops_resolver.cpp \
                        src/nk_format.cpp src/nk_loader.cpp src/netkit_api.cpp
 TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 

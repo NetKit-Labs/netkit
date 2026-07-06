@@ -1,5 +1,6 @@
 #include "reference_kernel.hpp"
-#include "conv2d_layout.hpp"
+#include "conv_dispatch.hpp"
+#include "conv_depthwise_kernel.hpp"
 #include "kernel_activation.hpp"
 #include "netkit_loop_unroll.hpp"
 #include "tensor_access.hpp"
@@ -77,117 +78,6 @@ namespace
     bool conv_padding_zero(int pad_h, int pad_w, int pad_h_end, int pad_w_end)
     {
         return pad_h == 0 && pad_w == 0 && pad_h_end == 0 && pad_w_end == 0;
-    }
-
-    bool Conv2dForward3x3S1P0(const float* in,
-                               float* weights,
-                               const float* bias,
-                               float* out,
-                               uint32_t in_w,
-                               uint32_t in_ch,
-                               uint32_t out_h,
-                               uint32_t out_w,
-                               uint32_t out_ch,
-                               int out_channels,
-                               NetkitKernelActivation fuse_activation)
-    {
-        const uint32_t filter_elems = 9u * in_ch;
-
-        for (uint32_t oh = 0; oh < out_h; ++oh)
-        {
-            const uint32_t ih0 = oh;
-            const uint32_t in_row0 = ih0 * in_w;
-            const uint32_t in_row1 = (ih0 + 1u) * in_w;
-            const uint32_t in_row2 = (ih0 + 2u) * in_w;
-
-            for (uint32_t ow = 0; ow < out_w; ++ow)
-            {
-                const uint32_t iw0 = ow;
-                const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
-
-                for (int oc = 0; oc < out_channels; ++oc)
-                {
-                    const float* filter = weights + static_cast<uint32_t>(oc) * filter_elems;
-                    float sum = bias ? bias[oc] : 0.0f;
-
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row0 + iw0) * in_ch, filter + 0u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row0 + iw0 + 1u) * in_ch, filter + 1u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row0 + iw0 + 2u) * in_ch, filter + 2u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row1 + iw0) * in_ch, filter + 3u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row1 + iw0 + 1u) * in_ch, filter + 4u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row1 + iw0 + 2u) * in_ch, filter + 5u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row2 + iw0) * in_ch, filter + 6u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row2 + iw0 + 1u) * in_ch, filter + 7u * in_ch, in_ch);
-                    sum += NetkitLoopUnroll::dot_contiguous(
-                        in + (in_row2 + iw0 + 2u) * in_ch, filter + 8u * in_ch, in_ch);
-
-                    out[out_spatial_base + static_cast<uint32_t>(oc)] =
-                        ConvOutputValue(sum, fuse_activation);
-                }
-            }
-        }
-
-        return kernel_activation_is_fused(fuse_activation);
-    }
-
-    bool Conv2dForwardNoPad(const float* in,
-                            float* weights,
-                            const float* bias,
-                            float* out,
-                            uint32_t in_w,
-                            uint32_t in_ch,
-                            uint32_t out_h,
-                            uint32_t out_w,
-                            uint32_t out_ch,
-                            int kernel_size,
-                            int stride,
-                            int out_channels,
-                            NetkitKernelActivation fuse_activation)
-    {
-        const uint32_t k_kernel = static_cast<uint32_t>(kernel_size);
-        const uint32_t filter_spatial = k_kernel * k_kernel;
-
-        for (uint32_t oh = 0; oh < out_h; ++oh)
-        {
-            const uint32_t ih_base = static_cast<uint32_t>(oh) * static_cast<uint32_t>(stride);
-
-            for (uint32_t ow = 0; ow < out_w; ++ow)
-            {
-                const uint32_t iw_base = static_cast<uint32_t>(ow) * static_cast<uint32_t>(stride);
-                const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
-
-                for (int oc = 0; oc < out_channels; ++oc)
-                {
-                    float sum = bias ? bias[oc] : 0.0f;
-                    const uint32_t oc_u = static_cast<uint32_t>(oc);
-
-                    for (uint32_t kh = 0; kh < k_kernel; ++kh)
-                    {
-                        const uint32_t in_row = (ih_base + kh) * in_w;
-
-                        for (uint32_t kw = 0; kw < k_kernel; ++kw)
-                        {
-                            const uint32_t in_base = (in_row + iw_base + kw) * in_ch;
-                            const uint32_t w_base =
-                                (oc_u * filter_spatial + kh * k_kernel + kw) * in_ch;
-                            sum += NetkitLoopUnroll::dot_contiguous(in + in_base, weights + w_base, in_ch);
-                        }
-                    }
-
-                    out[out_spatial_base + oc_u] = ConvOutputValue(sum, fuse_activation);
-                }
-            }
-        }
-
-        return kernel_activation_is_fused(fuse_activation);
     }
 
     void MaxPool2dForward2x2S2P0(const float* in,
@@ -536,186 +426,20 @@ bool ReferenceKernel::Conv2dForwardImpl(const Tensor& input,
                                         Tensor& output,
                                         const float* weights_hwio)
 {
-    float* in = tensor_data_f32(const_cast<Tensor&>(input));
-    float* out = tensor_data_f32(output);
-
-    const uint32_t in_h = input.shape[0];
-    const uint32_t out_h = output.shape[0];
-    const uint32_t out_w = output.shape[1];
-    const uint32_t in_w_u = input.shape[1];
-    const uint32_t in_ch = static_cast<uint32_t>(in_channels);
-    const uint32_t out_ch = static_cast<uint32_t>(out_channels);
-    const uint32_t k_kernel = static_cast<uint32_t>(kernel_size);
-
-    if (conv_padding_zero(pad_h, pad_w, pad_h_end, pad_w_end))
-    {
-        if (kernel_size == 3 && stride == 1)
-        {
-            return Conv2dForward3x3S1P0(in,
-                                        weights,
-                                        bias,
-                                        out,
-                                        in_w_u,
-                                        in_ch,
-                                        out_h,
-                                        out_w,
-                                        out_ch,
-                                        out_channels,
-                                        fuse_activation);
-        }
-
-        if (Conv2dTryIm2ColForward(in,
-                                   weights,
-                                   bias,
-                                   out,
-                                   in_h,
-                                   in_w_u,
-                                   in_ch,
-                                   out_h,
-                                   out_w,
-                                   out_ch,
-                                   k_kernel,
-                                   k_kernel,
-                                   stride,
-                                   pad_h,
-                                   pad_w,
-                                   pad_h_end,
-                                   pad_w_end,
-                                   out_channels,
-                                   fuse_activation))
-        {
-            return kernel_activation_is_fused(fuse_activation);
-        }
-
-        if (Conv2dTryInputStationaryForward(in,
-                                            weights_hwio,
-                                            bias,
-                                            out,
-                                            in_h,
-                                            in_w_u,
-                                            in_ch,
-                                            out_h,
-                                            out_w,
-                                            out_ch,
-                                            k_kernel,
-                                            k_kernel,
-                                            stride,
-                                            pad_h,
-                                            pad_w,
-                                            pad_h_end,
-                                            pad_w_end,
-                                            out_channels,
-                                            fuse_activation))
-        {
-            return kernel_activation_is_fused(fuse_activation);
-        }
-
-        return Conv2dForwardNoPad(in,
-                                  weights,
-                                  bias,
-                                  out,
-                                  in_w_u,
-                                  in_ch,
-                                  out_h,
-                                  out_w,
-                                  out_ch,
-                                  kernel_size,
-                                  stride,
-                                  out_channels,
-                                  fuse_activation);
-    }
-
-    if (Conv2dTryIm2ColForward(in,
-                               weights,
-                               bias,
-                               out,
-                               in_h,
-                               in_w_u,
-                               in_ch,
-                               out_h,
-                               out_w,
-                               out_ch,
-                               k_kernel,
-                               k_kernel,
-                               stride,
-                               pad_h,
-                               pad_w,
-                               pad_h_end,
-                               pad_w_end,
-                               out_channels,
-                               fuse_activation))
-    {
-        return kernel_activation_is_fused(fuse_activation);
-    }
-
-    if (Conv2dTryInputStationaryForward(in,
-                                        weights_hwio,
-                                        bias,
-                                        out,
-                                        in_h,
-                                        in_w_u,
-                                        in_ch,
-                                        out_h,
-                                        out_w,
-                                        out_ch,
-                                        k_kernel,
-                                        k_kernel,
-                                        stride,
-                                        pad_h,
-                                        pad_w,
-                                        pad_h_end,
-                                        pad_w_end,
-                                        out_channels,
-                                        fuse_activation))
-    {
-        return kernel_activation_is_fused(fuse_activation);
-    }
-
-    const int in_h_i = static_cast<int>(input.shape[0]);
-    const int in_w = static_cast<int>(input.shape[1]);
-
-    for (uint32_t oh = 0; oh < out_h; oh++)
-    {
-        for (uint32_t ow = 0; ow < out_w; ow++)
-        {
-            const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
-
-            for (int oc = 0; oc < out_channels; oc++)
-            {
-                float sum = bias ? bias[oc] : 0.0f;
-
-                for (int kh = 0; kh < kernel_size; kh++)
-                {
-                    const int ih = static_cast<int>(oh) * stride + kh - pad_h;
-                    if (ih < 0 || ih >= in_h_i)
-                        continue;
-
-                    const uint32_t in_row = static_cast<uint32_t>(ih) * in_w_u;
-
-                    for (int kw = 0; kw < kernel_size; kw++)
-                    {
-                        const int iw = static_cast<int>(ow) * stride + kw - pad_w;
-                        if (iw < 0 || iw >= in_w)
-                            continue;
-
-                        const uint32_t in_base = (in_row + static_cast<uint32_t>(iw)) * input.shape[2];
-                        const uint32_t w_base =
-                            ((static_cast<uint32_t>(oc) * static_cast<uint32_t>(kernel_size) +
-                              static_cast<uint32_t>(kh)) *
-                                 static_cast<uint32_t>(kernel_size) +
-                             static_cast<uint32_t>(kw)) *
-                            in_ch;
-
-                        sum += NetkitLoopUnroll::dot_contiguous(in + in_base, weights + w_base, in_ch);
-                    }
-                }
-
-                out[out_spatial_base + static_cast<uint32_t>(oc)] = ConvOutputValue(sum, fuse_activation);
-            }
-        }
-    }
-
-    return kernel_activation_is_fused(fuse_activation);
+    return Conv2dDispatchForward(input,
+                                 weights,
+                                 bias,
+                                 kernel_size,
+                                 stride,
+                                 pad_h,
+                                 pad_w,
+                                 pad_h_end,
+                                 pad_w_end,
+                                 in_channels,
+                                 out_channels,
+                                 fuse_activation,
+                                 output,
+                                 weights_hwio);
 }
 
 bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
@@ -726,63 +450,25 @@ bool ReferenceKernel::DepthwiseConv2dForwardImpl(const Tensor& input,
                                                  int stride,
                                                  int pad_h,
                                                  int pad_w,
-                                                 int /*pad_h_end*/,
-                                                 int /*pad_w_end*/,
+                                                 int pad_h_end,
+                                                 int pad_w_end,
                                                  int channels,
                                                  NetkitKernelActivation fuse_activation,
                                                  Tensor& output)
 {
-    float* in = tensor_data_f32(const_cast<Tensor&>(input));
-    float* out = tensor_data_f32(output);
-
-    const uint32_t out_h = output.shape[0];
-    const uint32_t out_w = output.shape[1];
-    const int in_h = static_cast<int>(input.shape[0]);
-    const int in_w = static_cast<int>(input.shape[1]);
-    const uint32_t in_w_u = input.shape[1];
-    const uint32_t ch_u = static_cast<uint32_t>(channels);
-
-    for (uint32_t oh = 0; oh < out_h; ++oh)
-    {
-        for (uint32_t ow = 0; ow < out_w; ++ow)
-        {
-            const uint32_t out_spatial_base = (oh * out_w + ow) * ch_u;
-
-            for (int c = 0; c < channels; ++c)
-            {
-                float sum = bias ? bias[c] : 0.0f;
-
-                for (int kh = 0; kh < kernel_h; ++kh)
-                {
-                    const int ih = static_cast<int>(oh) * stride + kh - pad_h;
-                    if (ih < 0 || ih >= in_h)
-                        continue;
-
-                    const uint32_t in_row = static_cast<uint32_t>(ih) * in_w_u;
-
-                    for (int kw = 0; kw < kernel_w; ++kw)
-                    {
-                        const int iw = static_cast<int>(ow) * stride + kw - pad_w;
-                        if (iw < 0 || iw >= in_w)
-                            continue;
-
-                        const uint32_t in_idx =
-                            (in_row + static_cast<uint32_t>(iw)) * ch_u + static_cast<uint32_t>(c);
-                        const uint32_t w_idx =
-                            (static_cast<uint32_t>(c) * static_cast<uint32_t>(kernel_h) +
-                             static_cast<uint32_t>(kh)) *
-                                static_cast<uint32_t>(kernel_w) +
-                            static_cast<uint32_t>(kw);
-                        sum += in[in_idx] * weights[w_idx];
-                    }
-                }
-
-                out[out_spatial_base + static_cast<uint32_t>(c)] = ConvOutputValue(sum, fuse_activation);
-            }
-        }
-    }
-
-    return kernel_activation_is_fused(fuse_activation);
+    return ConvDepthwiseForward(input,
+                              weights,
+                              bias,
+                              kernel_h,
+                              kernel_w,
+                              stride,
+                              pad_h,
+                              pad_w,
+                              pad_h_end,
+                              pad_w_end,
+                              channels,
+                              fuse_activation,
+                              output);
 }
 
 void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,

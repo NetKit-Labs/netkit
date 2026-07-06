@@ -1590,7 +1590,7 @@ namespace NkLoader
 
     LoadResult ParseFile(const char* nk_path, ParsedModel& out)
     {
-        out = ParsedModel{};
+        out = ParsedModel();
 
         std::FILE* file = std::fopen(nk_path, "rb");
         if (!file)
@@ -1677,7 +1677,7 @@ namespace NkLoader
 
     LoadResult ParseBuffer(const uint8_t* data, std::size_t size, ParsedModel& out)
     {
-        out = ParsedModel{};
+        out = ParsedModel();
 
         if (!data || size == 0)
             return Fail(LoadStatus::ReadFailed, "Empty .nk buffer");

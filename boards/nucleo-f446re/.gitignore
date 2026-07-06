@@ -1,0 +1,4 @@
+# NUCLEO-F446RE MNIST MLP firmware build artifacts
+build/
+generated/
+.toolchain/

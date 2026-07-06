@@ -30,7 +30,8 @@ bool NkPlanConv2D(CnnBlock& block, NkCnnSpatialPlan& plan)
                                    out_w,
                                    static_cast<uint32_t>(block.conv.conv.kernel_size),
                                    static_cast<uint32_t>(block.conv.conv.kernel_size),
-                                   static_cast<uint32_t>(block.conv.conv.in_channels));
+                                   static_cast<uint32_t>(block.conv.conv.in_channels),
+                                   block.conv.conv.stride);
     plan.h = out_h;
     plan.w = out_w;
     plan.channels = out_c;

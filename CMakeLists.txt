@@ -59,6 +59,12 @@ set(NETKIT_RUNTIME_SOURCES
     src/ops.cpp
     src/conv2d.cpp
     src/conv2d_layout.cpp
+    src/conv_dispatch.cpp
+    src/conv1x1_kernel.cpp
+    src/conv_depthwise_kernel.cpp
+    src/conv_direct_kernel.cpp
+    src/im2col_partial.cpp
+    src/im2col_full.cpp
     src/depthwise_conv2d.cpp
     src/convnextv2_block.cpp
     src/mobilenetv4_uib.cpp
