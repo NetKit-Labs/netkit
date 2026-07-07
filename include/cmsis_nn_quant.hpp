@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+class Arena;
+
 namespace CmsisNnQuant
 {
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
@@ -31,6 +33,13 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
                                 int8_t* output_int8);
 
 bool TrySoftmaxS8Plan(const CmsisQuantPlan::SoftmaxPlan& plan, const int8_t* input, int8_t* output);
+
+void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& plan);
+void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& plan);
+bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
+                    const int8_t* weights,
+                    const int32_t* bias,
+                    Arena& arena);
 
 bool TryConv2dNhwcQuant(const int8_t* input,
                         uint32_t in_h,

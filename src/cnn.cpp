@@ -5,8 +5,10 @@
 #include "kernel_workspace.hpp"
 #include "cmsis_buffer_size.hpp"
 #include "ops_resolver.hpp"
-#include "reference_kernel.hpp"
 #include "tensor_factory.hpp"
+#if !defined(NETKIT_MCU_QUANT_ONLY) || !NETKIT_MCU_QUANT_ONLY
+#include "reference_kernel.hpp"
+#endif
 #include <array>
 #include <chrono>
 #include <cstring>
@@ -15,9 +17,14 @@ using namespace TensorFactory;
 
 const NkOpsResolver& CNNNetwork::GetOpsResolver() const
 {
+#if defined(NETKIT_MCU_QUANT_ONLY) && NETKIT_MCU_QUANT_ONLY
+    static NkOpsResolver empty;
+    return empty;
+#else
     if (has_custom_resolver_)
         return op_resolver_;
     return GetDefaultOpsResolver();
+#endif
 }
 
 void Conv2DLayer::forward(const Tensor& input, Tensor& output)
@@ -577,6 +584,9 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
     if (quantized_)
         return forward_quantized(input);
 
+#if defined(NETKIT_MCU_QUANT_ONLY) && NETKIT_MCU_QUANT_ONLY
+    return empty;
+#else
     KernelWorkspace workspace{kernel_workspace_, kernel_workspace_bytes_};
     KernelWorkspaceScope workspace_scope(&workspace);
 
@@ -605,6 +615,7 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
     }
 
     return output_cache_;
+#endif
 }
 
 namespace {

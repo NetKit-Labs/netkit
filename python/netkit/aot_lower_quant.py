@@ -238,11 +238,9 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
                         f"    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(",
                         f"            {plan_name}, current, {w_name}, {b_name}, g_logits))",
                         "        return false;",
-                        f"    if (!CmsisNnQuant::TrySoftmaxS8Plan({sm_name}, g_logits,",
-                        "            use_a ? slot_a : slot_b))",
+                        f"    if (!CmsisNnQuant::TrySoftmaxS8Plan({sm_name}, g_logits, output))",
                         "        return false;",
-                        "    current = use_a ? slot_a : slot_b;",
-                        "    use_a = !use_a;",
+                        "    return true;",
                         "",
                     ]
                 )
@@ -267,18 +265,30 @@ def plan_lowered_quant(nk_path: str | Path) -> QuantLoweredPlan:
             quant_idx += 1
             weight_idx += 1
 
-    forward_lines.append(
-        "    for (std::uint32_t i = 0; i < kOutputElements; ++i)\n"
-        "        output[i] = current[i];\n"
-        "    return true;\n"
-    )
+    if not any(
+        layer.get("type") == "dense" and layer.get("activation") == "softmax"
+        for layer in arch["layers"]
+    ):
+        forward_lines.append(
+            "    for (std::uint32_t i = 0; i < kOutputElements; ++i)\n"
+            "        output[i] = current[i];\n"
+        )
+    forward_lines.append("    return true;\n")
 
     first_quant = bundle.quant_layers[0]
     load_lines: list[str] = []
     w_idx = 0
-    for layer in arch["layers"]:
-        if layer["type"] in ("conv2d", "dense"):
-            if layer["type"] == "dense" and layer.get("activation") == "softmax":
+    for layer_index, layer in enumerate(arch["layers"]):
+        if layer["type"] == "conv2d":
+            load_lines.append(f"CmsisNnQuant::FinalizeConv2DPlan(kConv{w_idx}Plan);")
+            w_idx += 1
+        elif layer["type"] == "max_pool2d":
+            load_lines.append(f"CmsisNnQuant::FinalizePool2DPlan(kPool{layer_index}Plan);")
+        elif layer["type"] == "dense":
+            load_lines.append(
+                f"CmsisNnQuant::FinalizeFcPlan(kFc{w_idx}Plan, kW{w_idx}, kB{w_idx}, arena);"
+            )
+            if layer.get("activation") == "softmax":
                 q = bundle.quant_layers[w_idx]
                 load_lines.append(
                     f"kSoftmax{w_idx}Plan.params = "
@@ -322,7 +332,7 @@ def _emit_plan_structs(bundle: QuantNkBundle) -> str:
             ws = _cmsis_conv_s8_workspace(in_c, layer["kernel_size"])
             apply_relu = layer.get("activation") == "relu"
             lines.append(
-                f"""static const CmsisQuantPlan::Conv2DPlan kConv{weight_idx}Plan = {{
+                f"""static CmsisQuantPlan::Conv2DPlan kConv{weight_idx}Plan = {{
     .input_offset = {-quant.input_zero_point},
     .output_offset = {-quant.output_zero_point},
     .stride = {layer.get("stride", 1)},
@@ -349,7 +359,7 @@ def _emit_plan_structs(bundle: QuantNkBundle) -> str:
             pool_h = layer["pool_size"]
             pool_w = layer.get("pool_w", pool_h)
             lines.append(
-                f"""static const CmsisQuantPlan::Pool2DPlan kPool{layer_index}Plan = {{
+                f"""static CmsisQuantPlan::Pool2DPlan kPool{layer_index}Plan = {{
     .stride = {layer.get("stride", pool_h)},
     .pad_h = {layer.get("pad_h", 0)},
     .pad_w = {layer.get("pad_w", 0)},
@@ -373,7 +383,7 @@ def _emit_plan_structs(bundle: QuantNkBundle) -> str:
             apply_relu = layer.get("activation") == "relu"
             fc_ws = _cmsis_fc_s8_workspace(in_features, out_features)
             lines.append(
-                f"""static const CmsisQuantPlan::FcPlan kFc{weight_idx}Plan = {{
+                f"""static CmsisQuantPlan::FcPlan kFc{weight_idx}Plan = {{
     .input_offset = {-quant.input_zero_point},
     .filter_offset = {-quant.weight_zero_point},
     .output_offset = {-quant.output_zero_point},
@@ -546,7 +556,7 @@ namespace {{
 {scratch}
 }}  // namespace
 
-bool Model::load(Arena& /*arena*/)
+bool Model::load(Arena& arena)
 {{
 {plan.load_body}}}
 

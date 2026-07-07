@@ -26,6 +26,9 @@ std::size_t CmsisGeluWorkspaceBytes(uint32_t num_elements);
 std::size_t CmsisConv2dS8WorkspaceBytes(uint32_t in_h,
                                         uint32_t in_w,
                                         int kernel_size,
+                                        int stride,
+                                        int pad_h,
+                                        int pad_w,
                                         int in_channels,
                                         int out_channels);
 
@@ -46,6 +49,9 @@ void CmsisBumpConv2dWorkspace(uint32_t in_h,
 void CmsisBumpConv2dS8Workspace(uint32_t in_h,
                                 uint32_t in_w,
                                 int kernel_size,
+                                int stride,
+                                int pad_h,
+                                int pad_w,
                                 int in_channels,
                                 int out_channels);
 

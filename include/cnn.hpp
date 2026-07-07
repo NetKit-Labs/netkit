@@ -182,6 +182,8 @@ public:
 
     void SetQuantRuntime(CmsisQuantPlan::Runtime* runtime) { quant_runtime_ = runtime; }
 
+    CmsisQuantPlan::Runtime* quant_runtime() const { return quant_runtime_; }
+
     void SetOpsResolver(const NkOpsResolver& resolver)
     {
         op_resolver_ = resolver;

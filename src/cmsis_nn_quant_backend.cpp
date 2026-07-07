@@ -2,6 +2,8 @@
  * CMSIS-NN int8 adapters for netkit quantized conv / pool / FC (TFLite-style).
  */
 #include "cmsis_nn_quant.hpp"
+#include "arena.hpp"
+#include "cmsis_buffer_size.hpp"
 #include "kernel_workspace.hpp"
 #include "nk_op_detail.hpp"
 #include "netkit_config.h"
@@ -107,6 +109,117 @@ namespace
 namespace CmsisNnQuant
 {
 
+void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& plan)
+{
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.ready || !plan.multipliers || !plan.shifts)
+        return;
+
+    plan.cmsis.conv = {
+        .input_offset = plan.input_offset,
+        .output_offset = plan.output_offset,
+        .stride = {.w = plan.stride, .h = plan.stride},
+        .padding = {.w = plan.pad_w, .h = plan.pad_h},
+        .dilation = {.w = 1, .h = 1},
+        .activation = activation_relu(plan.apply_relu),
+    };
+    plan.cmsis.quant = {
+        .multiplier = plan.multipliers,
+        .shift = plan.shifts,
+    };
+    plan.cmsis.input = {.n = 1, .h = plan.in_h, .w = plan.in_w, .c = plan.in_c};
+    plan.cmsis.filter = {
+        .n = plan.out_c, .h = plan.kernel_size, .w = plan.kernel_size, .c = plan.in_c,
+    };
+    plan.cmsis.bias = {.n = 1, .h = 1, .w = 1, .c = plan.out_c};
+    plan.cmsis.output = {.n = 1, .h = plan.out_h, .w = plan.out_w, .c = plan.out_c};
+    plan.cmsis.ready = true;
+#else
+    (void)plan;
+#endif
+}
+
+void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& plan)
+{
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.ready)
+        return;
+
+    plan.cmsis.pool = {
+        .stride = {.w = plan.stride, .h = plan.stride},
+        .padding = {.w = plan.pad_w, .h = plan.pad_h},
+        .activation = {.min = -128, .max = 127},
+    };
+    plan.cmsis.input = {.n = 1, .h = plan.in_h, .w = plan.in_w, .c = plan.in_c};
+    plan.cmsis.filter = {.n = 1, .h = plan.pool_h, .w = plan.pool_w, .c = 1};
+    plan.cmsis.output = {.n = 1, .h = plan.out_h, .w = plan.out_w, .c = plan.in_c};
+    plan.cmsis.ready = true;
+#else
+    (void)plan;
+#endif
+}
+
+bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
+                    const int8_t* weights,
+                    const int32_t* bias,
+                    Arena& arena)
+{
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.ready)
+        return false;
+
+    plan.cmsis.fc = {
+        .input_offset = plan.input_offset,
+        .filter_offset = plan.filter_offset,
+        .output_offset = plan.output_offset,
+        .activation = activation_relu(plan.apply_relu),
+    };
+    plan.cmsis.quant = {
+        .multiplier = plan.multiplier,
+        .shift = plan.shift,
+    };
+    plan.cmsis.input = {.n = 1, .h = 1, .w = 1, .c = plan.in_features};
+    plan.cmsis.filter = {
+        .n = plan.in_features, .h = 1, .w = 1, .c = plan.out_features,
+    };
+    plan.cmsis.bias = {.n = 1, .h = 1, .w = 1, .c = plan.out_features};
+    plan.cmsis.output = {.n = 1, .h = 1, .w = 1, .c = plan.out_features};
+    plan.cmsis.ready = true;
+
+#if defined(NETKIT_KERNELS_OPTIMIZED_FOR_SPEED) && NETKIT_KERNELS_OPTIMIZED_FOR_SPEED
+    if (weights && bias && plan.workspace_bytes > 0 && !plan.kernel_sums)
+    {
+        plan.kernel_sums = static_cast<int32_t*>(arena.alloc(
+            static_cast<std::size_t>(plan.workspace_bytes), alignof(int32_t)));
+        if (!plan.kernel_sums)
+            return false;
+
+        if (arm_vector_sum_s8(plan.kernel_sums,
+                              plan.in_features,
+                              plan.out_features,
+                              weights,
+                              plan.input_offset,
+                              plan.filter_offset,
+                              bias) != ARM_CMSIS_NN_SUCCESS)
+        {
+            return false;
+        }
+    }
+#else
+    (void)weights;
+    (void)bias;
+    (void)arena;
+#endif
+    return true;
+#else
+    (void)plan;
+    (void)weights;
+    (void)bias;
+    (void)arena;
+    return plan.ready;
+#endif
+}
+
 bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
                             const int8_t* input,
                             const int8_t* weights,
@@ -121,6 +234,35 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
         return false;
     }
 
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.cmsis.ready)
+    {
+        QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::NullPtr, 0, workspace_bytes);
+        return false;
+    }
+#endif
+
+    cmsis_nn_context ctx = {0};
+    if (!BindContext(ctx, plan.workspace_bytes))
+    {
+        QuantTrace::RecordConv2dCmsisFail(
+            QuantTrace::Conv2dFail::BindContext, plan.workspace_bytes, workspace_bytes);
+        return false;
+    }
+
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!cmsis_status_ok(arm_convolve_wrapper_s8(&ctx,
+                                                 &plan.cmsis.conv,
+                                                 &plan.cmsis.quant,
+                                                 &plan.cmsis.input,
+                                                 input,
+                                                 &plan.cmsis.filter,
+                                                 weights,
+                                                 &plan.cmsis.bias,
+                                                 bias,
+                                                 &plan.cmsis.output,
+                                                 output)))
+#else
     const cmsis_nn_conv_params conv_params = {
         .input_offset = plan.input_offset,
         .output_offset = plan.output_offset,
@@ -146,26 +288,18 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
         .n = 1, .h = plan.out_h, .w = plan.out_w, .c = plan.out_c,
     };
 
-    cmsis_nn_context ctx = {0};
-    if (!BindContext(ctx, plan.workspace_bytes))
-    {
-        QuantTrace::RecordConv2dCmsisFail(
-            QuantTrace::Conv2dFail::BindContext, plan.workspace_bytes, workspace_bytes);
-        return false;
-    }
-
-    if (!cmsis_status_ok(arm_convolve_s8(&ctx,
-                                         &conv_params,
-                                         &quant_params,
-                                         &input_dims,
-                                         input,
-                                         &filter_dims,
-                                         weights,
-                                         &bias_dims,
-                                         bias,
-                                         nullptr,
-                                         &output_dims,
-                                         output)))
+    if (!cmsis_status_ok(arm_convolve_wrapper_s8(&ctx,
+                                                 &conv_params,
+                                                 &quant_params,
+                                                 &input_dims,
+                                                 input,
+                                                 &filter_dims,
+                                                 weights,
+                                                 &bias_dims,
+                                                 bias,
+                                                 &output_dims,
+                                                 output)))
+#endif
     {
         QuantTrace::RecordConv2dCmsisFail(
             QuantTrace::Conv2dFail::CmsisStatus, plan.workspace_bytes, workspace_bytes);
@@ -183,6 +317,21 @@ bool TryMaxPool2dNhwcQuantPlan(const CmsisQuantPlan::Pool2DPlan& plan,
     if (!plan.ready || !input || !output)
         return false;
 
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.cmsis.ready)
+        return false;
+#endif
+
+    cmsis_nn_context ctx = {0};
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!cmsis_status_ok(arm_max_pool_s8(&ctx,
+                                         &plan.cmsis.pool,
+                                         &plan.cmsis.input,
+                                         input,
+                                         &plan.cmsis.filter,
+                                         &plan.cmsis.output,
+                                         output)))
+#else
     const cmsis_nn_pool_params pool_params = {
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
@@ -199,9 +348,9 @@ bool TryMaxPool2dNhwcQuantPlan(const CmsisQuantPlan::Pool2DPlan& plan,
         .n = 1, .h = plan.out_h, .w = plan.out_w, .c = plan.in_c,
     };
 
-    cmsis_nn_context ctx = {0};
     if (!cmsis_status_ok(
             arm_max_pool_s8(&ctx, &pool_params, &input_dims, input, &filter_dims, &output_dims, output)))
+#endif
     {
         return false;
     }
@@ -224,6 +373,63 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
         return false;
     }
 
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.cmsis.ready)
+    {
+        QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::NullPtr, 0, workspace_bytes);
+        return false;
+    }
+#endif
+
+    cmsis_nn_context ctx = {0};
+    if (plan.kernel_sums != nullptr)
+    {
+        ctx.buf = plan.kernel_sums;
+        ctx.size = plan.workspace_bytes;
+    }
+    else if (!BindContext(ctx, plan.workspace_bytes))
+    {
+        QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::BindContext, plan.workspace_bytes, workspace_bytes);
+        return false;
+    }
+#if defined(NETKIT_KERNELS_OPTIMIZED_FOR_SPEED) && NETKIT_KERNELS_OPTIMIZED_FOR_SPEED
+    else if (ctx.buf != nullptr && plan.workspace_bytes > 0)
+    {
+        if (arm_vector_sum_s8(static_cast<int32_t*>(ctx.buf),
+                              plan.in_features,
+                              plan.out_features,
+                              weights,
+                              plan.input_offset,
+                              plan.filter_offset,
+                              bias) != ARM_CMSIS_NN_SUCCESS)
+        {
+            QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::CmsisStatus, plan.workspace_bytes, workspace_bytes);
+            return false;
+        }
+    }
+#endif
+
+    int32_t multiplier = plan.multiplier;
+    int32_t shift = plan.shift;
+    const cmsis_nn_quant_params wrapper_quant = {
+        .multiplier = &multiplier,
+        .shift = &shift,
+        .is_per_channel = 0,
+    };
+
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!cmsis_status_ok(arm_fully_connected_wrapper_s8(&ctx,
+                                                        &plan.cmsis.fc,
+                                                        &wrapper_quant,
+                                                        &plan.cmsis.input,
+                                                        input,
+                                                        &plan.cmsis.filter,
+                                                        weights,
+                                                        &plan.cmsis.bias,
+                                                        bias,
+                                                        &plan.cmsis.output,
+                                                        output_int8)))
+#else
     const cmsis_nn_per_tensor_quant_params quant_params = {
         .multiplier = plan.multiplier,
         .shift = plan.shift,
@@ -243,24 +449,18 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
     const cmsis_nn_dims bias_dims = {.n = 1, .h = 1, .w = 1, .c = plan.out_features};
     const cmsis_nn_dims output_dims = {.n = 1, .h = 1, .w = 1, .c = plan.out_features};
 
-    cmsis_nn_context ctx = {0};
-    if (!BindContext(ctx, plan.workspace_bytes))
-    {
-        QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::BindContext, plan.workspace_bytes, workspace_bytes);
-        return false;
-    }
-
-    if (!cmsis_status_ok(arm_fully_connected_s8(&ctx,
-                                                &fc_params,
-                                                &quant_params,
-                                                &input_dims,
-                                                input,
-                                                &filter_dims,
-                                                weights,
-                                                &bias_dims,
-                                                bias,
-                                                &output_dims,
-                                                output_int8)))
+    if (!cmsis_status_ok(arm_fully_connected_wrapper_s8(&ctx,
+                                                        &fc_params,
+                                                        &wrapper_quant,
+                                                        &input_dims,
+                                                        input,
+                                                        &filter_dims,
+                                                        weights,
+                                                        &bias_dims,
+                                                        bias,
+                                                        &output_dims,
+                                                        output_int8)))
+#endif
     {
         QuantTrace::RecordFcCmsisFail(QuantTrace::FcFail::CmsisStatus, plan.workspace_bytes, workspace_bytes);
         return false;
@@ -370,7 +570,8 @@ bool TryConv2dNhwcQuant(const int8_t* input,
         .c = out_channels,
     };
 
-    const int32_t buf_size = arm_convolve_s8_get_buffer_size(&input_dims, &filter_dims);
+    const int32_t buf_size = static_cast<int32_t>(CmsisConv2dS8WorkspaceBytes(
+        in_h, in_w, kernel_size, stride, pad_h, pad_w, in_c, out_channels));
     cmsis_nn_context ctx = {0};
     if (!BindContext(ctx, buf_size))
     {
@@ -379,18 +580,17 @@ bool TryConv2dNhwcQuant(const int8_t* input,
         return false;
     }
 
-    if (!cmsis_status_ok(arm_convolve_s8(&ctx,
-                                         &conv_params,
-                                         &quant_params,
-                                         &input_dims,
-                                         input,
-                                         &filter_dims,
-                                         weights,
-                                         &bias_dims,
-                                         bias,
-                                         nullptr,
-                                         &output_dims,
-                                         output)))
+    if (!cmsis_status_ok(arm_convolve_wrapper_s8(&ctx,
+                                                 &conv_params,
+                                                 &quant_params,
+                                                 &input_dims,
+                                                 input,
+                                                 &filter_dims,
+                                                 weights,
+                                                 &bias_dims,
+                                                 bias,
+                                                 &output_dims,
+                                                 output)))
     {
         QuantTrace::RecordConv2dCmsisFail(
             QuantTrace::Conv2dFail::CmsisStatus, buf_size, workspace_bytes);
@@ -608,6 +808,16 @@ bool TryFullyConnectedQuantToFloat(const int8_t* input,
 
 namespace CmsisNnQuant
 {
+
+void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& /*plan*/) {}
+void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& /*plan*/) {}
+bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& /*plan*/,
+                    const int8_t* /*weights*/,
+                    const int32_t* /*bias*/,
+                    Arena& /*arena*/)
+{
+    return false;
+}
 
 bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& /*plan*/,
                             const int8_t* /*input*/,

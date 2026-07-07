@@ -54,9 +54,12 @@ INCLUDES := \
 NETKIT_WEIGHTS_IN_RAM ?= 0
 
 NETKIT_QUANT_TRACE ?= 0
+NETKIT_MCU_QUANT_ONLY ?= 1
 
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU=1 \
+	-DNETKIT_MCU_QUANT_ONLY=$(NETKIT_MCU_QUANT_ONLY) \
+	-DNETKIT_KERNELS_OPTIMIZED_FOR_SPEED=1 \
 	-DNETKIT_WEIGHTS_IN_RAM=$(NETKIT_WEIGHTS_IN_RAM) \
 	-DNETKIT_USE_CMSIS_DSP=1 \
 	-DNETKIT_USE_CMSIS_NN=1 \
@@ -66,8 +69,31 @@ NETKIT_CPPFLAGS := \
 	-DNETKIT_IM2COL_FULL=0 \
 	-DARM_MATH_CM4 \
 	-DARM_MATH_LOOPUNROLL \
-	-DARM_NN_ENABLE_F32=1
+	-DARM_NN_ENABLE_F32=0
 
+ifeq ($(NETKIT_MCU_QUANT_ONLY),1)
+NETKIT_RUNTIME_SOURCES := \
+	$(NETKIT_ROOT)/src/arena.cpp \
+	$(NETKIT_ROOT)/src/tensor_factory.cpp \
+	$(NETKIT_ROOT)/src/tensor_access.cpp \
+	$(NETKIT_ROOT)/src/kernel_workspace.cpp \
+	$(NETKIT_ROOT)/src/cmsis_buffer_size.cpp \
+	$(NETKIT_ROOT)/src/quant_ops.cpp \
+	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
+	$(NETKIT_ROOT)/src/cmsis_nn_quant_backend.cpp \
+	$(NETKIT_ROOT)/src/cmsis_quant_plan.cpp \
+	$(NETKIT_ROOT)/src/cnn_quant.cpp \
+	$(NETKIT_ROOT)/src/cnn.cpp \
+	$(NETKIT_ROOT)/src/conv2d_layout.cpp \
+	$(NETKIT_ROOT)/src/ops_resolver.cpp \
+	$(NETKIT_ROOT)/src/mobilenetv4_uib.cpp \
+	$(NETKIT_ROOT)/src/resnet_basic_block.cpp \
+	$(NETKIT_ROOT)/src/convnextv2_block.cpp \
+	$(NETKIT_ROOT)/src/yolox_decoupled_head.cpp \
+	$(NETKIT_ROOT)/src/quant_trace.cpp \
+	$(NETKIT_ROOT)/src/nk_format.cpp \
+	$(NETKIT_ROOT)/src/nk_loader.cpp
+else
 NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/arena.cpp \
 	$(NETKIT_ROOT)/src/tensor_factory.cpp \
@@ -116,6 +142,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/netkit_api.cpp \
 	$(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp \
 	$(NETKIT_ROOT)/src/cmsis_nn_backend.cpp
+endif
 
 # Compiled at KERNEL_OPTIMIZATION_LEVEL (-O2), same tier as TFLM cmsis_nn kernels.
 NETKIT_KERNEL_RUNTIME_SOURCES := \
@@ -140,6 +167,15 @@ CMSIS_DSP_SOURCES := \
 	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_mult_f32.c
 
 include $(NETKIT_ROOT)/third_party/cmsis_nn.mk
+
+ifeq ($(NETKIT_MCU_QUANT_ONLY),1)
+CMSIS_NN_CFLAGS := -std=c11 -O2 -DARM_NN_ENABLE_F32=0 -I$(CMSIS_NN_DIR)/Include $(NETKIT_ARCH_CFLAGS)
+CMSIS_NN_SOURCES := \
+	$(CMSIS_NN_S8_SOURCES) \
+	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_softmax_s8.c \
+	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c
+CMSIS_DSP_SOURCES :=
+endif
 
 BOARD_C_SOURCES := \
 	$(BOARD_COMMON)/src/system_stm32f4xx.c \

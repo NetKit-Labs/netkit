@@ -688,25 +688,11 @@ def _render_cpp_source(
         output[i] = out_data[i];
     return true;"""
         forward_body_int8_direct = f"""    auto* cnn = static_cast<CNNNetwork*>(network_);
-    Tensor input_tensor{{}};
-    input_tensor.data = const_cast<int8_t*>(input);
-    input_tensor.type = DataType::Int8;
-    input_tensor.rank = 3;
-    input_tensor.shape[0] = {height};
-    input_tensor.shape[1] = {width};
-    input_tensor.shape[2] = {channels};
-    input_tensor.stride[0] = {width} * {channels};
-    input_tensor.stride[1] = {channels};
-    input_tensor.stride[2] = 1;
-    input_tensor.num_elements = kInputElements;
-    input_tensor.bytes = input_tensor.num_elements * sizeof(int8_t);
-    Tensor& out_tensor = cnn->forward(input_tensor, arena);
-    if (!out_tensor.data || out_tensor.type != DataType::Int8)
+    CmsisQuantPlan::Runtime* runtime = cnn->quant_runtime();
+    if (!runtime)
         return false;
-    const int8_t* out_data = static_cast<const int8_t*>(out_tensor.data);
-    for (std::uint32_t i = 0; i < kOutputElements; ++i)
-        output[i] = out_data[i];
-    return true;"""
+    return CmsisQuantPlan::ForwardInt8ToBuffer(
+        *runtime, *cnn, input, output, kOutputElements);"""
         forward_body_float = f"""    auto* cnn = static_cast<CNNNetwork*>(network_);
     Tensor input_tensor{{}};
     input_tensor.data = const_cast<float*>(input);
@@ -801,6 +787,7 @@ bool Model::forwardInt8(Arena& arena, const int8_t* input, int8_t* output) const
 
 #include "arena.hpp"
 #include "cnn.hpp"
+#include "cmsis_quant_plan.hpp"
 #include "mlp.hpp"
 #include "nk_loader.hpp"
 #include "quant_output.hpp"

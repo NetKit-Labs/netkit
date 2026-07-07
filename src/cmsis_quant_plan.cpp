@@ -159,12 +159,16 @@ namespace
             static_cast<uint32_t>(in_h),
             static_cast<uint32_t>(in_w),
             static_cast<uint32_t>(conv.kernel_size),
+            conv.stride,
+            conv.pad_h,
+            conv.pad_w,
             static_cast<uint32_t>(in_c),
             static_cast<uint32_t>(conv.out_channels)));
 #else
         plan.workspace_bytes = 0;
 #endif
         plan.ready = true;
+        CmsisNnQuant::FinalizeConv2DPlan(plan);
         return true;
     }
 
@@ -190,6 +194,7 @@ namespace
         plan.out_w = static_cast<int32_t>(nk_op_detail::CalcOutputDimAsymmetric(
             in_w, pool.pool_w, pool.stride, pool.pad_w, pool.pad_w_end));
         plan.ready = true;
+        CmsisNnQuant::FinalizePool2DPlan(plan);
         return true;
     }
 
@@ -330,6 +335,13 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                      in_features,
                                      out_features))
                         return false;
+                    {
+                        const int8_t* weights =
+                            static_cast<const int8_t*>(block.dense.weights.data);
+                        const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
+                        if (!CmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena))
+                            return false;
+                    }
                     if (!BuildSoftmaxPlan(lp.softmax,
                                           block.dense.quant.params.output_scale > 0.0f
                                               ? block.dense.quant.params.output_scale
@@ -346,6 +358,13 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                      in_features,
                                      out_features))
                         return false;
+                    {
+                        const int8_t* weights =
+                            static_cast<const int8_t*>(block.dense.weights.data);
+                        const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
+                        if (!CmsisNnQuant::FinalizeFcPlan(lp.fc, weights, bias, arena))
+                            return false;
+                    }
                 }
                 workspace_bytes = std::max(workspace_bytes,
                                            static_cast<std::size_t>(lp.fc.workspace_bytes));
@@ -419,7 +438,8 @@ namespace
                        CNNNetwork& network,
                        int8_t* current,
                        QuantOutputFormat output_format,
-                       Tensor& output_cache)
+                       Tensor& output_cache,
+                       int8_t* output_dest)
     {
         if (!runtime.layers || runtime.num_layers == 0 || !current)
             return false;
@@ -434,6 +454,7 @@ namespace
         for (uint32_t i = 0; i < runtime.num_layers; ++i)
         {
             const LayerPlan& lp = runtime.layers[i];
+            const bool is_last = i + 1 == runtime.num_layers;
             int8_t* out = nullptr;
 
             if (lp.kind == LayerKind::FlattenView)
@@ -470,8 +491,11 @@ namespace
                 {
                     const int8_t* weights = static_cast<const int8_t*>(block.dense.weights.data);
                     const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
-                    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(lp.fc, current, weights, bias, out))
+                    int8_t* dense_out = (is_last && output_dest != nullptr) ? output_dest : out;
+                    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(lp.fc, current, weights, bias, dense_out))
                         return false;
+                    if (dense_out == output_dest)
+                        out = output_dest;
                     break;
                 }
                 case LayerKind::DenseSoftmax:
@@ -481,8 +505,10 @@ namespace
                     if (!CmsisNnQuant::TryFullyConnectedQuantPlan(
                             lp.fc, current, weights, bias, runtime.logits))
                         return false;
-                    if (!CmsisNnQuant::TrySoftmaxS8Plan(lp.softmax, runtime.logits, out))
+                    int8_t* softmax_out = (output_dest != nullptr) ? output_dest : out;
+                    if (!CmsisNnQuant::TrySoftmaxS8Plan(lp.softmax, runtime.logits, softmax_out))
                         return false;
+                    out = softmax_out;
                     (void)output_format;
                     break;
                 }
@@ -493,9 +519,13 @@ namespace
             if (lp.kind != LayerKind::FlattenView)
             {
                 current = out;
-                use_a = !use_a;
+                if (out != output_dest)
+                    use_a = !use_a;
             }
         }
+
+        if (output_dest != nullptr)
+            return true;
 
         const LayerPlan& last = runtime.layers[runtime.num_layers - 1];
         output_cache = View2DInt8(current, 1, last.output_elements);
@@ -527,7 +557,7 @@ bool Forward(Runtime& runtime,
         runtime.input_quant[i] =
             QuantOps::QuantizeFloat(input_f[i], runtime.input_scale, runtime.input_zero_point);
 
-    return ForwardLayers(runtime, network, runtime.input_quant, output_format, output_cache);
+    return ForwardLayers(runtime, network, runtime.input_quant, output_format, output_cache, nullptr);
 }
 
 bool ForwardInt8(Runtime& runtime,
@@ -540,7 +570,33 @@ bool ForwardInt8(Runtime& runtime,
     if (!input || input_elements != runtime.input_quant_elements)
         return false;
 
-    return ForwardLayers(runtime, network, const_cast<int8_t*>(input), output_format, output_cache);
+    return ForwardLayers(runtime,
+                       network,
+                       const_cast<int8_t*>(input),
+                       output_format,
+                       output_cache,
+                       nullptr);
+}
+
+bool ForwardInt8ToBuffer(Runtime& runtime,
+                         CNNNetwork& network,
+                         const int8_t* input,
+                         int8_t* output,
+                         uint32_t output_elements)
+{
+    if (!input || !output || runtime.num_layers == 0 || !runtime.layers)
+        return false;
+    if (runtime.input_quant_elements == 0 ||
+        output_elements != runtime.layers[runtime.num_layers - 1].output_elements)
+        return false;
+
+    Tensor unused_cache{};
+    return ForwardLayers(runtime,
+                       network,
+                       const_cast<int8_t*>(input),
+                       QuantOutputFormat::Int8,
+                       unused_cache,
+                       output);
 }
 
 }  // namespace CmsisQuantPlan

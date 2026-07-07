@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cmsis_hoisted_plan.hpp"
 #include "quant_output.hpp"
 
 #include <cstdint>
@@ -36,6 +37,9 @@ struct Conv2DPlan
     int32_t workspace_bytes = 0;
     int32_t* multipliers = nullptr;
     int32_t* shifts = nullptr;
+#if NETKIT_CMSIS_PLAN_HOIST
+    Conv2DCmsisHoist cmsis{};
+#endif
     bool ready = false;
 };
 
@@ -51,6 +55,9 @@ struct Pool2DPlan
     int32_t in_c = 0;
     int32_t out_h = 0;
     int32_t out_w = 0;
+#if NETKIT_CMSIS_PLAN_HOIST
+    Pool2DCmsisHoist cmsis{};
+#endif
     bool ready = false;
 };
 
@@ -65,6 +72,10 @@ struct FcPlan
     int32_t multiplier = 0;
     int32_t shift = 0;
     int32_t workspace_bytes = 0;
+    int32_t* kernel_sums = nullptr;
+#if NETKIT_CMSIS_PLAN_HOIST
+    FcCmsisHoist cmsis{};
+#endif
     bool ready = false;
 };
 

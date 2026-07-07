@@ -48,4 +48,10 @@ bool ForwardInt8(Runtime& runtime,
                  QuantOutputFormat output_format,
                  Tensor& output_cache);
 
+bool ForwardInt8ToBuffer(Runtime& runtime,
+                         CNNNetwork& network,
+                         const int8_t* input,
+                         int8_t* output,
+                         uint32_t output_elements);
+
 }  // namespace CmsisQuantPlan
