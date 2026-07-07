@@ -156,6 +156,15 @@ make -C boards/nucleo-f446re-cnn-int8 && cd boards/nucleo-f446re-cnn-int8 && ./s
 ./scripts/monitor.sh   # press RESET
 ```
 
+MCU firmware prints **raw int8 softmax** only (`pred_i8`, `out_i8=...` on `DIGIT_SUMMARY` lines). Dequantized confidence for netkit vs TFLM comparison is computed offline:
+
+```bash
+python3 benchmark/tools/parse_mcu_cnn_int8_log.py uart.log
+python3 benchmark/tools/parse_mcu_cnn_int8_log.py --compare netkit_uart.log tflm_uart.log
+```
+
+Uses TFLite int8 softmax output spec (`scale=1/256`, `zero_point=-128`).
+
 ## Layout
 
 ```
@@ -164,6 +173,7 @@ benchmark/
   tools/
     render_benchmark_tables.py
     export_aot_assets.py
+    parse_mcu_cnn_int8_log.py   # offline DIGIT_SUMMARY → dequantized confidence
   common/                    # shared stats + profile headers + host flags
   netkit/                    # netkit bench Makefile + mains
   tflm/                      # TFLM wrapper (clone via tools/fetch_tflm.sh)

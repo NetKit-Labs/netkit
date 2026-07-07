@@ -58,6 +58,13 @@ cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh && ./scripts/monitor.sh
 
 Verified: **10/10** accuracy, **~137 ms** mean invoke (quant lowered AOT, 64-byte arena). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
 
+UART captures `DIGIT_SUMMARY` lines with raw int8 softmax (`pred_i8`, `out_i8=...`). Dequantized per-digit confidence is computed offline — not on device:
+
+```bash
+python3 benchmark/tools/parse_mcu_cnn_int8_log.py uart.log
+python3 benchmark/tools/parse_mcu_cnn_int8_log.py --compare netkit_uart.log tflm_uart.log
+```
+
 Int8 export aligns **layer-0 input quant** with TFLite when `benchmark/tflm/generated/mnist_cnn_int8.tflite` is present (`input_scale=1/255`, `zero_point=-128`). Weight and per-layer output scales are calibrated from netkit float weights. Benchmark inputs are prequantized in `mnist_cnn_int8_test_images.*` — no float→int8 conversion at invoke on netkit or TFLM MCU firmware.
 
 ## Regenerating

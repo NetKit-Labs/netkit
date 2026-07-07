@@ -112,17 +112,22 @@ netkit NUCLEO-F446RE MNIST CNN int8 benchmark
   dtype:       int8 end-to-end (softmax int8, prequantized inputs)
   arena bytes: 64
   workspace:   1152 bytes
-  probe:       label=0 pred=0 conf=0.996094 i8[0..3]=127,-128,-128,-128
+  probe:       label=0 pred=0 pred_i8=127 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
 
-  per-digit results (final run):
-    image  label  pred   conf      ok
-        0      0     0  0.996094  yes
-        1      1     1  0.992188  yes
+  per-digit results (final run, int8 only — dequant in Python):
+    image  label  pred  pred_i8  ok
+        0      0     0      127  yes
+        1      1     1      126  yes
         ...
-DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=0 label=0 pred=0 conf=0.996094 ok=1
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=0 label=0 pred=0 pred_i8=127 ok=1 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
 ...
 
-`conf` is the dequantized softmax probability of the predicted class (TFLite int8 softmax spec: scale 1/256, zp −128).
+Dequantized confidence is **not** printed on-device. Parse the log offline:
+
+```bash
+python3 benchmark/tools/parse_mcu_cnn_int8_log.py boards/nucleo-f446re-cnn-int8/uart.log
+python3 benchmark/tools/parse_mcu_cnn_int8_log.py --compare netkit.log tflm.log
+```
 
   accuracy:    10/10 on final run
   mean:   145286.741 us (145.287 ms)

@@ -46,3 +46,13 @@ vs netkit:
 ```text
 BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=cmsis-nn-int8 mean_us=... runs=10
 ```
+
+## Per-digit confidence (offline)
+
+Firmware prints raw int8 softmax outputs (`pred_i8`, `out_i8=...` on `DIGIT_SUMMARY` lines).
+Dequantize and compare in Python:
+
+```bash
+python3 ../../benchmark/tools/parse_mcu_cnn_int8_log.py uart.log
+python3 ../../benchmark/tools/parse_mcu_cnn_int8_log.py --compare netkit_uart.log tflm_uart.log
+```

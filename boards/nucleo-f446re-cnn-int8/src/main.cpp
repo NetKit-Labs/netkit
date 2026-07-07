@@ -1,12 +1,12 @@
 // NUCLEO-F446RE MNIST CNN int8 invoke benchmark — same 10 images as benchmark/netkit.
 // Supports quant lowered AOT or interpreter embed (.nk loader via --no-lower AOT).
 // Test inputs are prequantized int8 (export_int8_test_images.py) — no float conversion.
+// Dequantized confidence is computed offline — see benchmark/tools/parse_mcu_cnn_int8_log.py.
 
 #include "dwt_time.h"
 #include "mnist_cnn_int8_aot.hpp"
 #include "mnist_cnn_int8_test_images.h"
 #include "netkit_config.h"
-#include "quant_output.hpp"
 #include "quant_trace.hpp"
 #include "stm32f446xx.h"
 #include "uart.h"
@@ -21,6 +21,7 @@ namespace {
 constexpr int kRuns = 10;
 constexpr int kImageCount = kMnistCnnInt8BenchmarkImageCount;
 constexpr int kInputSize = kMnistCnnInt8BenchmarkInputSize;
+constexpr int kOutputClasses = 10;
 // Interpreter embed path can emit kArenaBytesRecommended=0 when host probe fails; use MCU slack.
 constexpr std::size_t kArenaCapacity =
     aot::kArenaBytesRecommended > 0 ? aot::kArenaBytesRecommended : (64u * 1024u);
@@ -39,9 +40,30 @@ int ArgMax10Int8(const int8_t* values)
     return best;
 }
 
-float PredictedConfidence(const int8_t* values, int predicted)
+void PrintOutI8Uart(const int8_t* values)
 {
-    return QuantOps::DequantizeSoftmaxOutput(values[predicted]);
+    for (int i = 0; i < kOutputClasses; ++i)
+    {
+        uart_printf("%s%d", i ? "," : "", static_cast<int>(values[i]));
+    }
+}
+
+void PrintDigitSummary(int image,
+                       int label,
+                       int predicted,
+                       int pred_i8,
+                       const int8_t* out_i8,
+                       int ok)
+{
+    uart_printf(
+        "DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=%d label=%d pred=%d pred_i8=%d ok=%d out_i8=",
+        image,
+        label,
+        predicted,
+        pred_i8,
+        ok);
+    PrintOutI8Uart(out_i8);
+    uart_write("\r\n");
 }
 
 template <bool Lowered>
@@ -105,21 +127,18 @@ extern "C" int main(void)
             }
         }
         const int predicted = ArgMax10Int8(g_output_i8);
-        const float confidence = PredictedConfidence(g_output_i8, predicted);
-        uart_printf("  probe:       label=%d pred=%d conf=%.6f i8[0..3]=%d,%d,%d,%d\r\n",
+        uart_printf("  probe:       label=%d pred=%d pred_i8=%d out_i8=",
                     probe.label,
                     predicted,
-                    confidence,
-                    static_cast<int>(g_output_i8[0]),
-                    static_cast<int>(g_output_i8[1]),
-                    static_cast<int>(g_output_i8[2]),
-                    static_cast<int>(g_output_i8[3]));
+                    static_cast<int>(g_output_i8[predicted]));
+        PrintOutI8Uart(g_output_i8);
+        uart_write("\r\n");
         QuantTrace::PrintSummaryUart();
     }
 
     std::array<double, kRuns> run_averages_us{};
     std::array<int, kImageCount> final_predictions{};
-    std::array<float, kImageCount> final_confidence{};
+    std::array<int8_t, kImageCount * kOutputClasses> final_outputs{};
     int correct = 0;
 
     for (int run = 0; run < kRuns; ++run)
@@ -152,8 +171,9 @@ extern "C" int main(void)
             {
                 const int predicted = ArgMax10Int8(g_output_i8);
                 final_predictions[static_cast<size_t>(i)] = predicted;
-                final_confidence[static_cast<size_t>(i)] =
-                    PredictedConfidence(g_output_i8, predicted);
+                std::memcpy(&final_outputs[static_cast<size_t>(i) * kOutputClasses],
+                            g_output_i8,
+                            static_cast<size_t>(kOutputClasses));
                 if (predicted == sample.label)
                 {
                     ++correct;
@@ -165,27 +185,22 @@ extern "C" int main(void)
             run_total_us / static_cast<double>(counted);
     }
 
-    uart_write("\r\n  per-digit results (final run):\r\n");
-    uart_write("    image  label  pred   conf      ok\r\n");
+    uart_write("\r\n  per-digit results (final run, int8 only — dequant in Python):\r\n");
+    uart_write("    image  label  pred  pred_i8  ok\r\n");
     for (int i = 0; i < kImageCount; ++i)
     {
         const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
         const int predicted = final_predictions[static_cast<size_t>(i)];
-        const float confidence = final_confidence[static_cast<size_t>(i)];
+        const int8_t* out_i8 = &final_outputs[static_cast<size_t>(i) * kOutputClasses];
+        const int pred_i8 = static_cast<int>(out_i8[predicted]);
         const int ok = predicted == sample.label ? 1 : 0;
-        uart_printf("    %5d  %5d  %4d  %8.6f  %s\r\n",
+        uart_printf("    %5d  %5d  %4d  %7d  %s\r\n",
                     i,
                     sample.label,
                     predicted,
-                    confidence,
+                    pred_i8,
                     ok ? "yes" : "no");
-        uart_printf(
-            "DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=%d label=%d pred=%d conf=%.6f ok=%d\r\n",
-            i,
-            sample.label,
-            predicted,
-            confidence,
-            ok);
+        PrintDigitSummary(i, sample.label, predicted, pred_i8, out_i8, ok);
     }
 
     double mean_us = 0.0;
