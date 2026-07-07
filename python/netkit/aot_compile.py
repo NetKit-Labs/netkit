@@ -205,8 +205,9 @@ def _adjust_arena_for_flash(
     payload_bytes: int,
     *,
     weights_in_ram: bool,
+    quantized: bool = False,
 ) -> tuple[int, int]:
-    if weights_in_ram or payload_bytes <= 0:
+    if weights_in_ram or payload_bytes <= 0 or quantized:
         return after_load, after_forward
     return max(0, after_load - payload_bytes), max(0, after_forward - payload_bytes)
 
@@ -267,6 +268,7 @@ def _resolve_arena_bytes(
             after_forward,
             payload_bytes,
             weights_in_ram=weights_in_ram,
+            quantized=quantized,
         )
     elif weights_in_ram and payload_bytes > 0:
         # Host inspect probes flash-backed load (NETKIT_WEIGHTS_IN_RAM=0); add payload for SRAM copy.
@@ -380,6 +382,7 @@ def compile_aot(
             network=network,
             quantized=quantized,
         )
+        arena_recommended = max(64, arena_recommended)
 
     blob_lines = _format_byte_array(nk_bytes)
 

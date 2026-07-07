@@ -186,7 +186,8 @@ $(GEN_DIR)/.aot_stamp: $(NETKIT_ROOT)/models/mnist_cnn_int8.nk
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_cnn_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 20 \
-		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram)
+		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram) \
+		$(if $(filter 1,$(NETKIT_INTERPRETER)),--no-lower,)
 	@touch $(GEN_DIR)/.aot_stamp
 
 $(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_DSP_SOURCES) $(CMSIS_NN_SOURCES)

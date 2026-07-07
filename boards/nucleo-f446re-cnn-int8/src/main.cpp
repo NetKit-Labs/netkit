@@ -1,5 +1,5 @@
 // NUCLEO-F446RE MNIST CNN int8 invoke benchmark — same 10 images as benchmark/netkit.
-// Quant lowered AOT: static int8 weights + CmsisQuantPlan call chain (no .nk loader).
+// Supports quant lowered AOT or interpreter embed (.nk loader via --no-lower AOT).
 // Test inputs are prequantized int8 (export_int8_test_images.py) — no float conversion.
 
 #include "dwt_time.h"
@@ -21,8 +21,11 @@ namespace {
 constexpr int kRuns = 10;
 constexpr int kImageCount = kMnistCnnInt8BenchmarkImageCount;
 constexpr int kInputSize = kMnistCnnInt8BenchmarkInputSize;
+// Interpreter embed path can emit kArenaBytesRecommended=0 when host probe fails; use MCU slack.
+constexpr std::size_t kArenaCapacity =
+    aot::kArenaBytesRecommended > 0 ? aot::kArenaBytesRecommended : (64u * 1024u);
 
-alignas(std::max_align_t) static unsigned char g_arena_memory[aot::kArenaBytesRecommended];
+alignas(std::max_align_t) static unsigned char g_arena_memory[kArenaCapacity];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
 
 int ArgMax10Int8(const int8_t* values)
@@ -62,7 +65,7 @@ extern "C" int main(void)
     uart_write("  dtype:       int8 end-to-end (weights, activations, inputs, softmax)\r\n");
     uart_printf("  images:      %d per run\r\n", kImageCount);
     uart_printf("  runs:        %d (discard first invoke each run)\r\n", kRuns);
-    uart_printf("  arena bytes: %u\r\n", static_cast<unsigned>(aot::kArenaBytesRecommended));
+    uart_printf("  arena bytes: %u\r\n", static_cast<unsigned>(kArenaCapacity));
     PrintStorageInfo<aot::kQuantLowered>();
     uart_printf("  sysclk:      %lu Hz\r\n", static_cast<unsigned long>(SystemCoreClock));
 
@@ -108,6 +111,7 @@ extern "C" int main(void)
     }
 
     std::array<double, kRuns> run_averages_us{};
+    std::array<int, kImageCount> final_predictions{};
     int correct = 0;
 
     for (int run = 0; run < kRuns; ++run)
@@ -139,6 +143,7 @@ extern "C" int main(void)
             if (run == kRuns - 1)
             {
                 const int predicted = ArgMax10Int8(g_output_i8);
+                final_predictions[static_cast<size_t>(i)] = predicted;
                 if (predicted == sample.label)
                 {
                     ++correct;
@@ -148,6 +153,25 @@ extern "C" int main(void)
 
         run_averages_us[static_cast<size_t>(run)] =
             run_total_us / static_cast<double>(counted);
+    }
+
+    uart_write("\r\n  per-digit results (final run):\r\n");
+    uart_write("    image  label  pred  ok\r\n");
+    for (int i = 0; i < kImageCount; ++i)
+    {
+        const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
+        const int predicted = final_predictions[static_cast<size_t>(i)];
+        const int ok = predicted == sample.label ? 1 : 0;
+        uart_printf("    %5d  %5d  %4d  %s\r\n",
+                    i,
+                    sample.label,
+                    predicted,
+                    ok ? "yes" : "no");
+        uart_printf("DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=%d label=%d pred=%d ok=%d\r\n",
+                    i,
+                    sample.label,
+                    predicted,
+                    ok);
     }
 
     double mean_us = 0.0;
