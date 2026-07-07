@@ -174,14 +174,16 @@ When CMSIS-NN is off or `TryConv2dForward` returns false, `Conv2dDispatchForward
 |------|--------|
 | **1×1, stride 1** | Always **direct** — never im2col |
 | **Depthwise** | Always **direct** — never im2col |
-| **3×3, stride 1** | MCU: direct preferred; partial im2col when patch volume ≥ 2048. MPU/CPU: partial preferred; full GEMM when volume ≥ 32768 |
-| **≥ 5×5 or large generic** | MCU: partial or direct (never full). MPU/CPU: full im2col when volume ≥ 2048 |
+| **3×3, stride 1** | Direct preferred; **partial im2col** when patch volume ≥ 2048. Full im2col only when `NETKIT_IM2COL_FULL=1` and patch×spatial ≥ 32768 |
+| **≥ 5×5 or large generic** | Direct or **partial im2col** when volume ≥ 2048. Full im2col only when `NETKIT_IM2COL_FULL=1` |
 
 **Weight repack at load:** `CNNNetwork::InitActivationBuffers` calls `RepackConv2dWeights` for each conv layer, allocating `[kh, kw, in, out]` (**HWIO**) beside the stored `[out, kh, kw, in]` (**OIHW**) blob. Repack is one-time arena cost; inference reads `weights_hwio` on the input-stationary direct path.
 
 **Workspace:** `Conv2dWorkspaceBytes` sizes scratch from the selected policy; `CNNNetwork` / `NkConv2DOp` planning takes the max across layers. Workspace is arena-backed on the interpreter path (no heap allocation at inference time).
 
 Padding uses inclusive input bounds (`ih ∈ [0, in_h)`, `iw ∈ [0, in_w)`) consistent with the spatial reference kernel.
+
+**Int8 quantized Conv2D** does not use this float im2col path — `forward_quantized()` routes through CMSIS-NN (`CmsisQuantPlan`) on supported MCU builds.
 
 ## Adding a new kernel op
 

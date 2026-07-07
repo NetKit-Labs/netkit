@@ -28,6 +28,8 @@
  *   On desktop and MPU, NETKIT_CMSIS_NN=1 is ignored (warning) — reference kernels and optional CMSIS-DSP apply.
  *
  * Optional reference-kernel tuning (Makefile / CMake):
+ *   NETKIT_IM2COL_FULL — When 1, float Conv2D may use full im2col + GEMM on large layers
+ *     (default 0). Default is partial im2col everywhere (MCU, MPU, CPU).
  *   NETKIT_LOOP_UNROLL — EXPERIMENTAL. When 1, 4× manual loop unroll in netkit reference
  *     kernels only (default 0). Increases .text/flash size; can exceed program memory on
  *     small MCUs. Independent of CMSIS-DSP ARM_MATH_LOOPUNROLL.
@@ -76,6 +78,14 @@
 
 #if NETKIT_WEIGHTS_IN_RAM != 0 && NETKIT_WEIGHTS_IN_RAM != 1
 #error "NETKIT_WEIGHTS_IN_RAM must be 0 or 1"
+#endif
+
+#ifndef NETKIT_IM2COL_FULL
+#define NETKIT_IM2COL_FULL 0
+#endif
+
+#if NETKIT_IM2COL_FULL != 0 && NETKIT_IM2COL_FULL != 1
+#error "NETKIT_IM2COL_FULL must be 0 or 1"
 #endif
 
 #ifndef NETKIT_LOOP_UNROLL

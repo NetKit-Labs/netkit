@@ -283,12 +283,17 @@ Conv2dExecMode SelectConv2dExecMode(int kernel_h,
         conv_volume_warrants_im2col(kh, kw, in_channels, out_h, out_w);
     const uint32_t patch = kh * kw * in_channels;
     const uint32_t spatial = out_h * out_w;
+#if NETKIT_IM2COL_FULL
     const bool full_gemm_volume =
         patch > 0 && spatial > 0 && patch * spatial >= kIm2ColFullMinPatchVolume;
+#endif
 
-#if defined(NETKIT_TARGET_MCU)
     if (kernel_h == 3 && kernel_w == 3 && stride == 1)
     {
+#if NETKIT_IM2COL_FULL
+        if (full_gemm_volume)
+            return Conv2dExecMode::FullIm2Col;
+#endif
         if (large_volume)
             return Conv2dExecMode::PartialIm2Col;
         return Conv2dExecMode::Direct;
@@ -296,35 +301,22 @@ Conv2dExecMode SelectConv2dExecMode(int kernel_h,
 
     if (kernel_h >= 5 || kernel_w >= 5)
     {
+#if NETKIT_IM2COL_FULL
+        if (large_volume)
+            return Conv2dExecMode::FullIm2Col;
+#endif
         if (large_volume)
             return Conv2dExecMode::PartialIm2Col;
         return Conv2dExecMode::Direct;
     }
 
+#if NETKIT_IM2COL_FULL
+    if (large_volume)
+        return Conv2dExecMode::FullIm2Col;
+#endif
     if (large_volume)
         return Conv2dExecMode::PartialIm2Col;
     return Conv2dExecMode::Direct;
-#else
-    if (kernel_h == 3 && kernel_w == 3 && stride == 1)
-    {
-        if (full_gemm_volume)
-            return Conv2dExecMode::FullIm2Col;
-        if (large_volume)
-            return Conv2dExecMode::PartialIm2Col;
-        return Conv2dExecMode::Direct;
-    }
-
-    if (kernel_h >= 5 || kernel_w >= 5)
-    {
-        if (large_volume)
-            return Conv2dExecMode::FullIm2Col;
-        return Conv2dExecMode::Direct;
-    }
-
-    if (large_volume)
-        return Conv2dExecMode::FullIm2Col;
-    return Conv2dExecMode::Direct;
-#endif
 }
 
 std::size_t Conv2dWorkspaceBytes(uint32_t out_h,

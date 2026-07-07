@@ -1220,6 +1220,45 @@ nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, n
     return NK_OK;
 }
 
+nk_status_t nk_mlp_load_memory(const uint8_t* data,
+                             size_t size,
+                             nk_arena_t* arena,
+                             nk_mlp_t* mlp,
+                             nk_arch_info_t* info)
+{
+    if (!data || size == 0 || !arena || !mlp)
+        return NK_ERR_INVALID_ARGUMENT;
+
+    NkLoader::ParsedModel parsed{};
+    const nk_status_t ps = ParseNkBuffer(data, size, parsed);
+    if (ps != NK_OK)
+        return ps;
+    if (parsed.header.network_kind != NkFormat::NetworkKind::Mlp)
+        return NK_ERR_UNSUPPORTED_NETWORK;
+
+    std::memset(mlp->storage, 0, sizeof(mlp->storage));
+    std::array<uint32_t, kMaxTensorRank> input_shape{};
+    uint32_t input_rank = 0;
+    MLPNetwork* network = nullptr;
+    const NkLoader::LoadResult lr =
+        NkLoader::LoadMLPFromBuffer(data, size, *ArenaPtr(arena), network, input_shape, input_rank);
+    if (lr.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
+    {
+        SetLastError(lr.message ? lr.message : "MLP load failed");
+        return FromLoadStatus(lr.status);
+    }
+    MlpPtr(mlp)->net = network;
+    if (info)
+        FillArchInfoFromParsed(parsed, info);
+    SetLastError(nullptr);
+    return NK_OK;
+}
+
+bool nk_mlp_is_quantized(const nk_mlp_t* mlp)
+{
+    return mlp && nk_mlp_is_valid(mlp) && MlpPtr(mlp)->net->IsQuantized();
+}
+
 nk_status_t nk_cnn_load(const char* nk_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info)
 {
     if (!nk_path || !arena || !cnn)
@@ -1248,6 +1287,45 @@ nk_status_t nk_cnn_load(const char* nk_path, nk_arena_t* arena, nk_cnn_t* cnn, n
         FillArchInfoFromParsed(parsed, info);
     SetLastError(nullptr);
     return NK_OK;
+}
+
+nk_status_t nk_cnn_load_memory(const uint8_t* data,
+                             size_t size,
+                             nk_arena_t* arena,
+                             nk_cnn_t* cnn,
+                             nk_arch_info_t* info)
+{
+    if (!data || size == 0 || !arena || !cnn)
+        return NK_ERR_INVALID_ARGUMENT;
+
+    NkLoader::ParsedModel parsed{};
+    const nk_status_t ps = ParseNkBuffer(data, size, parsed);
+    if (ps != NK_OK)
+        return ps;
+    if (parsed.header.network_kind != NkFormat::NetworkKind::Cnn)
+        return NK_ERR_UNSUPPORTED_NETWORK;
+
+    std::memset(cnn->storage, 0, sizeof(cnn->storage));
+    std::array<uint32_t, kMaxTensorRank> input_shape{};
+    uint32_t input_rank = 0;
+    CNNNetwork* network = nullptr;
+    const NkLoader::LoadResult lr =
+        NkLoader::LoadCNNFromBuffer(data, size, *ArenaPtr(arena), network, input_shape, input_rank);
+    if (lr.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
+    {
+        SetLastError(lr.message ? lr.message : "CNN load failed");
+        return FromLoadStatus(lr.status);
+    }
+    CnnPtr(cnn)->net = network;
+    if (info)
+        FillArchInfoFromParsed(parsed, info);
+    SetLastError(nullptr);
+    return NK_OK;
+}
+
+bool nk_cnn_is_quantized(const nk_cnn_t* cnn)
+{
+    return cnn && nk_cnn_is_valid(cnn) && CnnPtr(cnn)->net->IsQuantized();
 }
 
 nk_status_t nk_model_load_auto(const char* nk_path,
@@ -1436,6 +1514,18 @@ uint32_t nk_model_output_count(const nk_model_t* model)
 nk_network_kind_t nk_model_kind(const nk_model_t* model)
 {
     return model ? ModelPtr(model)->kind : NK_NETWORK_UNKNOWN;
+}
+
+bool nk_model_is_quantized(const nk_model_t* model)
+{
+    if (!model || !ModelPtr(model)->loaded)
+        return false;
+    const ModelState* state = ModelPtr(model);
+    if (state->kind == NK_NETWORK_MLP)
+        return state->mlp && state->mlp->IsQuantized();
+    if (state->kind == NK_NETWORK_CNN)
+        return state->cnn && state->cnn->IsQuantized();
+    return false;
 }
 
 nk_status_t nk_model_run(const nk_model_t* model,

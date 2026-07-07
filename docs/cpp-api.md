@@ -441,9 +441,9 @@ LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
 }
 ```
 
-**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_model_load_memory`).
+**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_mlp_load_memory` / `nk_cnn_load_memory`, or `nk_model_load_memory` for the combined handle). `IsQuantized()` → `nk_mlp_is_quantized` / `nk_cnn_is_quantized` / `nk_model_is_quantized`.
 
-**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper — see [c-api.md](c-api.md).
+**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper, plus typed `nk_mlp_load_memory` / `nk_cnn_load_memory` — see [c-api.md](c-api.md).
 
 **Compiled firmware:** `python -m netkit aot` generates C++26 or C23 sources. Default **C++ lowered** output is a static `Kernels::` call chain (`kLowered = true`) with optional `--weights-in-ram` (arena copy at load) or `--no-weights-in-ram` (MCU flash default). **C AOT** embeds the `.nk` blob and uses `nk_model_load_memory`. See [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [API_PARITY.md](API_PARITY.md), and [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 

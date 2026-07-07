@@ -314,6 +314,50 @@ static void TestModelMetadata(void)
     ExpectTrue(info.output_elements == 2, "arch info output elements");
 }
 
+static void TestBufferLoad(void)
+{
+    printf("\n--- buffer load (C API) ---\n");
+
+    FILE* file = fopen("models/test_mlp.nk", "rb");
+    ExpectTrue(file != nullptr, "open test_mlp.nk for buffer load");
+    if (!file)
+        return;
+
+    static uint8_t blob[8192];
+    const size_t nbytes = fread(blob, 1, sizeof(blob), file);
+    fclose(file);
+    ExpectTrue(nbytes > 0, "read test_mlp.nk bytes");
+
+    alignas(max_align_t) static unsigned char memory[NK_ARENA_DEFAULT_CAPACITY];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    nk_mlp_t mlp;
+    ExpectStatus(nk_mlp_load_memory(blob, nbytes, &arena, &mlp, nullptr), NK_OK, "mlp buffer load");
+    ExpectTrue(nk_mlp_is_valid(&mlp), "mlp buffer load valid");
+    ExpectTrue(!nk_mlp_is_quantized(&mlp), "test mlp not quantized");
+
+    nk_model_t model;
+    ExpectStatus(nk_model_load_memory(blob, nbytes, &arena, &model), NK_OK, "model buffer load");
+    ExpectTrue(nk_model_kind(&model) == NK_NETWORK_MLP, "model buffer load kind");
+    ExpectTrue(!nk_model_is_quantized(&model), "model buffer load not quantized");
+
+    file = fopen("models/test_cnn.nk", "rb");
+    ExpectTrue(file != nullptr, "open test_cnn.nk for buffer load");
+    if (!file)
+        return;
+
+    static uint8_t cnn_blob[16384];
+    const size_t cnn_bytes = fread(cnn_blob, 1, sizeof(cnn_blob), file);
+    fclose(file);
+    ExpectTrue(cnn_bytes > 0, "read test_cnn.nk bytes");
+
+    nk_cnn_t cnn;
+    ExpectStatus(nk_cnn_load_memory(cnn_blob, cnn_bytes, &arena, &cnn, nullptr), NK_OK, "cnn buffer load");
+    ExpectTrue(nk_cnn_is_valid(&cnn), "cnn buffer load valid");
+    ExpectTrue(!nk_cnn_is_quantized(&cnn), "test cnn not quantized");
+}
+
 static void TestInspectModel(void)
 {
     printf("\n--- inspect model ---\n");
@@ -442,6 +486,7 @@ static void TestCompositeBlockLoad(void)
     ExpectModelTestsPass("models/import_mobilenet_uib_skip.nk", "import mobilenet uib skip");
     ExpectModelTestsPass("models/import_convnextv2_block.nk", "import convnextv2 block");
     ExpectModelTestsPass("models/import_asym_depthwise_conv.nk", "import asym depthwise conv");
+    ExpectModelTestsPass("models/yolox_mnv4_small.nk", "yolox mnv4 small");
     ExpectModelTestsPass("models/yolox_head_only.nk", "yolox head only");
 }
 
@@ -566,6 +611,7 @@ int main(void)
     TestParseArchitecture();
     TestArchPrint();
     TestModelMetadata();
+    TestBufferLoad();
     TestInspectModel();
     TestMnistCnnLoad();
     TestModelLoadRun();

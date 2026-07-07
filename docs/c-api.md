@@ -282,6 +282,7 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 |------------|----------------|
 | `nk_mlp_create` | `MLPNetwork` constructor |
 | `nk_mlp_is_valid` | `MLPNetwork::IsValid` |
+| `nk_mlp_is_quantized` | `MLPNetwork::IsQuantized` |
 | `nk_mlp_init_layer` | `MLPNetwork::InitLayer` |
 | `nk_mlp_init_activation_buffers` | `MLPNetwork::InitActivationBuffers` |
 | `nk_mlp_has_activation_buffers` | `MLPNetwork::HasActivationBuffers` |
@@ -320,6 +321,7 @@ C++ equivalent: [cpp-api.md](cpp-api.md#manual-construction-call-order).
 |------------|----------------|
 | `nk_cnn_create` | `CNNNetwork` constructor |
 | `nk_cnn_is_valid` | `CNNNetwork::IsValid` |
+| `nk_cnn_is_quantized` | `CNNNetwork::IsQuantized` |
 | `nk_cnn_init_conv_layer` | `CNNNetwork::InitConvLayer` |
 | `nk_cnn_init_depthwise_conv_layer` | `CNNNetwork::InitDepthwiseConvLayer` |
 | `nk_cnn_init_pool_layer` | `CNNNetwork::InitPoolLayer` |
@@ -435,7 +437,11 @@ For **embedded** models (AOT firmware), pass the static `.nk` byte array to `nk_
 | `nk_parse_architecture_memory` | `NkLoader::ParseBuffer` + `FillArchInfo` | Parse embedded blob without a file |
 | `nk_arch_print` | `NkLoader::PrintNetworkSummary` | Boxed summary to stdout |
 | `nk_mlp_load` | `NkLoader::LoadMLP` | |
+| `nk_mlp_load_memory` | `NkLoader::LoadMLPFromBuffer` | Embedded `.nk` blob; flash lifetime when `NETKIT_WEIGHTS_IN_RAM=0` |
+| `nk_mlp_is_quantized` | `MLPNetwork::IsQuantized` | After load or manual init |
 | `nk_cnn_load` | `NkLoader::LoadCNN` | All layer kinds including composite blocks |
+| `nk_cnn_load_memory` | `NkLoader::LoadCNNFromBuffer` | Embedded `.nk` blob |
+| `nk_cnn_is_quantized` | `CNNNetwork::IsQuantized` | After load or manual init |
 | `nk_model_load_auto` | `NkLoader::Load` | Dispatches by network kind |
 
 ```c
@@ -443,7 +449,11 @@ nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info);
 nk_status_t nk_parse_architecture_memory(const uint8_t* data, size_t size, nk_arch_info_t* info);
 nk_status_t nk_arch_print(const char* nk_path);
 nk_status_t nk_mlp_load(const char* nk_path, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
+nk_status_t nk_mlp_load_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_mlp_t* mlp, nk_arch_info_t* info);
+bool nk_mlp_is_quantized(const nk_mlp_t* mlp);
 nk_status_t nk_cnn_load(const char* nk_path, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info);
+nk_status_t nk_cnn_load_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_cnn_t* cnn, nk_arch_info_t* info);
+bool nk_cnn_is_quantized(const nk_cnn_t* cnn);
 nk_status_t nk_model_load_auto(const char* nk_path, nk_arena_t* arena, nk_network_kind_t* kind,
                                nk_mlp_t* mlp, nk_cnn_t* cnn, nk_arch_info_t* info);
 ```
@@ -458,6 +468,7 @@ nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
 nk_network_kind_t nk_model_kind(const nk_model_t* model);
+bool nk_model_is_quantized(const nk_model_t* model);
 nk_status_t nk_model_run(...);
 nk_status_t nk_inspect_model(...);
 nk_status_t nk_inspect_model_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_inspect_info_t* info);

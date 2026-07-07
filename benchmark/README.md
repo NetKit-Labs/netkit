@@ -2,6 +2,10 @@
 
 Side-by-side invoke latency on the same 10 MNIST test vectors per model (from TCAS cases in `models/mnist_*.nk`): **one correctly-classified test image per digit 0–9**, sorted by label.
 
+**Fair comparison policy:** benchmarks use the **interpreter** path only — netkit loads `.nk` models via `NkLoader` and calls `forward()` / `forward_quantized()`; TFLM uses `MicroInterpreter::Invoke()`. **AOT lowered firmware is not included** in `compare.sh` or `make -C benchmark/netkit run-all` (use `run-aot*` targets separately for deployment profiling).
+
+**Kernel defaults:** float Conv2D uses **partial im2col** by default on all targets (`NETKIT_IM2COL_FULL=0`). Set `NETKIT_IM2COL_FULL=1` to opt into full im2col + GEMM. `NETKIT_LOOP_UNROLL` stays **off** (`0`) in all benchmark builds. Int8 quantized inference uses CMSIS-NN kernels, not float im2col.
+
 ## Methodology
 
 Each benchmark:
@@ -68,10 +72,10 @@ Speedup in tables is **TFLM mean ÷ NETKIT mean** (e.g. `5× faster` = NETKIT is
 ## Run individually
 
 ```bash
-make -C benchmark/netkit run              # netkit reference MLP + CNN
-make -C benchmark/netkit run-cmsis        # netkit CMSIS-DSP MLP + CNN
-make -C benchmark/netkit run-aot          # optional: lowered AOT (not in compare.sh)
-make -C benchmark/tflm run                # TFLM MLP + CNN (needs GNU make)
+make -C benchmark/netkit run              # netkit interpreter MLP + CNN (reference)
+make -C benchmark/netkit run-cmsis        # netkit interpreter MLP + CNN (CMSIS-DSP)
+make -C benchmark/tflm run                # TFLM interpreter MLP + CNN (needs GNU make)
+make -C benchmark/netkit run-aot          # optional: lowered AOT only (not in compare.sh)
 make -C benchmark/netkit run-mlp-profile  # NETKIT MLP per-layer profile
 make -C benchmark/netkit run-cnn-profile  # NETKIT CNN per-layer profile
 make -C benchmark/tflm run-mlp-profile    # TFLM MLP per-op MicroProfiler breakdown

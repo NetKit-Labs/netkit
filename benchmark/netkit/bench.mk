@@ -56,7 +56,13 @@ BENCH_RUNTIME_SOURCES := \
   src/ops_resolver_default.cpp \
   src/nk_format.cpp \
   src/nk_loader.cpp \
-  src/netkit_api.cpp
+  src/netkit_api.cpp \
+  src/quant_ops.cpp \
+  src/quant_softmax_s8.cpp \
+  src/quant_trace.cpp \
+  src/cmsis_nn_quant_backend.cpp \
+  src/cmsis_quant_plan.cpp \
+  src/cnn_quant.cpp
 
 ifeq ($(CMSIS_DSP),1)
   ifeq ($(wildcard $(CMSIS_DSP_DIR)/Include/arm_math.h),)

@@ -117,6 +117,7 @@ Both suites exercise the same **88 embedded `.nk` inference cases**; `nk_run_all
 | `ActivationType` | `nk_activation_t` |
 | `MLPNetwork` | `nk_mlp_t` |
 | `MLPNetwork::IsValid` | `nk_mlp_is_valid` |
+| `MLPNetwork::IsQuantized` | `nk_mlp_is_quantized` |
 | `MLPNetwork` constructor | `nk_mlp_create` |
 | `InitLayer` | `nk_mlp_init_layer` |
 | `InitActivationBuffers` | `nk_mlp_init_activation_buffers` |
@@ -131,6 +132,7 @@ Both suites exercise the same **88 embedded `.nk` inference cases**; `nk_run_all
 | `ConvActivationType` | `nk_conv_activation_t` |
 | `CNNNetwork` | `nk_cnn_t` |
 | `CNNNetwork::IsValid` | `nk_cnn_is_valid` |
+| `CNNNetwork::IsQuantized` | `nk_cnn_is_quantized` |
 | `CNNNetwork` constructor | `nk_cnn_create` |
 | `InitConvLayer` | `nk_cnn_init_conv_layer` |
 | `InitDepthwiseConvLayer` | `nk_cnn_init_depthwise_conv_layer` |
@@ -159,9 +161,11 @@ Both suites exercise the same **88 embedded `.nk` inference cases**; `nk_run_all
 | `ArenaUtil::CapacityForModel` (+ inspect probe on CPU) | `nk_recommended_arena_bytes` |
 | `PrintNetworkSummary` | `nk_arch_print` |
 | `LoadMLP` | `nk_mlp_load` |
-| `LoadMLPFromBuffer` | (via `nk_model_load_memory` for MLP) |
+| `LoadMLPFromBuffer` | `nk_mlp_load_memory` |
+| `LoadMLPFromBuffer` (high-level) | `nk_model_load_memory` (MLP) |
 | `LoadCNN` | `nk_cnn_load` |
-| `LoadCNNFromBuffer` | (via `nk_model_load_memory` for CNN) |
+| `LoadCNNFromBuffer` | `nk_cnn_load_memory` |
+| `LoadCNNFromBuffer` (high-level) | `nk_model_load_memory` (CNN) |
 | `Load` | `nk_model_load_auto` |
 | `ArchInfo` | `nk_arch_info_t` (`weights_bytes`, `biases_bytes` from `.nk` header) |
 | `inspect --full` (flash-aware buffer load) | `nk_inspect_model`, `nk_inspect_model_memory` |
@@ -173,7 +177,7 @@ High-level combined handle (C convenience):
 | Load + run inference | `nk_model_load`, `nk_model_run`, `nk_inspect_model` |
 | Load embedded `.nk` blob + run | `nk_model_load_memory`, `nk_model_run` |
 | Inspect embedded blob arena peaks | `nk_inspect_model_memory` |
-| Query loaded model | `nk_model_get_arch`, `nk_model_input_count`, `nk_model_output_count`, `nk_model_kind` |
+| Query loaded model | `nk_model_get_arch`, `nk_model_input_count`, `nk_model_output_count`, `nk_model_kind`, `nk_model_is_quantized` |
 
 ### Weight storage (`NETKIT_WEIGHTS_IN_RAM`)
 
@@ -201,6 +205,9 @@ Lowered AOT with `--weights-in-ram` copies coef arrays from flash `.rodata` sour
 | `ArenaUtil`, `BeginRegressionArena`, `EndRegressionArena` | CLI/regression sizing helpers |
 | `TensorFactory::ViewND` | ND tensor views — use `nk_tensor_view_2d` or load from `.nk` |
 | `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput` | In-memory network introspection after manual construction |
+| `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` | Quantized manual construction — use `.nk` load + `nk_*_is_quantized` |
+| `CNNNetwork::forward_timed`, `MLPNetwork::forward_timed` | Benchmark-only profilers |
+| `TensorFactory::View2DInt8`, `View3DInt8` | Manual int8 tensor views — use `.nk` load path |
 | `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
 | `Conv2D::forward(..., fuse_activation)` | C `nk_conv2d_forward` uses default activation fusion |
 | `TensorFactory::PrintLabeled(..., max_values)` | C `nk_tensor_print_labeled` omits truncation control |

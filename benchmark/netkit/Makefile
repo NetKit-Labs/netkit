@@ -7,9 +7,9 @@ ROOT := $(abspath ../..)
 .PHONY: all run run-mlp run-cnn run-mlp-cmsis run-cnn-cmsis run-cmsis run-cnn-profile run-mlp-profile \
   run-aot run-aot-mlp run-aot-cnn run-aot-cmsis run-aot-mlp-cmsis run-aot-cnn-cmsis run-all clean clean-all
 
-all: run-all
+all: run
 
-run-all: run run-cmsis run-aot run-aot-cmsis
+run-all: run run-cmsis
 
 run: run-mlp run-cnn
 

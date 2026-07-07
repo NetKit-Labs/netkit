@@ -1,7 +1,8 @@
 /*
  * netkit.h — C23 public API for netkit
  *
- * Inference uses float32 only today. Planned: float16, int16, int8, int4.
+ * Inference: float32 reference path; int8 quantized models load via `.nk` and run through
+ * `nk_model_load` / `nk_model_run` (output dequantized to float for MLP softmax).
  * Documentation:
  *   docs/PHILOSOPHY.md       — product vision, Phase 1/2, roadmap
  *   docs/GETTING_STARTED.md  — build, test, first inference
@@ -496,11 +497,25 @@ nk_status_t nk_mlp_load(const char* nk_path,
                         nk_arena_t* arena,
                         nk_mlp_t* mlp,
                         nk_arch_info_t* info);
+/** Load embedded MLP `.nk` bytes. When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network. */
+nk_status_t nk_mlp_load_memory(const uint8_t* data,
+                               size_t size,
+                               nk_arena_t* arena,
+                               nk_mlp_t* mlp,
+                               nk_arch_info_t* info);
+bool nk_mlp_is_quantized(const nk_mlp_t* mlp);
 
 nk_status_t nk_cnn_load(const char* nk_path,
                         nk_arena_t* arena,
                         nk_cnn_t* cnn,
                         nk_arch_info_t* info);
+/** Load embedded CNN `.nk` bytes. When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network. */
+nk_status_t nk_cnn_load_memory(const uint8_t* data,
+                               size_t size,
+                               nk_arena_t* arena,
+                               nk_cnn_t* cnn,
+                               nk_arch_info_t* info);
+bool nk_cnn_is_quantized(const nk_cnn_t* cnn);
 
 nk_status_t nk_model_load_auto(const char* nk_path,
                                nk_arena_t* arena,
@@ -520,6 +535,7 @@ nk_status_t nk_model_get_arch(const nk_model_t* model, nk_arch_info_t* info);
 uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
 nk_network_kind_t nk_model_kind(const nk_model_t* model);
+bool nk_model_is_quantized(const nk_model_t* model);
 nk_status_t nk_model_run(const nk_model_t* model,
                          nk_arena_t* arena,
                          const float* input,
