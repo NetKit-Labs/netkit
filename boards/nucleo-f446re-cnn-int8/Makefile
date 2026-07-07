@@ -190,7 +190,7 @@ export-embed: $(GEN_DIR)/.embed_stamp
 $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_cnn_int8.nk
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_cnn_int8.nk \
-		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 20 \
+		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
 		$(if $(filter 1,$(NETKIT_WEIGHTS_IN_RAM)),--weights-in-ram,--no-weights-in-ram) \
 		$(if $(filter 1,$(NETKIT_LOWERED)),,--no-lower)
 	@touch $(GEN_DIR)/.embed_stamp

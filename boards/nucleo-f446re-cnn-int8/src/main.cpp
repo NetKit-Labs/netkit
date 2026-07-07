@@ -22,9 +22,10 @@ constexpr int kRuns = 10;
 constexpr int kImageCount = kMnistCnnInt8BenchmarkImageCount;
 constexpr int kInputSize = kMnistCnnInt8BenchmarkInputSize;
 constexpr int kOutputClasses = 10;
-// Interpreter embed path can emit kArenaBytesRecommended=0 when host probe fails; use MCU slack.
-constexpr std::size_t kArenaCapacity =
-    aot::kArenaBytesRecommended > 0 ? aot::kArenaBytesRecommended : (64u * 1024u);
+// STM32F446RE has 128 KiB SRAM — keep interpreter arena at 64 KiB (verified on-device
+// 10/10). Embed may emit a larger kArenaBytesRecommended (probe + headroom); firmware
+// sizes the buffer here, not from that constant.
+constexpr std::size_t kArenaCapacity = 64u * 1024u;
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[kArenaCapacity];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
@@ -97,13 +98,7 @@ extern "C" int main(void)
     uart_printf("  sysclk:      %lu Hz\r\n", static_cast<unsigned long>(SystemCoreClock));
 
     Arena arena;
-    if (!aot::InitArena(arena, g_arena_memory, sizeof(g_arena_memory)))
-    {
-        uart_write("ERR arena init\r\n");
-        for (;;)
-        {
-        }
-    }
+    arena.init(g_arena_memory, kArenaCapacity);
 
     QuantTrace::Reset();
 

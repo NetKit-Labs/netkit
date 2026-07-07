@@ -217,6 +217,31 @@ High-level loaders (`nk_model_load`, `nk_mlp_load`, `nk_cnn_load`) allocate from
 
 Run `inspect --full` on your exact model and input shape for deployment numbers.
 
+## Quant lowered vs interpreter embed on MCU
+
+Two AOT deployment paths share the same `python -m netkit aot` packaging step but allocate memory differently. See [PHILOSOPHY.md](PHILOSOPHY.md#terminology-embed-vs-lowered).
+
+| Aspect | Interpreter embed (`--no-lower`) | Quant lowered (default AOT for int8) |
+|--------|----------------------------------|--------------------------------------|
+| Runtime | `NkLoader` + `NkOpsResolver` walks `.nk` | Static `CmsisQuantPlan` call chain |
+| Weights | Embedded `.nk` blob in flash (MCU default) | Quant params + tables in `.rodata` |
+| Activations | **Bump arena** at load (`InitActivationBuffers`) | **Static BSS** ping-pong buffers sized at compile time |
+| Arena role | Holds structs, ping-pong, optional weight copy | Tiny bump pool for composite-block scratch only |
+| Typical MCU benchmark | Fair vs TFLM `MicroInterpreter` | Faster invoke; different memory layout |
+
+### Ping-pong buffer sizing
+
+**Interpreter:** at load, `InitActivationBuffers` allocates two activation tensors from the arena. Size is driven by the **largest intermediate** feature map (plus CMSIS kernel workspace when applicable).
+
+**Quant lowered:** `aot_lower_quant.py` emits static `g_act_a[]` and `g_act_b[]`. Each layer reads from one buffer and writes to the other. Buffer sizes are **not** `2 × global_max`:
+
+- **`odd_max`** — largest activation tensor at **odd** layer indices (write target for those steps).
+- **`even_max`** — largest at **even** layer indices.
+
+Only one buffer must hold the current write target; the other holds the previous layer output (often smaller). For MNIST CNN int8 lowered on NUCLEO-F446RE: `even_max` ≈ 21,632 B, `odd_max` ≈ 5,408 B, plus ~1,152 B CMSIS workspace — ~28 KiB static BSS total.
+
+**Firmware takeaway:** do not size interpreter firmware from `kArenaBytesRecommended` alone on 128 KiB SRAM — declare an explicit static arena (e.g. **64 KiB** on `nucleo-f446re-cnn-int8`, verified 10/10) and confirm linker RAM. Lowered firmware instead budgets static activation arrays; inspect generated `*_aot.cpp` for `g_act_a` / `g_act_b` sizes.
+
 ## Related docs
 
 - [DATATYPES.md](DATATYPES.md) — float32 weights and tensors today

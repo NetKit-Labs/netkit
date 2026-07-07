@@ -102,9 +102,10 @@ Beyond neural forward passes, netkit will add **Kalman estimation and control** 
 
 ## Memory philosophy
 
-- **One bump arena** per inference context — weights, network structs, ping-pong activations.
+- **One bump arena** per inference context — weights, network structs, ping-pong activations (interpreter embed).
+- **Quant lowered** moves activations to **static compile-time buffers**; the arena is only a small scratch pool. See [ARENA.md](ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
 - **No hidden heap** in layer forward paths (MCU/MPU default).
-- **Caller sizes the buffer** — not stored in the model file. Measure with `./netkit inspect --full` or `nk_inspect_model()`.
+- **Caller sizes the buffer** — not stored in the model file. Measure with `./netkit inspect --full` or `nk_inspect_model()`. On tight SRAM, firmware may fix a smaller arena than embed `kArenaBytesRecommended` (e.g. 64 KiB on STM32F446RE CNN int8).
 - **Explicit alignment** on every allocation — odd weight sizes must not misalign following structs.
 
 Default capacities by build target (`NK_ARENA_DEFAULT_CAPACITY`):

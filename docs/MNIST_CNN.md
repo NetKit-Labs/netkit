@@ -58,7 +58,7 @@ cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh && ./scripts/monitor.sh
 
 Verified: **10/10** accuracy, **~144 ms** mean invoke (interpreter embed, default `make`). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
 
-Optional quant lowered deployment build: `make NETKIT_LOWERED=1` (~137 ms in prior lowered runs).
+On-device memory (interpreter embed): **~353 KiB flash**, **~75 KiB SRAM** (64 KiB arena + ~53 KiB headroom on 128 KiB SRAM). Optional quant lowered deployment: `make NETKIT_LOWERED=1` (~137 ms in prior lowered runs; static ping-pong BSS instead of a large arena — [ARENA.md](ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu)).
 
 UART captures `DIGIT_SUMMARY` lines with raw int8 softmax (`pred_i8`, `out_i8=...`). Dequantized per-digit confidence is computed offline — not on device:
 

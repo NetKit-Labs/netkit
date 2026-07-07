@@ -25,10 +25,25 @@ Int8 conv/pool/dense/softmax use CMSIS-NN kernels on Cortex-M4 (`QuantOps` + `Cm
 |--------|-------|
 | Mean invoke | **~144 ms** |
 | Accuracy | **10/10** |
-| Arena | **~105 KiB** recommended (static buffer in firmware) |
-| Flash (text + data) | **~351 KiB** |
+| Arena | **64 KiB** static buffer (fixed; verified 10/10 on-device) |
+| Flash (text + data) | **~353 KiB** (of 512 KiB) |
+| SRAM (bss + data) | **~75 KiB** (of 128 KiB; ~53 KiB headroom) |
 
 Compare with TFLM int8 on the same board: [nucleo-f446re-tflm-cnn-int8](../nucleo-f446re-tflm-cnn-int8/README.md).
+
+## Memory budget (STM32F446RE, interpreter embed)
+
+The board has **512 KiB flash** and **128 KiB SRAM**. Default firmware uses **interpreter embed** with flash-backed weights (`NETKIT_WEIGHTS_IN_RAM=0`).
+
+| Region | Approx. size | Notes |
+|--------|--------------|-------|
+| `.text` + `.rodata` (code + embedded `.nk`) | ~351 KiB | ~258 KiB is the embedded `mnist_cnn_int8.nk` blob |
+| `.data` + `.bss` (SRAM) | ~75 KiB | Includes **64 KiB** interpreter arena + output scratch |
+| SRAM headroom | ~53 KiB | Stack, heap (none used), ST-Link/USB buffers |
+
+**Arena sizing:** embed codegen may emit a larger `kArenaBytesRecommended` (host probe + headroom). This firmware **fixes the arena at 64 KiB** in `src/main.cpp` — enough for load + ping-pong activations on this model with ~53 KiB SRAM to spare. To add margin, bump `kArenaCapacity` (e.g. 72–80 KiB) and re-check linker RAM + on-device accuracy.
+
+**Quant lowered** (`NETKIT_LOWERED=1`) uses a different layout: static ping-pong activation buffers (`g_act_a` / `g_act_b`) and CMSIS workspace in **BSS** (~28 KiB for this model), with a **tiny** bump arena (composite-block scratch only). See [ARENA.md](../../docs/ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
 
 ## Prerequisites (host)
 
@@ -103,7 +118,7 @@ make flash-mnist-cnn-int8
 | Mode | Command | Deployment |
 |------|---------|------------|
 | **Interpreter embed** (default) | `make` | Embedded `.nk` blob + runtime loader (fair vs TFLM `MicroInterpreter`) |
-| **Quant lowered** (deployment) | `make NETKIT_LOWERED=1` | Static `CmsisQuantPlan` call chain, tiny arena |
+| **Quant lowered** (deployment) | `make NETKIT_LOWERED=1` | Static `CmsisQuantPlan` call chain; activations in static BSS, tiny arena |
 
 Regenerate embed sources after changing mode:
 
@@ -119,7 +134,7 @@ netkit NUCLEO-F446RE MNIST CNN int8 benchmark
   backend:     cmsis-nn int8 (MCU CM4, .nk loader)
   weights:     flash (embedded .nk blob)
   dtype:       int8 end-to-end (softmax int8, prequantized inputs)
-  arena bytes: 107456
+  arena bytes: 65536
   nk bytes:    258440
   probe:       label=0 pred=0 pred_i8=127 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
 
