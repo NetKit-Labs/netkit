@@ -39,6 +39,11 @@ int ArgMax10Int8(const int8_t* values)
     return best;
 }
 
+float PredictedConfidence(const int8_t* values, int predicted)
+{
+    return QuantOps::DequantizeSoftmaxOutput(values[predicted]);
+}
+
 template <bool Lowered>
 void PrintStorageInfo()
 {
@@ -100,9 +105,11 @@ extern "C" int main(void)
             }
         }
         const int predicted = ArgMax10Int8(g_output_i8);
-        uart_printf("  probe:       label=%d pred=%d i8[0..3]=%d,%d,%d,%d\r\n",
+        const float confidence = PredictedConfidence(g_output_i8, predicted);
+        uart_printf("  probe:       label=%d pred=%d conf=%.6f i8[0..3]=%d,%d,%d,%d\r\n",
                     probe.label,
                     predicted,
+                    confidence,
                     static_cast<int>(g_output_i8[0]),
                     static_cast<int>(g_output_i8[1]),
                     static_cast<int>(g_output_i8[2]),
@@ -112,6 +119,7 @@ extern "C" int main(void)
 
     std::array<double, kRuns> run_averages_us{};
     std::array<int, kImageCount> final_predictions{};
+    std::array<float, kImageCount> final_confidence{};
     int correct = 0;
 
     for (int run = 0; run < kRuns; ++run)
@@ -144,6 +152,8 @@ extern "C" int main(void)
             {
                 const int predicted = ArgMax10Int8(g_output_i8);
                 final_predictions[static_cast<size_t>(i)] = predicted;
+                final_confidence[static_cast<size_t>(i)] =
+                    PredictedConfidence(g_output_i8, predicted);
                 if (predicted == sample.label)
                 {
                     ++correct;
@@ -156,22 +166,26 @@ extern "C" int main(void)
     }
 
     uart_write("\r\n  per-digit results (final run):\r\n");
-    uart_write("    image  label  pred  ok\r\n");
+    uart_write("    image  label  pred   conf      ok\r\n");
     for (int i = 0; i < kImageCount; ++i)
     {
         const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
         const int predicted = final_predictions[static_cast<size_t>(i)];
+        const float confidence = final_confidence[static_cast<size_t>(i)];
         const int ok = predicted == sample.label ? 1 : 0;
-        uart_printf("    %5d  %5d  %4d  %s\r\n",
+        uart_printf("    %5d  %5d  %4d  %8.6f  %s\r\n",
                     i,
                     sample.label,
                     predicted,
+                    confidence,
                     ok ? "yes" : "no");
-        uart_printf("DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=%d label=%d pred=%d ok=%d\r\n",
-                    i,
-                    sample.label,
-                    predicted,
-                    ok);
+        uart_printf(
+            "DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=%d label=%d pred=%d conf=%.6f ok=%d\r\n",
+            i,
+            sample.label,
+            predicted,
+            confidence,
+            ok);
     }
 
     double mean_us = 0.0;

@@ -44,6 +44,13 @@ int ArgMax10Int8(const int8_t* values)
     return best;
 }
 
+float PredictedConfidence(const TfLiteTensor* output, int predicted)
+{
+    return (static_cast<float>(output->data.int8[predicted]) -
+            static_cast<float>(output->params.zero_point)) *
+           output->params.scale;
+}
+
 void CopyInputInt8(TfLiteTensor* input, const int8_t* pixels)
 {
     std::memcpy(input->data.int8, pixels, kMnistCnnInt8BenchmarkInputSize);
@@ -105,7 +112,7 @@ extern "C" int main(void)
     uart_printf("  backend:     tflm cmsis-nn int8 (MCU CM4)\r\n");
     uart_printf("  model bytes: %u\r\n", g_mnist_cnn_int8_model_data_size);
     uart_write("  input type:  int8 (prequantized test vectors)\r\n");
-    uart_write("  output type: int8 (argmax on logits)\r\n");
+    uart_write("  output type: int8 softmax (dequantized conf = winning-class prob)\r\n");
     uart_printf("  images:      %d per run\r\n", kMnistCnnInt8BenchmarkImageCount);
     uart_printf("  runs:        %d (discard first invoke each run)\r\n", kRuns);
     uart_printf("  arena bytes: %d\r\n", kTensorArenaSize);
@@ -122,9 +129,11 @@ extern "C" int main(void)
             }
         }
         const int predicted = ArgMax10Int8(output->data.int8);
-        uart_printf("  probe:       label=%d pred=%d i8[0..3]=%d,%d,%d,%d\r\n",
+        const float confidence = PredictedConfidence(output, predicted);
+        uart_printf("  probe:       label=%d pred=%d conf=%.6f i8[0..3]=%d,%d,%d,%d\r\n",
                     probe.label,
                     predicted,
+                    confidence,
                     static_cast<int>(output->data.int8[0]),
                     static_cast<int>(output->data.int8[1]),
                     static_cast<int>(output->data.int8[2]),
@@ -132,6 +141,8 @@ extern "C" int main(void)
     }
 
     std::array<double, kRuns> run_averages_us{};
+    std::array<int, kMnistCnnInt8BenchmarkImageCount> final_predictions{};
+    std::array<float, kMnistCnnInt8BenchmarkImageCount> final_confidence{};
     int correct = 0;
 
     for (int run = 0; run < kRuns; ++run)
@@ -167,6 +178,9 @@ extern "C" int main(void)
             if (run == kRuns - 1)
             {
                 const int predicted = ArgMax10Int8(output->data.int8);
+                final_predictions[static_cast<size_t>(i)] = predicted;
+                final_confidence[static_cast<size_t>(i)] =
+                    PredictedConfidence(output, predicted);
                 if (predicted == sample.label)
                 {
                     ++correct;
@@ -184,6 +198,29 @@ extern "C" int main(void)
         mean_us += run_averages_us[static_cast<size_t>(i)];
     }
     mean_us /= static_cast<double>(kRuns);
+
+    uart_write("\r\n  per-digit results (final run):\r\n");
+    uart_write("    image  label  pred   conf      ok\r\n");
+    for (int i = 0; i < kMnistCnnInt8BenchmarkImageCount; ++i)
+    {
+        const MnistCnnInt8BenchmarkSample& sample = kMnistCnnInt8BenchmarkImages[i];
+        const int predicted = final_predictions[static_cast<size_t>(i)];
+        const float confidence = final_confidence[static_cast<size_t>(i)];
+        const int ok = predicted == sample.label ? 1 : 0;
+        uart_printf("    %5d  %5d  %4d  %8.6f  %s\r\n",
+                    i,
+                    sample.label,
+                    predicted,
+                    confidence,
+                    ok ? "yes" : "no");
+        uart_printf(
+            "DIGIT_SUMMARY runtime=tflm model=cnn_int8 image=%d label=%d pred=%d conf=%.6f ok=%d\r\n",
+            i,
+            sample.label,
+            predicted,
+            confidence,
+            ok);
+    }
 
     uart_printf("  accuracy:    %d/%d on final run\r\n", correct, kMnistCnnInt8BenchmarkImageCount);
     uart_write("\r\nTFLM MNIST cnn int8 benchmark summary (cmsis-nn)\r\n");

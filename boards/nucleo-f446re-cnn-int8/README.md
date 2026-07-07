@@ -112,15 +112,17 @@ netkit NUCLEO-F446RE MNIST CNN int8 benchmark
   dtype:       int8 end-to-end (softmax int8, prequantized inputs)
   arena bytes: 64
   workspace:   1152 bytes
-  probe:       label=0 pred=0 i8[0..3]=127,-128,-128,-128
+  probe:       label=0 pred=0 conf=0.996094 i8[0..3]=127,-128,-128,-128
 
   per-digit results (final run):
-    image  label  pred  ok
-        0      0     0  yes
-        1      1     1  yes
+    image  label  pred   conf      ok
+        0      0     0  0.996094  yes
+        1      1     1  0.992188  yes
         ...
-DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=0 label=0 pred=0 ok=1
+DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=0 label=0 pred=0 conf=0.996094 ok=1
 ...
+
+`conf` is the dequantized softmax probability of the predicted class (TFLite int8 softmax spec: scale 1/256, zp −128).
 
   accuracy:    10/10 on final run
   mean:   145286.741 us (145.287 ms)
