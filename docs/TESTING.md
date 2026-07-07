@@ -209,10 +209,10 @@ Re-run the fast workflow manually if needed:
 gh workflow run ci.yml
 ```
 
-The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only (reference kernels — no CMSIS compile smoke):
+The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only (reference kernels — no CMSIS compile smoke). The workflow sets `NETKIT_CMSIS_DSP=0` and `NETKIT_CMSIS_NN=0` for all steps (CI runners do not fetch CMSIS submodules):
 
-1. `make` — default desktop build
-2. `make NETKIT_CMSIS_DSP=0 rebuild test` — default C++ embedded + C API + fast Python suite (reference kernels)
+1. `make` — initial build (reference kernels)
+2. `make rebuild test` — default C++ embedded + C API + fast Python suite
 3. Example and CLI smoke tests
 4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
 
