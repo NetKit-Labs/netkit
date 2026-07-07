@@ -46,4 +46,9 @@ cmake-build/
 cmake-build-*/
 build/
 
+# Ephemeral / local artifacts
+tmp_*.nk
+/generated/
+boards/benchmark/
+
 /data/

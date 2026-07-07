@@ -7,6 +7,7 @@
 #include "conv2d.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
+#include "quant_output.hpp"
 #if defined(NETKIT_DESKTOP)
 #include "nk_regression.hpp"
 #include "cli.hpp"
@@ -73,6 +74,19 @@ namespace
             case DataType::Int16: return NK_DTYPE_INT16;
         }
         return NK_DTYPE_FLOAT32;
+    }
+
+    void CopyModelOutputToFloat(const Tensor& output, float* dest, uint32_t count)
+    {
+        if (output.type == DataType::Int8)
+        {
+            QuantOps::DequantizeSoftmaxOutput(static_cast<const int8_t*>(output.data), dest, count);
+            return;
+        }
+
+        const float* src = static_cast<const float*>(output.data);
+        for (uint32_t i = 0; i < count; ++i)
+            dest[i] = src[i];
     }
 
     ActivationType ToMlpActivation(nk_activation_t act)
@@ -263,18 +277,8 @@ namespace
         if (info->arch.input_elements > NK_MAX_CASE_FLOATS)
             return NK_ERR_INVALID_ARGUMENT;
 
-        std::vector<uint8_t> file_blob;
         const uint8_t* load_data = buffer;
         std::size_t load_size = buffer_size;
-#if !NETKIT_WEIGHTS_IN_RAM
-        if (!load_data)
-        {
-            if (!resolved_path || !ReadNkFile(resolved_path, file_blob))
-                return NK_ERR_MODEL_READ;
-            load_data = file_blob.data();
-            load_size = file_blob.size();
-        }
-#endif
 
         std::array<uint32_t, kMaxTensorRank> input_shape{};
         uint32_t input_rank = 0;
@@ -283,16 +287,11 @@ namespace
         if (parsed.header.network_kind == NkFormat::NetworkKind::Mlp)
         {
             MLPNetwork* network = nullptr;
-#if NETKIT_WEIGHTS_IN_RAM
             const NkLoader::LoadResult load_result =
                 resolved_path
                     ? NkLoader::LoadMLP(resolved_path, arena_ref, network, input_shape, input_rank)
                     : NkLoader::LoadMLPFromBuffer(
                           load_data, load_size, arena_ref, network, input_shape, input_rank);
-#else
-            const NkLoader::LoadResult load_result = NkLoader::LoadMLPFromBuffer(
-                load_data, load_size, arena_ref, network, input_shape, input_rank);
-#endif
             if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
             {
                 SetLastError(load_result.message ? load_result.message : "MLP load failed");
@@ -313,16 +312,11 @@ namespace
         if (parsed.header.network_kind == NkFormat::NetworkKind::Cnn)
         {
             CNNNetwork* network = nullptr;
-#if NETKIT_WEIGHTS_IN_RAM
             const NkLoader::LoadResult load_result =
                 resolved_path
                     ? NkLoader::LoadCNN(resolved_path, arena_ref, network, input_shape, input_rank)
                     : NkLoader::LoadCNNFromBuffer(
                           load_data, load_size, arena_ref, network, input_shape, input_rank);
-#else
-            const NkLoader::LoadResult load_result = NkLoader::LoadCNNFromBuffer(
-                load_data, load_size, arena_ref, network, input_shape, input_rank);
-#endif
             if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
             {
                 SetLastError(load_result.message ? load_result.message : "CNN load failed");
@@ -1472,13 +1466,21 @@ nk_status_t nk_model_run(const nk_model_t* model,
         for (uint32_t i = 0; i < input_count; ++i)
             input_data[i] = input[i];
         const uint32_t output_cols = state->arch.output_elements / state->arch.input_shape[0];
-        Tensor output_tensor = TensorFactory::Create2D(*ArenaPtr(arena), state->arch.input_shape[0], output_cols);
+        Tensor output_tensor{};
+        if (state->mlp->IsQuantized())
+        {
+            int8_t* out_i8 = static_cast<int8_t*>(
+                ArenaPtr(arena)->alloc(state->arch.output_elements * sizeof(int8_t), alignof(int8_t)));
+            output_tensor = TensorFactory::View2DInt8(out_i8, state->arch.input_shape[0], output_cols);
+        }
+        else
+        {
+            output_tensor = TensorFactory::Create2D(*ArenaPtr(arena), state->arch.input_shape[0], output_cols);
+        }
         if (!output_tensor.data)
             return NK_ERR_ARENA_OVERFLOW;
         state->mlp->forward(input_tensor, output_tensor, *ArenaPtr(arena));
-        const float* out_data = static_cast<const float*>(output_tensor.data);
-        for (uint32_t i = 0; i < state->arch.output_elements; ++i)
-            output[i] = out_data[i];
+        CopyModelOutputToFloat(output_tensor, output, state->arch.output_elements);
     }
     else if (state->kind == NK_NETWORK_CNN)
     {
@@ -1494,12 +1496,10 @@ nk_status_t nk_model_run(const nk_model_t* model,
         Tensor& output_tensor = state->cnn->forward(input_tensor, *ArenaPtr(arena));
         if (!output_tensor.data)
             return NK_ERR_ARENA_OVERFLOW;
-        const float* out_data = static_cast<const float*>(output_tensor.data);
         const uint32_t actual_output = output_tensor.num_elements;
         if (output_capacity < actual_output)
             return NK_ERR_BUFFER_TOO_SMALL;
-        for (uint32_t i = 0; i < actual_output; ++i)
-            output[i] = out_data[i];
+        CopyModelOutputToFloat(output_tensor, output, actual_output);
         *output_count = actual_output;
         return NK_OK;
     }

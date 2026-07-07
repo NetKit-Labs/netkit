@@ -6,6 +6,7 @@
 namespace BenchmarkStats {
 
 constexpr int kDefaultRuns = 100;
+constexpr int kCnnDefaultRuns = 10;
 constexpr int kMaxRuns = 100;
 
 struct Summary {

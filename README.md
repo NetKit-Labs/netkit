@@ -2,7 +2,7 @@
 
 netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. It is written in **C++26** using modern C++ patterns and type safety (primary API), with a **C23** API for firmware and FFI. Develop and validate on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-**Status:** Currently under active development. Inference is **float32-only** today; **int8** and additional numeric types are next — see [docs/DATATYPES.md](docs/DATATYPES.md). **Kalman estimation and control** are planned for the backend.
+**Status:** Currently under active development. **Float32** is the default inference path; **int8** CNN export and CMSIS-NN MCU deployment are available for MNIST — see [docs/DATATYPES.md](docs/DATATYPES.md). **Kalman estimation and control** are planned for the backend.
 
 Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
@@ -25,7 +25,9 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
-| **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP benchmark (CMSIS-DSP, flash weights) |
+| **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-DSP, lowered AOT) |
+| **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 benchmark (CMSIS-NN, quant lowered AOT) |
+| **[NUCLEO-F446RE TFLM int8](boards/nucleo-f446re-tflm-cnn-int8/README.md)** | Same CNN int8 vectors via TFLite Micro (comparison baseline) |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
@@ -57,7 +59,8 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **Regression tests** — 88 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
 - **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
-- **Float32 inference** — all tensors, weights, and math use IEEE-754 single precision (`float`)
+- **Float32 inference** — default path; all tensors, weights, and math use IEEE-754 single precision (`float`)
+- **Int8 MNIST CNN** — post-training quant export (`make export-mnist-cnn-int8`), CMSIS-NN kernels on MCU, quant lowered AOT (~145 ms / 10×10 on NUCLEO-F446RE)
 - **Optional CMSIS backends** — CMSIS-NN (MCU + Cortex-M): conv, depthwise, pool, FC, BN, activations, GELU; CMSIS-DSP: MatMul, add/mul, LayerNorm, GRN; reference fallback always linked ([KERNELS.md](docs/KERNELS.md))
 
 ## Quick start
@@ -166,6 +169,8 @@ make example-c    # C23 usage demo
 make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
 make export-mnist # regenerate MNIST MLP model (requires PyTorch: pip install -e "python[train]")
 make export-mnist-cnn # regenerate MNIST CNN model (requires PyTorch)
+make export-mnist-cnn-int8 # quantize MNIST CNN to int8 .nk (reuses float weights)
+make flash-mnist-cnn-int8  # build + flash + UART capture on NUCLEO-F446RE
 make clean
 make rebuild
 ```

@@ -120,6 +120,42 @@ std::size_t CmsisGeluWorkspaceBytes(uint32_t num_elements)
     return static_cast<std::size_t>(num_elements) * sizeof(float);
 }
 
+std::size_t CmsisConv2dS8WorkspaceBytes(uint32_t in_h,
+                                        uint32_t in_w,
+                                        int kernel_size,
+                                        int in_channels,
+                                        int out_channels)
+{
+    const cmsis_nn_dims input_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(in_h),
+        .w = static_cast<int32_t>(in_w),
+        .c = in_channels,
+    };
+    const cmsis_nn_dims filter_dims = {
+        .n = out_channels,
+        .h = kernel_size,
+        .w = kernel_size,
+        .c = in_channels,
+    };
+
+    const int32_t buf_size = arm_convolve_s8_get_buffer_size(&input_dims, &filter_dims);
+    return buf_size > 0 ? static_cast<std::size_t>(buf_size) : 0u;
+}
+
+std::size_t CmsisFullyConnectedS8WorkspaceBytes(uint32_t in_features, uint32_t out_features)
+{
+    const cmsis_nn_dims filter_dims = {
+        .n = static_cast<int32_t>(in_features),
+        .h = 1,
+        .w = 1,
+        .c = static_cast<int32_t>(out_features),
+    };
+
+    const int32_t buf_size = arm_fully_connected_s8_get_buffer_size(&filter_dims);
+    return buf_size > 0 ? static_cast<std::size_t>(buf_size) : 0u;
+}
+
 #else
 
 std::size_t CmsisConv2dWorkspaceBytes(uint32_t /*in_h*/,
@@ -151,6 +187,20 @@ std::size_t CmsisGeluWorkspaceBytes(uint32_t /*num_elements*/)
     return 0;
 }
 
+std::size_t CmsisConv2dS8WorkspaceBytes(uint32_t /*in_h*/,
+                                        uint32_t /*in_w*/,
+                                        int /*kernel_size*/,
+                                        int /*in_channels*/,
+                                        int /*out_channels*/)
+{
+    return 0;
+}
+
+std::size_t CmsisFullyConnectedS8WorkspaceBytes(uint32_t /*in_features*/, uint32_t /*out_features*/)
+{
+    return 0;
+}
+
 #endif
 
 void CmsisBeginKernelWorkspacePlan(std::size_t* max_out)
@@ -176,6 +226,21 @@ void CmsisBumpConv2dWorkspace(uint32_t in_h,
 {
     BumpMaxKernelWorkspace(CmsisConv2dWorkspaceBytes(
         in_h, in_w, kernel_size, stride, pad_h, pad_w, in_channels, out_channels));
+}
+
+void CmsisBumpConv2dS8Workspace(uint32_t in_h,
+                                uint32_t in_w,
+                                int kernel_size,
+                                int in_channels,
+                                int out_channels)
+{
+    BumpMaxKernelWorkspace(
+        CmsisConv2dS8WorkspaceBytes(in_h, in_w, kernel_size, in_channels, out_channels));
+}
+
+void CmsisBumpFullyConnectedS8Workspace(uint32_t in_features, uint32_t out_features)
+{
+    BumpMaxKernelWorkspace(CmsisFullyConnectedS8WorkspaceBytes(in_features, out_features));
 }
 
 void CmsisBumpDepthwiseConv2dWorkspace(uint32_t in_h,

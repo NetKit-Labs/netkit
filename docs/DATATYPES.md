@@ -1,10 +1,10 @@
 # Data Types and Numeric Precision
 
-Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** is implemented today; **int8** and other quantized types are next (Phase 2 packager will emit quantized `.nk` payloads).
+Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** is the default inference path. **Int8** post-training quantization is implemented for the MNIST CNN MCU path; broader dtype support is Phase 2.
 
-## Float32 only (today)
+## Float32 (default)
 
-**All inference in netkit today uses IEEE-754 single precision (`float`, 32-bit).**
+**Most inference in netkit uses IEEE-754 single precision (`float`, 32-bit).**
 
 | Component | Type |
 |-----------|------|
@@ -16,7 +16,22 @@ Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** i
 
 There is **no float64 (double) inference path**. CLI values are parsed with `strtof` / `ParseFloat` and stored as float32.
 
-The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future tensor metadata — **these are not used for inference yet**.
+## Int8 (MNIST CNN — implemented)
+
+Int8 inference is available for the MNIST CNN on **MCU + CMSIS-NN**:
+
+| Component | Type |
+|-----------|------|
+| `.nk` quant payload | int8 weights, int32 biases, per-layer `QuantLayerParams` |
+| Activations | int8 (CMSIS-NN conv/pool/FC + int8 softmax) |
+| Export | `make export-mnist-cnn-int8` (`tools/export_mnist_cnn_int8.py`) |
+| MCU firmware | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — quant lowered AOT, **10/10** @ ~145 ms |
+
+TFLite input-quant alignment (layer 0 only) is optional when `benchmark/tflm/generated/mnist_cnn_int8.tflite` exists. Weight and output scales are calibrated from netkit float weights.
+
+Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`); use Python `forward_quantized_cnn` or flash MCU firmware for int8 validation.
+
+The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future tensor metadata beyond the MNIST CNN path.
 
 ## Planned (roadmap)
 
@@ -26,7 +41,7 @@ Quantized and reduced-precision paths are planned for **Phase 2** (Python packag
 |------|--------|--------------|
 | **float16** | Planned | Half-precision weights/activations where hardware supports FP16 |
 | **int16** | Planned | Wider quantized weights; intermediate precision |
-| **int8** | Planned | Standard post-training or QAT deployment on MCU/MPU |
+| **int8** | **MNIST CNN MCU** | Post-training quant export + CMSIS-NN kernels; broader models planned |
 | **int4** | Planned | Aggressive edge quantization (kernel and layout TBD) |
 
 When added, expect:
@@ -36,7 +51,7 @@ When added, expect:
 - Runtime load paths and kernels per dtype (possibly fused in Phase 2)
 - Updated regression suites with tolerance policies per type
 
-Until then, **export scripts and models must emit float32** — see [NK_FORMAT.md](NK_FORMAT.md).
+Until broader dtype support lands, **export scripts for non-CNN models must emit float32** — see [NK_FORMAT.md](NK_FORMAT.md).
 
 ## API surface
 

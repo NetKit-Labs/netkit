@@ -8,7 +8,10 @@
 #include "resnet_basic_block.hpp"
 #include "yolox_decoupled_head.hpp"
 #include "mlp.hpp"
+#include "layer_quant.hpp"
 #include "ops_resolver.hpp"
+#include "nk_format.hpp"
+#include "quant_output.hpp"
 
 enum class ConvActivationType
 {
@@ -42,6 +45,7 @@ struct Conv2DLayer
     Conv2D conv;
     ConvActivationType activation;
     float leaky_alpha = 0.01f;
+    LayerQuant quant;
 
     void forward(const Tensor& input, Tensor& output);
 };
@@ -144,6 +148,11 @@ struct CnnBlock
     MLPLayer dense;
 };
 
+namespace CmsisQuantPlan
+{
+struct Runtime;
+}
+
 class CNNNetwork
 {
 private:
@@ -158,9 +167,20 @@ private:
     Tensor output_cache_{};
     NkOpsResolver op_resolver_{};
     bool has_custom_resolver_ = false;
+    bool quantized_ = false;
+    QuantOutputFormat quant_output_format_ = QuantOutputFormat::Int8;
+    int8_t* ping_i8_a{};
+    int8_t* ping_i8_b{};
+    float* float_output_buffer_{};
+    uint32_t float_output_elements_{};
+    CmsisQuantPlan::Runtime* quant_runtime_{};
+
+    Tensor& forward_quantized(const Tensor& input);
 
 public:
     CNNNetwork(uint32_t num_layers, Arena& arena);
+
+    void SetQuantRuntime(CmsisQuantPlan::Runtime* runtime) { quant_runtime_ = runtime; }
 
     void SetOpsResolver(const NkOpsResolver& resolver)
     {
@@ -172,15 +192,49 @@ public:
 
     bool IsValid() const { return blocks != nullptr; }
 
+    bool IsQuantized() const { return quantized_; }
+
+    void SetQuantized(bool enabled) { quantized_ = enabled; }
+
+    void SetQuantOutputFormat(QuantOutputFormat format) { quant_output_format_ = format; }
+
+    QuantOutputFormat GetQuantOutputFormat() const { return quant_output_format_; }
+
     bool HasActivationBuffers() const
     {
         if (num_layers == 0)
             return false;
+        if (quantized_)
+            return quant_runtime_ != nullptr;
         return ping_a != nullptr && ping_b != nullptr && layer_output_views_ != nullptr;
     }
 
     // Preallocate two ping-pong activation buffers sized to the largest layer output.
     bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);
+
+    bool InitQuantizedActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);
+
+    void InitQuantizedConvLayer(uint32_t layer_idx,
+                                int kernel_size,
+                                int stride,
+                                int in_channels,
+                                int out_channels,
+                                int8_t* weights,
+                                int32_t* bias,
+                                const NkFormat::LayerQuantDesc& quant,
+                                ConvActivationType activation,
+                                float leaky_alpha = 0.01f,
+                                int pad_h = 0,
+                                int pad_w = 0,
+                                int pad_h_end = -1,
+                                int pad_w_end = -1);
+
+    void InitQuantizedDenseLayer(uint32_t layer_idx,
+                                 const Tensor& weights,
+                                 const Tensor& bias,
+                                 const NkFormat::LayerQuantDesc& quant,
+                                 ActivationType activation,
+                                 float leaky_alpha = 0.01f);
 
     void InitConvLayer(uint32_t layer_idx,
                        int kernel_size,
@@ -335,6 +389,8 @@ public:
                           void* user_data);
 
     std::size_t KernelWorkspaceBytes() const { return kernel_workspace_bytes_; }
+
+    uint32_t layer_count() const { return num_layers; }
 
     CnnBlock& GetBlock(uint32_t idx) { return blocks[idx]; }
 

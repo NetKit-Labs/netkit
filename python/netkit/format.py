@@ -9,11 +9,15 @@ import numpy as np
 
 MAGIC = b"NKIT"
 TEST_MAGIC = b"TCAS"
+QUANT_MAGIC = b"QUAN"
 VERSION = 3
+VERSION_QUANT = 4
 HEADER_BYTES = 48
 TENSOR_DESC_BYTES = 24
 PAYLOAD_ALIGN = 4
 FLAG_HAS_TESTS = 0x0001
+FLAG_HAS_QUANT = 0x0002
+MLP_LAYER_QUANT_BYTES = 32
 MAX_CASE_NAME_LEN = 127
 MAX_LAYERS = 100
 MAX_TENSOR_CATALOG = 128
@@ -42,6 +46,8 @@ class LayerKind(IntEnum):
 
 class DType(IntEnum):
     FLOAT32 = 1
+    INT8 = 2
+    INT32 = 3
 
 
 class Activation(IntEnum):
@@ -102,12 +108,13 @@ def pack_header(
     weights_bytes: int,
     biases_bytes: int,
     flags: int = 0,
+    version: int = VERSION,
 ) -> bytes:
     shape = list(input_shape) + [0] * (4 - len(input_shape))
     return struct.pack(
         "<4sIBBH4IIIIII",
         MAGIC,
-        VERSION,
+        version,
         int(network_kind),
         input_rank,
         flags,
@@ -265,6 +272,48 @@ def pack_tensor_desc(*, rank: int, dims: list[int], dtype: DType = DType.FLOAT32
     return struct.pack("<BBH", rank, int(dtype), 0) + struct.pack(
         "<4II", *padded[:4], num_elements
     )
+
+
+def pack_mlp_layer_quant(
+    *,
+    input_scale: float,
+    input_zero_point: int,
+    weight_scale: float,
+    weight_zero_point: int,
+    bias_scale: float,
+    bias_zero_point: int,
+    output_scale: float,
+    output_zero_point: int,
+) -> bytes:
+    return struct.pack(
+        "<fi fi fi fi",
+        float(input_scale),
+        int(input_zero_point),
+        float(weight_scale),
+        int(weight_zero_point),
+        float(bias_scale),
+        int(bias_zero_point),
+        float(output_scale),
+        int(output_zero_point),
+    )
+
+
+def pack_quant_section(quant_layers: list) -> bytes:
+    blob = bytearray()
+    blob += QUANT_MAGIC
+    blob += struct.pack("<HH", len(quant_layers), 0)
+    for layer in quant_layers:
+        blob += pack_mlp_layer_quant(
+            input_scale=layer.input_scale,
+            input_zero_point=layer.input_zero_point,
+            weight_scale=layer.weight_scale,
+            weight_zero_point=layer.weight_zero_point,
+            bias_scale=layer.bias_scale,
+            bias_zero_point=layer.bias_zero_point,
+            output_scale=layer.output_scale,
+            output_zero_point=layer.output_zero_point,
+        )
+    return bytes(blob)
 
 
 def pack_test_section(*, tolerance: float, cases: list) -> bytes:

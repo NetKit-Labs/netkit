@@ -17,12 +17,7 @@ endif()
 
 option(NETKIT_GLOBAL_ARENA "Use static/global arena on CPU builds" OFF)
 option(NETKIT_HEAP_ARENA "Compile heap arena helpers on MCU/MPU builds" OFF)
-if(NETKIT_TARGET STREQUAL "mcu")
-    set(_netkit_weights_in_ram_default OFF)
-else()
-    set(_netkit_weights_in_ram_default ON)
-endif()
-option(NETKIT_WEIGHTS_IN_RAM "Copy .nk weight/bias payload into arena at buffer load" ${_netkit_weights_in_ram_default})
+option(NETKIT_WEIGHTS_IN_RAM "Copy .nk weight/bias payload into arena at load (opt-in)" OFF)
 option(NETKIT_LOOP_UNROLL "EXPERIMENTAL: 4x loop unroll in netkit reference kernels (increases .text)" OFF)
 option(NETKIT_CMSIS_DSP "Use ARM CMSIS-DSP float32 backends" ${NETKIT_ENV_CMSIS_DSP})
 option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN float32 backends" ${_netkit_cmsis_nn_default})
@@ -71,6 +66,10 @@ set(NETKIT_RUNTIME_SOURCES
     src/yolox_decoupled_head.cpp
     src/resnet_basic_block.cpp
     src/mlp.cpp
+    src/quant_ops.cpp
+    src/quant_softmax_s8.cpp
+    src/cmsis_nn_quant_backend.cpp
+    src/cnn_quant.cpp
     src/cnn.cpp
     ${NETKIT_LAYER_OP_SOURCES}
     src/ops_resolver.cpp
@@ -148,6 +147,8 @@ else()
 endif()
 
 include(cmake/netkit_cmsis.cmake)
+
+netkit_add_cmsis_softmax_s8(netkit)
 
 if(NETKIT_CMSIS_DSP)
     netkit_add_cmsis_dsp(netkit)

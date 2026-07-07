@@ -10,9 +10,12 @@ import numpy as np
 from .pad_encoding import encode_pad_extra, encode_pool_reserved
 from .format import (
     FLAG_HAS_TESTS,
+    FLAG_HAS_QUANT,
     Activation,
     DType,
     NetworkKind,
+    VERSION,
+    VERSION_QUANT,
     pack_avg_pool_layer,
     pack_batch_norm_layer,
     pack_convnextv2_block_layer,
@@ -28,6 +31,7 @@ from .format import (
     pack_tensor_desc,
     pack_test_section,
     pack_yolox_decoupled_head_layer,
+    pack_quant_section,
     payload_alignment_padding,
 )
 
@@ -63,6 +67,18 @@ class LayerSpec:
 
 
 @dataclass
+class QuantLayerParams:
+    input_scale: float
+    input_zero_point: int
+    weight_scale: float
+    weight_zero_point: int
+    bias_scale: float
+    bias_zero_point: int
+    output_scale: float
+    output_zero_point: int
+
+
+@dataclass
 class RegressionCase:
     name: str
     input: list[float] | np.ndarray
@@ -83,7 +99,20 @@ class ModelSpec:
     layers: list[LayerSpec] = field(default_factory=list)
     weight_tensors: list[np.ndarray] = field(default_factory=list)
     bias_tensors: list[np.ndarray] = field(default_factory=list)
+    weight_dtypes: list[DType] | None = None
+    bias_dtypes: list[DType] | None = None
+    quant_layers: list[QuantLayerParams] | None = None
     tests: RegressionSuite | None = None
+
+
+def _dtype_to_numpy(dtype: DType):
+    if dtype == DType.FLOAT32:
+        return np.float32
+    if dtype == DType.INT8:
+        return np.int8
+    if dtype == DType.INT32:
+        return np.int32
+    raise ValueError(f"unsupported dtype: {dtype}")
 
 
 def write_nk(path: str | Path, spec: ModelSpec) -> None:
@@ -93,15 +122,26 @@ def write_nk(path: str | Path, spec: ModelSpec) -> None:
 def write_nk_bytes(spec: ModelSpec) -> bytes:
     network_kind = NetworkKind.MLP if spec.network == "mlp" else NetworkKind.CNN
     input_rank = len(spec.input_shape)
+    quantized = spec.quant_layers is not None and len(spec.quant_layers) > 0
+
+    weight_dtypes = spec.weight_dtypes or [DType.FLOAT32] * len(spec.weight_tensors)
+    bias_dtypes = spec.bias_dtypes or [DType.FLOAT32] * len(spec.bias_tensors)
 
     weights_blob = b"".join(
-        np.ascontiguousarray(w, dtype=np.float32).tobytes() for w in spec.weight_tensors
+        np.ascontiguousarray(w, dtype=_dtype_to_numpy(dt)).tobytes()
+        for w, dt in zip(spec.weight_tensors, weight_dtypes)
     )
     biases_blob = b"".join(
-        np.ascontiguousarray(b, dtype=np.float32).tobytes() for b in spec.bias_tensors
+        np.ascontiguousarray(b, dtype=_dtype_to_numpy(dt)).tobytes()
+        for b, dt in zip(spec.bias_tensors, bias_dtypes)
     )
 
-    flags = FLAG_HAS_TESTS if spec.tests and spec.tests.cases else 0
+    flags = 0
+    if spec.tests and spec.tests.cases:
+        flags |= FLAG_HAS_TESTS
+    if quantized:
+        flags |= FLAG_HAS_QUANT
+
     header = pack_header(
         network_kind=network_kind,
         input_rank=input_rank,
@@ -112,6 +152,7 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
         weights_bytes=len(weights_blob),
         biases_bytes=len(biases_blob),
         flags=flags,
+        version=VERSION_QUANT if quantized else VERSION,
     )
 
     layer_bytes = bytearray()
@@ -230,12 +271,16 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
             raise ValueError(f"unsupported layer kind: {layer.kind}")
 
     catalog = bytearray()
-    for tensor in spec.weight_tensors:
-        catalog += pack_tensor_desc(rank=tensor.ndim, dims=list(tensor.shape))
-    for tensor in spec.bias_tensors:
-        catalog += pack_tensor_desc(rank=tensor.ndim, dims=list(tensor.shape))
+    for tensor, dtype in zip(spec.weight_tensors, weight_dtypes):
+        catalog += pack_tensor_desc(rank=tensor.ndim, dims=list(tensor.shape), dtype=dtype)
+    for tensor, dtype in zip(spec.bias_tensors, bias_dtypes):
+        catalog += pack_tensor_desc(rank=tensor.ndim, dims=list(tensor.shape), dtype=dtype)
 
-    meta = header + layer_bytes + catalog
+    quant_bytes = b""
+    if quantized:
+        quant_bytes = pack_quant_section(spec.quant_layers)
+
+    meta = header + layer_bytes + catalog + quant_bytes
     align_pad = payload_alignment_padding(len(meta))
     body = meta + (b"\x00" * align_pad) + weights_blob + biases_blob
     if spec.tests and spec.tests.cases:

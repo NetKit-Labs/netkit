@@ -33,7 +33,7 @@
 namespace {
 
 constexpr int kTensorArenaSize = 256 * 1024;
-constexpr int kRuns = BenchmarkStats::kDefaultRuns;
+constexpr int kRuns = BenchmarkStats::kCnnDefaultRuns;
 alignas(16) uint8_t tensor_arena[kTensorArenaSize];
 
 using MnistCnnOpResolver = tflite::MicroMutableOpResolver<10>;

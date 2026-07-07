@@ -574,6 +574,9 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
     if (!IsValid() || !HasActivationBuffers() || num_layers == 0)
         return empty;
 
+    if (quantized_)
+        return forward_quantized(input);
+
     KernelWorkspace workspace{kernel_workspace_, kernel_workspace_bytes_};
     KernelWorkspaceScope workspace_scope(&workspace);
 

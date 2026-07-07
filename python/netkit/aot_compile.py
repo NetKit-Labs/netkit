@@ -14,13 +14,19 @@ from typing import Literal
 import numpy as np
 
 from .arch_writer import arch_to_nk_bytes
-from .format import HEADER_BYTES, unpack_header, weight_payload_bytes
+from .format import FLAG_HAS_QUANT, HEADER_BYTES, unpack_header, weight_payload_bytes
 from .nk_optimize import OptimizeOptions, optimize_nk
 from .aot_lower import (
     can_lower_arch,
     plan_lowered,
     render_lowered_cpp_header,
     render_lowered_cpp_source,
+)
+from .aot_lower_quant import (
+    can_lower_quantized_arch,
+    plan_lowered_quant,
+    render_lowered_quant_cpp_header,
+    render_lowered_quant_cpp_source,
 )
 from .reader import read_nk, read_test_suite
 from .reference_forward import forward_cnn, forward_mlp
@@ -51,6 +57,7 @@ class AotCompileResult:
     optimized: bool = False
     optimizations_applied: tuple[str, ...] = ()
     lowered: bool = False
+    quant_fast: bool = False
 
 
 def _sanitize_symbol(name: str) -> str:
@@ -75,6 +82,24 @@ def _compute_io(arch: dict, weights: np.ndarray) -> tuple[int, int]:
     output_arr = np.asarray(output, dtype=np.float32)
     return int(flat_input.size), int(output_arr.size)
 
+
+
+
+def _io_elements_from_arch(arch: dict) -> tuple[int, int]:
+    network = arch["network"]
+    if network == "mlp":
+        batch, features = arch["input"]
+        input_elements = int(batch * features)
+    elif network == "cnn":
+        height, width, channels = arch["input"]
+        input_elements = int(height * width * channels)
+    else:
+        raise ValueError(f"unsupported network kind: {network}")
+
+    last = arch["layers"][-1]
+    if last["type"] != "dense":
+        raise ValueError(f"unsupported output layer for IO sizing: {last['type']}")
+    return input_elements, int(last["units"])
 
 def _format_byte_array(data: bytes, indent: str = "    ", width: int = 12) -> str:
     lines: list[str] = []
@@ -144,10 +169,14 @@ def _estimate_arena_bytes(
     weights_in_ram: bool,
     payload_bytes: int,
     network: str = "mlp",
+    quantized: bool = False,
 ) -> tuple[int, int]:
     """Conservative fallback when ./netkit inspect is unavailable."""
     if weights_in_ram:
         weight_guess = max(nk_bytes, input_elements * 4 + output_elements * 4)
+    elif quantized:
+        # Flash-backed int8: loader metadata only (coefs stay in .nk blob).
+        weight_guess = max(10240, input_elements * 4 + output_elements * 4)
     else:
         meta_guess = max(0, nk_bytes - payload_bytes)
         weight_guess = max(meta_guess, input_elements * 4 + output_elements * 4)
@@ -156,9 +185,14 @@ def _estimate_arena_bytes(
     after_forward = after_load + io_scratch
 
     if network == "cnn":
-        # CNN load allocates graph structs and ping-pong activations — often >> .nk file size.
-        weight_bytes = payload_bytes if weights_in_ram else max(0, nk_bytes - payload_bytes)
-        cnn_floor = weight_bytes + nk_bytes * 4 + input_elements * 64
+        if quantized:
+            # CmsisQuantPlan: graph structs + largest int8 slot + CMSIS workspace.
+            act_slot = input_elements * 28
+            cnn_floor = weight_guess + act_slot + 48 * 1024 + 8192
+        else:
+            # CNN load allocates graph structs and ping-pong activations — often >> .nk file size.
+            weight_bytes = payload_bytes if weights_in_ram else max(0, nk_bytes - payload_bytes)
+            cnn_floor = weight_bytes + nk_bytes * 4 + input_elements * 64
         after_load = max(after_load, cnn_floor)
         after_forward = max(after_forward, after_load)
 
@@ -197,6 +231,13 @@ def _probe_arena_bytes(nk_path: Path) -> tuple[int, int]:
     return int(load_match.group(1)), int(forward_match.group(1))
 
 
+def _cmsis_s8_workspace_slack(*, network: str, quantized: bool, weights_in_ram: bool) -> int:
+    """Host arena probe omits MCU CMSIS S8 kernel_workspace_ — add slack for flash builds."""
+    if not quantized or network != "cnn" or weights_in_ram:
+        return 0
+    return 48 * 1024
+
+
 def _resolve_arena_bytes(
     nk_path: Path,
     nk_bytes: int,
@@ -207,9 +248,11 @@ def _resolve_arena_bytes(
     weights_in_ram: bool,
     payload_bytes: int,
     network: str = "mlp",
+    quantized: bool = False,
 ) -> tuple[int, int, int]:
     after_load, after_forward = _probe_arena_bytes(nk_path)
-    if after_forward <= 0:
+    probed = after_forward > 0
+    if not probed:
         after_load, after_forward = _estimate_arena_bytes(
             nk_bytes,
             input_elements,
@@ -217,13 +260,20 @@ def _resolve_arena_bytes(
             weights_in_ram=weights_in_ram,
             payload_bytes=payload_bytes,
             network=network,
+            quantized=quantized,
         )
-    after_load, after_forward = _adjust_arena_for_flash(
-        after_load,
-        after_forward,
-        payload_bytes,
-        weights_in_ram=weights_in_ram,
+    if probed:
+        after_load, after_forward = _adjust_arena_for_flash(
+            after_load,
+            after_forward,
+            payload_bytes,
+            weights_in_ram=weights_in_ram,
+        )
+    workspace_slack = 0 if quantized else _cmsis_s8_workspace_slack(
+        network=network, quantized=quantized, weights_in_ram=weights_in_ram
     )
+    after_load += workspace_slack
+    after_forward += workspace_slack
     recommended = _recommend_arena_bytes(after_forward, headroom_percent=headroom_percent)
     return after_load, after_forward, recommended
 
@@ -239,7 +289,7 @@ def compile_aot(
     optimize_options: OptimizeOptions | None = None,
     arena_headroom_percent: int = 12,
     flash_section: bool = True,
-    weights_in_ram: bool = True,
+    weights_in_ram: bool = False,
     lower: bool = True,
 ) -> AotCompileResult:
     """Compile a .nk model into embeddable C or C++ source files.
@@ -252,7 +302,7 @@ def compile_aot(
     Emits measured arena sizing constants for MCU firmware (static buffer allocation).
     When ``./netkit inspect --full`` is available, arena bytes come from a probe load +
     zero-input forward; otherwise a conservative estimate is used. When
-    ``weights_in_ram=False`` (MCU flash default), ``weights_bytes + biases_bytes`` are
+    ``weights_in_ram=False`` (default), ``weights_bytes + biases_bytes`` are
     subtracted from probe/estimate peaks because coefs stay in the embedded blob.
 
     C++ output is lowered by default (``lower=True``): static ``Kernels::`` call chain
@@ -268,23 +318,46 @@ def compile_aot(
     stem = model_name or path.stem
     symbol = _sanitize_symbol(stem)
 
+    raw_nk_bytes = path.read_bytes()
+    header = unpack_header(raw_nk_bytes[:HEADER_BYTES])
+    quantized = bool(header.get("flags", 0) & FLAG_HAS_QUANT)
+
     arch, weights = read_nk(path)
     tests = read_test_suite(path)
     optimizations_applied: tuple[str, ...] = ()
     if optimize:
+        if quantized:
+            raise ValueError("optimize is not supported for quantized .nk models")
         opt = optimize_nk(arch, weights, options=optimize_options)
         arch, weights = opt.arch, opt.weights
         optimizations_applied = tuple(opt.applied)
-    nk_bytes = arch_to_nk_bytes(arch, weights, tests=tests)
-    header = unpack_header(nk_bytes[:HEADER_BYTES])
-    payload_bytes = weight_payload_bytes(header)
 
-    input_elements, output_elements = _compute_io(arch, weights)
+    if quantized:
+        nk_bytes = raw_nk_bytes
+        input_elements, output_elements = _io_elements_from_arch(arch)
+    else:
+        nk_bytes = arch_to_nk_bytes(arch, weights, tests=tests)
+        header = unpack_header(nk_bytes[:HEADER_BYTES])
+        input_elements, output_elements = _compute_io(arch, weights)
+    payload_bytes = weight_payload_bytes(header)
     network = arch["network"]
     input_shape = arch["input"]
-    use_lowered = lang is AotLanguage.CPP and lower and can_lower_arch(arch)
+    use_lowered = (
+        lang is AotLanguage.CPP and lower and not quantized and can_lower_arch(arch)
+    )
+    use_quant_lowered = (
+        lang is AotLanguage.CPP and lower and quantized and can_lower_quantized_arch(arch)
+    )
 
-    if use_lowered:
+    if use_quant_lowered:
+        quant_plan = plan_lowered_quant(path)
+        after_load = quant_plan.arena_after_load
+        after_forward = quant_plan.arena_after_forward
+        arena_recommended = max(
+            64,
+            _recommend_arena_bytes(after_forward, headroom_percent=arena_headroom_percent),
+        )
+    elif use_lowered:
         plan = plan_lowered(arch, weights, weights_in_ram=weights_in_ram)
         after_load = plan.arena_after_load
         after_forward = plan.arena_after_forward
@@ -302,6 +375,7 @@ def compile_aot(
             weights_in_ram=weights_in_ram,
             payload_bytes=payload_bytes,
             network=network,
+            quantized=quantized,
         )
 
     blob_lines = _format_byte_array(nk_bytes)
@@ -314,7 +388,31 @@ def compile_aot(
     if lang is AotLanguage.CPP:
         header_path = out_dir / f"{symbol}_aot.hpp"
         source_path = out_dir / f"{symbol}_aot.cpp"
-        if use_lowered:
+        if use_quant_lowered:
+            header_path.write_text(
+                render_lowered_quant_cpp_header(
+                    symbol,
+                    network,
+                    input_elements,
+                    output_elements,
+                    input_shape,
+                    quant_plan,
+                    arena_recommended,
+                ),
+                encoding="utf-8",
+            )
+            source_path.write_text(
+                opt_comment
+                + render_lowered_quant_cpp_source(
+                    symbol,
+                    path,
+                    quant_plan,
+                    include_main,
+                    flash_section,
+                ),
+                encoding="utf-8",
+            )
+        elif use_lowered:
             header_path.write_text(
                 render_lowered_cpp_header(
                     symbol,
@@ -349,6 +447,8 @@ def compile_aot(
                     after_load,
                     after_forward,
                     arena_recommended,
+                    quantized=quantized,
+                    quant_fast=False,
                 ),
                 encoding="utf-8",
             )
@@ -364,6 +464,7 @@ def compile_aot(
                     blob_lines,
                     include_main,
                     flash_section,
+                    quantized=quantized,
                 ),
                 encoding="utf-8",
             )
@@ -409,7 +510,8 @@ def compile_aot(
         arena_bytes_recommended=arena_recommended,
         optimized=bool(optimizations_applied),
         optimizations_applied=optimizations_applied,
-        lowered=use_lowered,
+        lowered=use_lowered or use_quant_lowered,
+        quant_fast=use_quant_lowered,
     )
 
 
@@ -422,8 +524,20 @@ def _render_cpp_header(
     arena_after_load: int,
     arena_after_forward: int,
     arena_recommended: int,
+    *,
+    quantized: bool = False,
+    quant_fast: bool = False,
 ) -> str:
     shape_literals = ", ".join(str(v) for v in input_shape)
+    quant_fast_line = (
+        "inline constexpr bool kQuantFastPath = true;\n" if quant_fast else ""
+    )
+    quant_lowered_line = "inline constexpr bool kQuantLowered = false;\ninline constexpr std::size_t kWorkspaceBytes = 0u;\n"
+    forward_int8_decl = (
+        "    bool forwardInt8(Arena& arena, const int8_t* input, int8_t* output) const;\n"
+        if quantized
+        else ""
+    )
     return f"""#pragma once
 /* Generated by netkit AOT compiler — C++26 firmware-ready, links against libnetkit.a */
 
@@ -443,7 +557,7 @@ inline constexpr std::uint32_t kInputRank = {len(input_shape)}u;
 inline constexpr std::size_t kArenaBytesAfterLoad = {arena_after_load}u;
 inline constexpr std::size_t kArenaBytesAfterForward = {arena_after_forward}u;
 inline constexpr std::size_t kArenaBytesRecommended = {arena_recommended}u;
-
+{quant_lowered_line}{quant_fast_line}
 extern const unsigned char kNkBlob[];
 extern const std::size_t kNkBytes;
 
@@ -460,7 +574,8 @@ public:
     Model() = default;
 
     bool load(Arena& arena);
-    bool forward(Arena& arena, const float* input, float* output) const;
+    bool forward(Arena& arena, const float* input, int8_t* output) const;
+{forward_int8_decl}    bool forwardFloat(Arena& arena, const float* input, float* output) const;
     [[nodiscard]] bool isLoaded() const {{ return loaded_; }}
 
 private:
@@ -482,9 +597,12 @@ def _render_cpp_source(
     blob_lines: str,
     include_main: bool,
     flash_section: bool,
+    *,
+    quantized: bool = False,
 ) -> str:
     if network == "mlp":
         batch, features = input_shape
+        forward_body_int8_direct = ""
         load_body = """    std::array<std::uint32_t, kMaxTensorRank> shape{};
     std::uint32_t input_rank = 0;
     MLPNetwork* mlp = nullptr;
@@ -493,23 +611,48 @@ def _render_cpp_source(
     if (result.status != NkLoader::LoadStatus::Ok || !mlp || !mlp->IsValid())
         return false;
     network_ = mlp;"""
-        forward_body = f"""    auto* mlp = static_cast<MLPNetwork*>(network_);
+        forward_body_int8 = f"""    auto* mlp = static_cast<MLPNetwork*>(network_);
     Tensor input_tensor = TensorFactory::Create2D(arena, {batch}, {features});
     if (!input_tensor.data)
         return false;
     float* input_data = static_cast<float*>(input_tensor.data);
     for (std::uint32_t i = 0; i < kInputElements; ++i)
         input_data[i] = input[i];
-    Tensor out_tensor = TensorFactory::Create2D(arena, {batch}, kOutputElements / {batch});
+    int8_t* out_i8 = static_cast<int8_t*>(arena.alloc(kOutputElements * sizeof(int8_t), alignof(int8_t)));
+    Tensor out_tensor = TensorFactory::View2DInt8(out_i8, {batch}, kOutputElements / {batch});
     if (!out_tensor.data)
         return false;
     mlp->forward(input_tensor, out_tensor, arena);
+    if (out_tensor.type != DataType::Int8)
+        return false;
+    const int8_t* out_data = static_cast<const int8_t*>(out_tensor.data);
+    for (std::uint32_t i = 0; i < kOutputElements; ++i)
+        output[i] = out_data[i];
+    return true;"""
+        forward_body_float = f"""    auto* mlp = static_cast<MLPNetwork*>(network_);
+    Tensor input_tensor = TensorFactory::Create2D(arena, {batch}, {features});
+    if (!input_tensor.data)
+        return false;
+    float* input_data = static_cast<float*>(input_tensor.data);
+    for (std::uint32_t i = 0; i < kInputElements; ++i)
+        input_data[i] = input[i];
+    int8_t* out_i8 = static_cast<int8_t*>(arena.alloc(kOutputElements * sizeof(int8_t), alignof(int8_t)));
+    Tensor out_tensor = TensorFactory::View2DInt8(out_i8, {batch}, kOutputElements / {batch});
+    if (!out_tensor.data)
+        return false;
+    mlp->forward(input_tensor, out_tensor, arena);
+    if (out_tensor.type == DataType::Int8)
+    {{
+        QuantOps::DequantizeSoftmaxOutput(static_cast<const int8_t*>(out_tensor.data), output, kOutputElements);
+        return true;
+    }}
     const float* out_data = static_cast<const float*>(out_tensor.data);
     for (std::uint32_t i = 0; i < kOutputElements; ++i)
         output[i] = out_data[i];
     return true;"""
     else:
         height, width, channels = input_shape
+        forward_body_int8_direct = ""
         load_body = """    std::array<std::uint32_t, kMaxTensorRank> shape{};
     std::uint32_t input_rank = 0;
     CNNNetwork* cnn = nullptr;
@@ -518,12 +661,9 @@ def _render_cpp_source(
     if (result.status != NkLoader::LoadStatus::Ok || !cnn || !cnn->IsValid())
         return false;
     network_ = cnn;"""
-        forward_body = f"""    auto* cnn = static_cast<CNNNetwork*>(network_);
-    float input_buffer[kInputElements] = {{}};
-    for (std::uint32_t i = 0; i < kInputElements; ++i)
-        input_buffer[i] = input[i];
+        forward_body_int8 = f"""    auto* cnn = static_cast<CNNNetwork*>(network_);
     Tensor input_tensor{{}};
-    input_tensor.data = input_buffer;
+    input_tensor.data = const_cast<float*>(input);
     input_tensor.type = DataType::Float32;
     input_tensor.rank = 3;
     input_tensor.shape[0] = {height};
@@ -535,8 +675,54 @@ def _render_cpp_source(
     input_tensor.num_elements = kInputElements;
     input_tensor.bytes = input_tensor.num_elements * sizeof(float);
     Tensor& out_tensor = cnn->forward(input_tensor, arena);
+    if (!out_tensor.data || out_tensor.type != DataType::Int8)
+        return false;
+    const int8_t* out_data = static_cast<const int8_t*>(out_tensor.data);
+    for (std::uint32_t i = 0; i < kOutputElements; ++i)
+        output[i] = out_data[i];
+    return true;"""
+        forward_body_int8_direct = f"""    auto* cnn = static_cast<CNNNetwork*>(network_);
+    Tensor input_tensor{{}};
+    input_tensor.data = const_cast<int8_t*>(input);
+    input_tensor.type = DataType::Int8;
+    input_tensor.rank = 3;
+    input_tensor.shape[0] = {height};
+    input_tensor.shape[1] = {width};
+    input_tensor.shape[2] = {channels};
+    input_tensor.stride[0] = {width} * {channels};
+    input_tensor.stride[1] = {channels};
+    input_tensor.stride[2] = 1;
+    input_tensor.num_elements = kInputElements;
+    input_tensor.bytes = input_tensor.num_elements * sizeof(int8_t);
+    Tensor& out_tensor = cnn->forward(input_tensor, arena);
+    if (!out_tensor.data || out_tensor.type != DataType::Int8)
+        return false;
+    const int8_t* out_data = static_cast<const int8_t*>(out_tensor.data);
+    for (std::uint32_t i = 0; i < kOutputElements; ++i)
+        output[i] = out_data[i];
+    return true;"""
+        forward_body_float = f"""    auto* cnn = static_cast<CNNNetwork*>(network_);
+    Tensor input_tensor{{}};
+    input_tensor.data = const_cast<float*>(input);
+    input_tensor.type = DataType::Float32;
+    input_tensor.rank = 3;
+    input_tensor.shape[0] = {height};
+    input_tensor.shape[1] = {width};
+    input_tensor.shape[2] = {channels};
+    input_tensor.stride[0] = {width} * {channels};
+    input_tensor.stride[1] = {channels};
+    input_tensor.stride[2] = 1;
+    input_tensor.num_elements = kInputElements;
+    input_tensor.bytes = input_tensor.num_elements * sizeof(float);
+    cnn->SetQuantOutputFormat(QuantOutputFormat::Float32);
+    Tensor& out_tensor = cnn->forward(input_tensor, arena);
     if (!out_tensor.data)
         return false;
+    if (out_tensor.type == DataType::Int8)
+    {{
+        QuantOps::DequantizeSoftmaxOutput(static_cast<const int8_t*>(out_tensor.data), output, kOutputElements);
+        return true;
+    }}
     const float* out_data = static_cast<const float*>(out_tensor.data);
     for (std::uint32_t i = 0; i < kOutputElements; ++i)
         output[i] = out_data[i];
@@ -564,7 +750,7 @@ int main(void)
 
     float input[netkit::aot::{symbol}::kInputElements] = {{0.0f}};
     float output[netkit::aot::{symbol}::kOutputElements] = {{0.0f}};
-    if (!model.forward(arena, input, output))
+    if (!model.forwardFloat(arena, input, output))
         return 1;
 
     for (std::uint32_t i = 0; i < netkit::aot::{symbol}::kOutputElements; ++i)
@@ -591,6 +777,18 @@ int main(void)
     else:
         flash_attr = "\n#define NETKIT_AOT_FLASH_CONST\n"
 
+    forward_int8_method = ""
+    if quantized and network == "cnn":
+        forward_int8_method = f"""
+
+bool Model::forwardInt8(Arena& arena, const int8_t* input, int8_t* output) const
+{{
+    if (!loaded_ || !network_ || !input || !output)
+        return false;
+{forward_body_int8_direct}
+}}
+"""
+
     return f"""/* Generated by netkit AOT compiler — compile with -std=c++26 for firmware */
 {flash_attr}
 #include "{symbol}_aot.hpp"
@@ -599,6 +797,7 @@ int main(void)
 #include "cnn.hpp"
 #include "mlp.hpp"
 #include "nk_loader.hpp"
+#include "quant_output.hpp"
 #include "tensor_factory.hpp"
 
 #include <array>
@@ -618,11 +817,18 @@ bool Model::load(Arena& arena)
     return true;
 }}
 
-bool Model::forward(Arena& arena, const float* input, float* output) const
+bool Model::forward(Arena& arena, const float* input, int8_t* output) const
 {{
     if (!loaded_ || !network_ || !input || !output)
         return false;
-{forward_body}
+{forward_body_int8}
+}}
+{forward_int8_method}
+bool Model::forwardFloat(Arena& arena, const float* input, float* output) const
+{{
+    if (!loaded_ || !network_ || !input || !output)
+        return false;
+{forward_body_float}
 }}
 
 }}  // namespace netkit::aot::{symbol}

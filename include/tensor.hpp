@@ -7,7 +7,8 @@ enum class DataType : uint8_t
     Float32,  // IEEE-754 single precision — all inference tensors and weights use float32
     Int8,
     UInt8,
-    Int16
+    Int16,
+    Int32
 };
 
 constexpr uint32_t kMaxTensorRank = 4;

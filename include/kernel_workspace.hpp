@@ -28,4 +28,6 @@ private:
 
 KernelWorkspace* GetActiveKernelWorkspace();
 
+void ResetActiveKernelWorkspace();
+
 bool BindCmsisWorkspace(void*& buf, int32_t& size, int32_t required_bytes);

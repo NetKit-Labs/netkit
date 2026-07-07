@@ -30,8 +30,11 @@ The [MNIST MLP suite](MNIST.md) on the same data reaches **98.06%** test accurac
 | Path | Purpose |
 |------|---------|
 | `models/mnist_cnn.onnx` | Source graph (ONNX parity) |
-| `models/mnist_cnn.nk` | Runtime model + 10 embedded TCAS cases |
-| `tools/export_mnist_cnn.py` | Train + export script |
+| `models/mnist_cnn.nk` | Float32 runtime model + 10 embedded TCAS cases |
+| `models/mnist_cnn_int8.nk` | Int8 quantized model (MCU / CMSIS-NN) |
+| `tools/export_mnist_cnn.py` | Train + export float script |
+| `tools/export_mnist_cnn_int8.py` | Quantize float `.nk` to int8 (optional TFLite input-quant alignment) |
+| `tools/compare_nk_tflite_quant.py` | Compare activation quant params vs TFLite |
 
 The MNIST CNN suite uses a **4 MiB** dedicated arena in `src/nk_regression.cpp`. See [ARENA.md](ARENA.md).
 
@@ -43,12 +46,26 @@ Part of `make test` / `./netkit test` — see [TESTING.md](TESTING.md).
 
 Same 10 TCAS vectors as the MLP suite; compared against TFLM in [benchmark/README.md](../benchmark/README.md). CNN invoke and per-op profile tables (Conv2D vs pool vs FC) are produced by `./benchmark/compare.sh`. On host builds both runtimes use reference conv kernels — CMSIS-NN applies only on MCU targets.
 
+### Int8 on-device (NUCLEO-F446RE)
+
+```bash
+make export-mnist-cnn-int8
+python3 benchmark/tflm/tools/export_assets.py --model cnn-int8 --images-only
+make -C boards/nucleo-f446re-cnn-int8
+cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh && ./scripts/monitor.sh
+```
+
+Verified: **10/10** accuracy, **~145 ms** mean invoke (quant lowered AOT, 64-byte arena). See [boards/nucleo-f446re-cnn-int8/README.md](../boards/nucleo-f446re-cnn-int8/README.md).
+
+Int8 export aligns **layer-0 input quant** with TFLite when `benchmark/tflm/generated/mnist_cnn_int8.tflite` is present (`input_scale=1/255`, `zero_point=-128`). Weight and per-layer output scales are calibrated from netkit float weights — do not copy TFLite weight scales onto netkit weights.
+
 ## Regenerating
 
 ```bash
 make export-mnist-cnn
+make export-mnist-cnn-int8   # optional: int8 quant from float .nk
 make export-onnx-test
 make test
 ```
 
-Commit `models/mnist_cnn.nk` and `models/mnist_cnn.onnx` after regenerating so tests stay offline (no training at test time).
+Commit `models/mnist_cnn.nk`, `models/mnist_cnn.onnx`, and `models/mnist_cnn_int8.nk` after regenerating so tests stay offline (no training at test time).

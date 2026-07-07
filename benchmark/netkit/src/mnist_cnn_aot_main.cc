@@ -19,7 +19,7 @@ namespace aot = netkit::aot::mnist_cnn;
 
 namespace {
 
-constexpr int kRuns = BenchmarkStats::kDefaultRuns;
+constexpr int kRuns = BenchmarkStats::kCnnDefaultRuns;
 
 int ArgMax10(const float* values)
 {

@@ -580,6 +580,11 @@ namespace NkLoader
             return CursorReadExact(cursor, &value, sizeof(value));
         }
 
+        bool CursorReadI32(ByteCursor& cursor, int32_t& value)
+        {
+            return CursorReadExact(cursor, &value, sizeof(value));
+        }
+
         bool ReadHeaderCursor(ByteCursor& cursor, NkFormat::FileHeader& header)
         {
             char magic[4] = {};
@@ -627,6 +632,99 @@ namespace NkLoader
             }
 
             return CursorReadU32(cursor, desc.num_elements);
+        }
+
+        bool ReadMlpLayerQuantCursor(ByteCursor& cursor, NkFormat::MlpLayerQuantDesc& quant)
+        {
+            if (!CursorReadF32(cursor, quant.input_scale) || !CursorReadI32(cursor, quant.input_zero_point) ||
+                !CursorReadF32(cursor, quant.weight_scale) || !CursorReadI32(cursor, quant.weight_zero_point) ||
+                !CursorReadF32(cursor, quant.bias_scale) || !CursorReadI32(cursor, quant.bias_zero_point) ||
+                !CursorReadF32(cursor, quant.output_scale) || !CursorReadI32(cursor, quant.output_zero_point))
+                return false;
+            return true;
+        }
+
+        bool ReadQuantBlockCursor(ByteCursor& cursor, ParsedModel& out)
+        {
+            out.has_quant = false;
+            out.num_quant_layers = 0;
+
+            if ((out.header.flags & NkFormat::kFlagHasQuant) == 0)
+                return true;
+
+            if (out.header.version < 4)
+                return false;
+
+            char magic[4] = {};
+            if (!CursorReadExact(cursor, magic, sizeof(magic)))
+                return false;
+            if (std::memcmp(magic, NkFormat::kQuantMagic, sizeof(magic)) != 0)
+                return false;
+
+            uint16_t num_layers = 0;
+            uint16_t reserved = 0;
+            if (!CursorReadU16(cursor, num_layers) || !CursorReadU16(cursor, reserved))
+                return false;
+            if (num_layers == 0 || num_layers > NkFormat::kMaxLayers)
+                return false;
+
+            out.has_quant = true;
+            out.num_quant_layers = num_layers;
+            for (uint32_t i = 0; i < num_layers; ++i)
+            {
+                if (!ReadMlpLayerQuantCursor(cursor, out.layer_quant[i]))
+                    return false;
+            }
+            return true;
+        }
+
+        bool ReadMlpLayerQuantFile(std::FILE* file, NkFormat::MlpLayerQuantDesc& quant)
+        {
+            if (!ReadF32(file, quant.input_scale) || !ReadExact(file, &quant.input_zero_point, sizeof(quant.input_zero_point)) ||
+                !ReadF32(file, quant.weight_scale) || !ReadExact(file, &quant.weight_zero_point, sizeof(quant.weight_zero_point)) ||
+                !ReadF32(file, quant.bias_scale) || !ReadExact(file, &quant.bias_zero_point, sizeof(quant.bias_zero_point)) ||
+                !ReadF32(file, quant.output_scale) || !ReadExact(file, &quant.output_zero_point, sizeof(quant.output_zero_point)))
+                return false;
+            return true;
+        }
+
+        bool ReadQuantBlockFile(std::FILE* file, ParsedModel& out)
+        {
+            out.has_quant = false;
+            out.num_quant_layers = 0;
+
+            if ((out.header.flags & NkFormat::kFlagHasQuant) == 0)
+                return true;
+
+            if (out.header.version < 4)
+                return false;
+
+            char magic[4] = {};
+            if (!ReadExact(file, magic, sizeof(magic)))
+                return false;
+            if (std::memcmp(magic, NkFormat::kQuantMagic, sizeof(magic)) != 0)
+                return false;
+
+            uint16_t num_layers = 0;
+            uint16_t reserved = 0;
+            if (!ReadU16(file, num_layers) || !ReadU16(file, reserved))
+                return false;
+            if (num_layers == 0 || num_layers > NkFormat::kMaxLayers)
+                return false;
+
+            out.has_quant = true;
+            out.num_quant_layers = num_layers;
+            for (uint32_t i = 0; i < num_layers; ++i)
+            {
+                if (!ReadMlpLayerQuantFile(file, out.layer_quant[i]))
+                    return false;
+            }
+            return true;
+        }
+
+        bool ModelIsQuantized(const ParsedModel& parsed)
+        {
+            return parsed.has_quant && (parsed.header.flags & NkFormat::kFlagHasQuant) != 0;
         }
 
         bool ReadDenseLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
@@ -796,6 +894,64 @@ namespace NkLoader
             return LoadResult{LoadStatus::Ok, FromNkNetwork(parsed.header.network_kind), nullptr};
         }
 
+        LoadResult ReadNkFileIntoArena(const char* nk_path,
+                                       Arena& arena,
+                                       const uint8_t*& out_data,
+                                       std::size_t& out_size)
+        {
+            out_data = nullptr;
+            out_size = 0;
+
+            if (!nk_path)
+                return Fail(LoadStatus::FileOpenFailed, "Missing .nk path");
+
+            std::FILE* file = std::fopen(nk_path, "rb");
+            if (!file)
+                return Fail(LoadStatus::FileOpenFailed, "Could not open .nk file");
+
+            if (std::fseek(file, 0, SEEK_END) != 0)
+            {
+                std::fclose(file);
+                return Fail(LoadStatus::ReadFailed, "Could not seek .nk file");
+            }
+
+            const long file_size = std::ftell(file);
+            if (file_size < 0)
+            {
+                std::fclose(file);
+                return Fail(LoadStatus::ReadFailed, "Could not size .nk file");
+            }
+
+            if (std::fseek(file, 0, SEEK_SET) != 0)
+            {
+                std::fclose(file);
+                return Fail(LoadStatus::ReadFailed, "Could not rewind .nk file");
+            }
+
+            const std::size_t total_bytes = static_cast<std::size_t>(file_size);
+            uint8_t* storage = nullptr;
+            if (total_bytes > 0)
+            {
+                storage = static_cast<uint8_t*>(arena.alloc(total_bytes, alignof(std::max_align_t)));
+                if (!storage)
+                {
+                    std::fclose(file);
+                    return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk file");
+                }
+
+                if (std::fread(storage, 1, total_bytes, file) != total_bytes)
+                {
+                    std::fclose(file);
+                    return Fail(LoadStatus::ReadFailed, "Failed to read .nk file");
+                }
+            }
+
+            std::fclose(file);
+            out_data = storage;
+            out_size = total_bytes;
+            return LoadResult{LoadStatus::Ok, NetworkKind::Unknown, nullptr};
+        }
+
         LoadResult CopyPayloadToArena(const ParsedModel& parsed,
                                       const uint8_t* blob,
                                       std::size_t blob_size,
@@ -953,6 +1109,164 @@ namespace NkLoader
 
             (void)input_rank;
             return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+        }
+
+        LoadResult InstantiateQuantizedMLP(const ParsedModel& parsed,
+                                           int8_t* weights,
+                                           int32_t* biases,
+                                           Arena& arena,
+                                           MLPNetwork*& network,
+                                           const std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                           uint32_t input_rank)
+        {
+            network = nullptr;
+
+            if (!ModelIsQuantized(parsed))
+                return Fail(LoadStatus::SizeMismatch, ".nk file is not a quantized MLP");
+
+            if (parsed.num_quant_layers != parsed.header.num_weight_tensors)
+                return Fail(LoadStatus::SizeMismatch, "Quantized MLP layer count mismatch");
+
+            void* network_mem = arena.alloc(sizeof(MLPNetwork), alignof(MLPNetwork));
+            if (!network_mem)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating MLPNetwork");
+
+            network = new (network_mem) MLPNetwork(parsed.header.num_layers, arena);
+            if (!network->IsValid())
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP layers");
+
+            network->SetQuantized(true);
+
+            uint32_t weight_index = 0;
+            uint32_t bias_index = 0;
+            uint32_t in_features = input_shape[1];
+            std::size_t weight_offset = 0;
+            std::size_t bias_offset = 0;
+
+            for (uint32_t i = 0; i < parsed.header.num_layers; ++i)
+            {
+                const uint32_t out_features = parsed.layers[i].dense.units;
+                const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                if (w_desc.dtype != NkFormat::DType::Int8 || b_desc.dtype != NkFormat::DType::Int32)
+                    return Fail(LoadStatus::UnsupportedLayer, "Quantized MLP expects int8 weights and int32 biases");
+
+                if (w_desc.num_elements != in_features * out_features || b_desc.num_elements != out_features)
+                    return Fail(LoadStatus::SizeMismatch, "MLP tensor shape mismatch in .nk catalog");
+
+                Tensor W = TensorFactory::View2DInt8(weights + weight_offset, out_features, in_features);
+                Tensor B = TensorFactory::View1DInt32(biases + bias_offset, out_features);
+                weight_offset += w_desc.num_elements;
+                bias_offset += b_desc.num_elements;
+
+                network->InitQuantizedLayer(i,
+                                            W,
+                                            B,
+                                            ToMlpActivation(parsed.layers[i].dense.activation),
+                                            parsed.layer_quant[i],
+                                            parsed.layers[i].dense.alpha);
+                in_features = out_features;
+            }
+
+            if (!network->InitActivationBuffers(arena, input_shape[0]))
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating MLP activation buffers");
+
+            (void)input_rank;
+            return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+        }
+
+        LoadResult ReadQuantizedPayload(std::FILE* file,
+                                        const ParsedModel& parsed,
+                                        int8_t* weights,
+                                        int32_t* biases)
+        {
+            if (std::fseek(file, static_cast<long>(parsed.payload_offset), SEEK_SET) != 0)
+                return Fail(LoadStatus::ReadFailed, "Could not seek to .nk payload");
+
+            if (!ReadExact(file, weights, parsed.header.weights_bytes))
+                return Fail(LoadStatus::ReadFailed, "Failed to read .nk weight payload");
+
+            if (!ReadExact(file, biases, static_cast<std::size_t>(parsed.header.biases_bytes)))
+                return Fail(LoadStatus::ReadFailed, "Failed to read .nk bias payload");
+
+            return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+        }
+
+        LoadResult CopyQuantizedPayloadToArena(const ParsedModel& parsed,
+                                               const uint8_t* blob,
+                                               std::size_t blob_size,
+                                               Arena& arena,
+                                               int8_t*& weights,
+                                               int32_t*& biases)
+        {
+            const std::size_t weights_bytes = parsed.header.weights_bytes;
+            const std::size_t biases_bytes = parsed.header.biases_bytes;
+            const std::size_t needed = parsed.payload_offset + weights_bytes + biases_bytes;
+
+            if (!blob || blob_size < needed)
+                return Fail(LoadStatus::TruncatedFile, ".nk buffer too small for payload");
+
+            if (weights_bytes == 0 && biases_bytes == 0)
+            {
+                weights = nullptr;
+                biases = nullptr;
+                return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+            }
+
+            weights = static_cast<int8_t*>(arena.alloc(weights_bytes, alignof(int8_t)));
+            if (!weights)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
+
+            biases = static_cast<int32_t*>(arena.alloc(biases_bytes, alignof(int32_t)));
+            if (!biases)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk biases");
+
+            std::memcpy(weights, blob + parsed.payload_offset, weights_bytes);
+            std::memcpy(biases, blob + parsed.payload_offset + weights_bytes, biases_bytes);
+            return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+        }
+
+#if !NETKIT_WEIGHTS_IN_RAM
+        LoadResult BindQuantizedPayloadFromBlob(const ParsedModel& parsed,
+                                                const uint8_t* blob,
+                                                std::size_t blob_size,
+                                                int8_t*& weights,
+                                                int32_t*& biases)
+        {
+            const std::size_t weights_bytes = parsed.header.weights_bytes;
+            const std::size_t biases_bytes = parsed.header.biases_bytes;
+            const std::size_t needed = parsed.payload_offset + weights_bytes + biases_bytes;
+
+            if (!blob || blob_size < needed)
+                return Fail(LoadStatus::TruncatedFile, ".nk buffer too small for payload");
+
+            const auto* payload = blob + parsed.payload_offset;
+            weights = const_cast<int8_t*>(reinterpret_cast<const int8_t*>(payload));
+
+            const uintptr_t bias_addr =
+                reinterpret_cast<uintptr_t>(payload + weights_bytes);
+            if (bias_addr % alignof(int32_t) != 0)
+                return Fail(LoadStatus::SizeMismatch, ".nk bias payload not int32-aligned for flash weights");
+
+            biases = const_cast<int32_t*>(reinterpret_cast<const int32_t*>(payload + weights_bytes));
+            return LoadResult{LoadStatus::Ok, NetworkKind::Mlp, nullptr};
+        }
+#endif
+
+        LoadResult ResolveQuantizedPayloadFromBuffer(const ParsedModel& parsed,
+                                                     const uint8_t* blob,
+                                                     std::size_t blob_size,
+                                                     Arena& arena,
+                                                     int8_t*& weights,
+                                                     int32_t*& biases)
+        {
+#if !NETKIT_WEIGHTS_IN_RAM
+            const LoadResult bound = BindQuantizedPayloadFromBlob(parsed, blob, blob_size, weights, biases);
+            if (bound.status == LoadStatus::Ok)
+                return bound;
+#endif
+            return CopyQuantizedPayloadToArena(parsed, blob, blob_size, arena, weights, biases);
         }
 
         LoadResult InstantiateCNN(const ParsedModel& parsed,
@@ -1569,6 +1883,165 @@ namespace NkLoader
             (void)input_rank;
             return LoadResult{LoadStatus::Ok, NetworkKind::Cnn, nullptr};
         }
+
+        LoadResult InstantiateQuantizedCNN(const ParsedModel& parsed,
+                                           int8_t* weights,
+                                           int32_t* biases,
+                                           Arena& arena,
+                                           CNNNetwork*& network,
+                                           const std::array<uint32_t, kMaxTensorRank>& input_shape,
+                                           uint32_t input_rank)
+        {
+            network = nullptr;
+
+            if (!ModelIsQuantized(parsed))
+                return Fail(LoadStatus::SizeMismatch, ".nk file is not a quantized CNN");
+
+            if (parsed.num_quant_layers != parsed.header.num_weight_tensors)
+                return Fail(LoadStatus::SizeMismatch, "Quantized CNN tensor count mismatch");
+
+            void* network_mem = arena.alloc(sizeof(CNNNetwork), alignof(CNNNetwork));
+            if (!network_mem)
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while creating CNNNetwork");
+
+            network = new (network_mem) CNNNetwork(parsed.header.num_layers, arena);
+            if (!network->IsValid())
+                return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while allocating CNN layers");
+
+            network->SetQuantized(true);
+
+            uint32_t weight_index = 0;
+            uint32_t bias_index = 0;
+            uint32_t quant_index = 0;
+            std::size_t weight_offset = 0;
+            std::size_t bias_offset = 0;
+
+            uint32_t in_channels = input_shape[2];
+            uint32_t h = input_shape[0];
+            uint32_t w = input_shape[1];
+            uint32_t dense_in = 0;
+
+            for (uint32_t i = 0; i < parsed.header.num_layers; ++i)
+            {
+                switch (parsed.layers[i].kind)
+                {
+                    case NkFormat::LayerKind::Conv2D:
+                    {
+                        const NkFormat::ConvLayerDesc& layer = parsed.layers[i].conv;
+                        const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                        const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                        if (w_desc.dtype != NkFormat::DType::Int8 || b_desc.dtype != NkFormat::DType::Int32)
+                            return Fail(LoadStatus::UnsupportedLayer,
+                                          "Quantized CNN expects int8 weights and int32 biases");
+
+                        const std::size_t kernel_area =
+                            static_cast<std::size_t>(layer.kernel_size) * layer.kernel_size;
+                        const std::size_t conv_in_channels =
+                            w_desc.num_elements / (kernel_area * layer.filters);
+
+                        if (b_desc.num_elements != layer.filters)
+                            return Fail(LoadStatus::SizeMismatch, "CNN conv tensor shape mismatch in .nk catalog");
+
+                        int pad_h_end = static_cast<int>(layer.pad_h);
+                        int pad_w_end = static_cast<int>(layer.pad_w);
+                        nk_op_detail::DecodeConvPadExtra(
+                            layer.pad_h, layer.pad_w, layer.kernel_w, pad_h_end, pad_w_end);
+
+                        network->InitQuantizedConvLayer(
+                            i,
+                            static_cast<int>(layer.kernel_size),
+                            static_cast<int>(layer.stride),
+                            static_cast<int>(conv_in_channels),
+                            static_cast<int>(layer.filters),
+                            weights + weight_offset,
+                            biases + bias_offset,
+                            parsed.layer_quant[quant_index++],
+                            ToConvActivation(layer.activation),
+                            layer.alpha,
+                            static_cast<int>(layer.pad_h),
+                            static_cast<int>(layer.pad_w),
+                            pad_h_end,
+                            pad_w_end);
+
+                        weight_offset += w_desc.num_elements;
+                        bias_offset += b_desc.num_elements;
+
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, static_cast<int>(layer.kernel_size), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_h), pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, static_cast<int>(layer.kernel_size), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_w), pad_w_end);
+                        in_channels = layer.filters;
+                        break;
+                    }
+                    case NkFormat::LayerKind::MaxPool2D:
+                    {
+                        const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;
+                        const nk_op_detail::PoolMeta pool_meta = nk_op_detail::DecodePoolMeta(layer);
+                        network->InitPoolLayer(i,
+                                               pool_meta.pool_h,
+                                               pool_meta.pool_w,
+                                               static_cast<int>(layer.stride),
+                                               pool_meta.pad_h,
+                                               pool_meta.pad_w,
+                                               pool_meta.pad_h_end,
+                                               pool_meta.pad_w_end);
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, pool_meta.pool_h, static_cast<int>(layer.stride), pool_meta.pad_h,
+                            pool_meta.pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, pool_meta.pool_w, static_cast<int>(layer.stride), pool_meta.pad_w,
+                            pool_meta.pad_w_end);
+                        break;
+                    }
+                    case NkFormat::LayerKind::Flatten:
+                    {
+                        network->InitFlattenLayer(i);
+                        dense_in = h * w * in_channels;
+                        break;
+                    }
+                    case NkFormat::LayerKind::Dense:
+                    {
+                        const NkFormat::DenseLayerDesc& layer = parsed.layers[i].dense;
+                        const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                        const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                        if (w_desc.dtype != NkFormat::DType::Int8 || b_desc.dtype != NkFormat::DType::Int32)
+                            return Fail(LoadStatus::UnsupportedLayer,
+                                          "Quantized CNN expects int8 weights and int32 biases");
+
+                        const std::size_t weight_elems = static_cast<std::size_t>(dense_in) * layer.units;
+                        if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.units)
+                            return Fail(LoadStatus::SizeMismatch, "CNN dense tensor shape mismatch in .nk catalog");
+
+                        Tensor W = TensorFactory::View2DInt8(weights + weight_offset, layer.units, dense_in);
+                        Tensor B = TensorFactory::View1DInt32(biases + bias_offset, layer.units);
+                        network->InitQuantizedDenseLayer(i,
+                                                         W,
+                                                         B,
+                                                         parsed.layer_quant[quant_index++],
+                                                         ToMlpActivation(layer.activation),
+                                                         layer.alpha);
+                        weight_offset += weight_elems;
+                        bias_offset += b_desc.num_elements;
+                        dense_in = layer.units;
+                        break;
+                    }
+                    default:
+                        return Fail(LoadStatus::UnsupportedLayer,
+                                      "Quantized CNN does not support this layer kind yet");
+                }
+            }
+
+            if (!network->InitQuantizedActivationBuffers(arena, input_shape[0], input_shape[1], input_shape[2]))
+                return Fail(LoadStatus::ArenaOverflow,
+                            "Arena out of memory while allocating quantized CNN activation buffers");
+
+            (void)input_rank;
+            return LoadResult{LoadStatus::Ok, NetworkKind::Cnn, nullptr};
+        }
     }
 
     const char* StatusMessage(LoadStatus status)
@@ -1602,7 +2075,7 @@ namespace NkLoader
             return Fail(LoadStatus::InvalidMagic, g_error[0] ? g_error : "Failed to read .nk header");
         }
 
-        if (out.header.version != NkFormat::kVersion)
+        if (!NkFormat::IsSupportedVersion(out.header.version))
         {
             std::fclose(file);
             return Fail(LoadStatus::UnsupportedVersion, "Unsupported .nk version");
@@ -1641,6 +2114,12 @@ namespace NkLoader
                 std::fclose(file);
                 return Fail(LoadStatus::ReadFailed, "Failed to read bias tensor descriptor");
             }
+        }
+
+        if (!ReadQuantBlockFile(file, out))
+        {
+            std::fclose(file);
+            return Fail(LoadStatus::ReadFailed, "Failed to read .nk quantization block");
         }
 
         const long payload_start = std::ftell(file);
@@ -1687,7 +2166,7 @@ namespace NkLoader
         if (!ReadHeaderCursor(cursor, out.header))
             return Fail(LoadStatus::InvalidMagic, g_error[0] ? g_error : "Failed to read .nk header");
 
-        if (out.header.version != NkFormat::kVersion)
+        if (!NkFormat::IsSupportedVersion(out.header.version))
             return Fail(LoadStatus::UnsupportedVersion, "Unsupported .nk version");
 
         if (out.header.num_layers > NkFormat::kMaxLayers ||
@@ -1712,6 +2191,9 @@ namespace NkLoader
             if (!ReadTensorDescCursor(cursor, out.bias_tensors[i]))
                 return Fail(LoadStatus::ReadFailed, "Failed to read bias tensor descriptor");
         }
+
+        if (!ReadQuantBlockCursor(cursor, out))
+            return Fail(LoadStatus::ReadFailed, "Failed to read .nk quantization block");
 
         if (!AdvancePayloadAlignmentPadding(cursor))
             return Fail(LoadStatus::ReadFailed, "Could not align .nk payload offset");
@@ -1994,6 +2476,14 @@ namespace NkLoader
     {
         network = nullptr;
 
+#if !NETKIT_WEIGHTS_IN_RAM
+        const uint8_t* blob = nullptr;
+        std::size_t blob_size = 0;
+        const LoadResult blob_result = ReadNkFileIntoArena(nk_path, arena, blob, blob_size);
+        if (blob_result.status != LoadStatus::Ok)
+            return blob_result;
+        return LoadMLPFromBuffer(blob, blob_size, arena, network, input_shape, input_rank);
+#else
         ParsedModel parsed{};
         LoadResult parse_result = ParseFile(nk_path, parsed);
         if (parse_result.status != LoadStatus::Ok)
@@ -2005,6 +2495,39 @@ namespace NkLoader
         input_rank = parsed.header.input_rank;
         for (uint32_t i = 0; i < input_rank; ++i)
             input_shape[i] = parsed.header.input_shape[i];
+
+        if (ModelIsQuantized(parsed))
+        {
+            int8_t* weights = nullptr;
+            int32_t* biases = nullptr;
+            const std::size_t weights_bytes = parsed.header.weights_bytes;
+            const std::size_t biases_bytes = parsed.header.biases_bytes;
+
+            if (weights_bytes > 0)
+            {
+                weights = static_cast<int8_t*>(arena.alloc(weights_bytes, alignof(int8_t)));
+                if (!weights)
+                    return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
+            }
+            if (biases_bytes > 0)
+            {
+                biases = static_cast<int32_t*>(arena.alloc(biases_bytes, alignof(int32_t)));
+                if (!biases)
+                    return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk biases");
+            }
+
+            std::FILE* file = std::fopen(nk_path, "rb");
+            if (!file)
+                return Fail(LoadStatus::FileOpenFailed, "Could not open .nk file");
+
+            const LoadResult payload_result = ReadQuantizedPayload(file, parsed, weights, biases);
+            std::fclose(file);
+            if (payload_result.status != LoadStatus::Ok)
+                return payload_result;
+
+            return InstantiateQuantizedMLP(
+                parsed, weights, biases, arena, network, input_shape, input_rank);
+        }
 
         const std::size_t weights_bytes = parsed.header.weights_bytes;
         const std::size_t biases_bytes = parsed.header.biases_bytes;
@@ -2035,6 +2558,7 @@ namespace NkLoader
         std::fclose(file);
 
         return InstantiateMLP(parsed, weights, biases, arena, network, input_shape, input_rank);
+#endif
     }
 
     LoadResult LoadMLPFromBuffer(const uint8_t* data,
@@ -2058,6 +2582,19 @@ namespace NkLoader
         for (uint32_t i = 0; i < input_rank; ++i)
             input_shape[i] = parsed.header.input_shape[i];
 
+        if (ModelIsQuantized(parsed))
+        {
+            int8_t* weights = nullptr;
+            int32_t* biases = nullptr;
+            const LoadResult copy_result =
+                ResolveQuantizedPayloadFromBuffer(parsed, data, size, arena, weights, biases);
+            if (copy_result.status != LoadStatus::Ok)
+                return copy_result;
+
+            return InstantiateQuantizedMLP(
+                parsed, weights, biases, arena, network, input_shape, input_rank);
+        }
+
         float* weights = nullptr;
         float* biases = nullptr;
         LoadResult copy_result = ResolvePayloadFromBuffer(parsed, data, size, arena, weights, biases);
@@ -2075,6 +2612,14 @@ namespace NkLoader
     {
         network = nullptr;
 
+#if !NETKIT_WEIGHTS_IN_RAM
+        const uint8_t* blob = nullptr;
+        std::size_t blob_size = 0;
+        const LoadResult blob_result = ReadNkFileIntoArena(nk_path, arena, blob, blob_size);
+        if (blob_result.status != LoadStatus::Ok)
+            return blob_result;
+        return LoadCNNFromBuffer(blob, blob_size, arena, network, input_shape, input_rank);
+#else
         ParsedModel parsed{};
         LoadResult parse_result = ParseFile(nk_path, parsed);
         if (parse_result.status != LoadStatus::Ok)
@@ -2086,6 +2631,39 @@ namespace NkLoader
         input_rank = parsed.header.input_rank;
         for (uint32_t i = 0; i < input_rank; ++i)
             input_shape[i] = parsed.header.input_shape[i];
+
+        if (ModelIsQuantized(parsed))
+        {
+            int8_t* weights = nullptr;
+            int32_t* biases = nullptr;
+            const std::size_t weights_bytes = parsed.header.weights_bytes;
+            const std::size_t biases_bytes = parsed.header.biases_bytes;
+
+            if (weights_bytes > 0)
+            {
+                weights = static_cast<int8_t*>(arena.alloc(weights_bytes, alignof(int8_t)));
+                if (!weights)
+                    return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk weights");
+            }
+            if (biases_bytes > 0)
+            {
+                biases = static_cast<int32_t*>(arena.alloc(biases_bytes, alignof(int32_t)));
+                if (!biases)
+                    return Fail(LoadStatus::ArenaOverflow, "Arena out of memory while loading .nk biases");
+            }
+
+            std::FILE* file = std::fopen(nk_path, "rb");
+            if (!file)
+                return Fail(LoadStatus::FileOpenFailed, "Could not open .nk file");
+
+            const LoadResult payload_result = ReadQuantizedPayload(file, parsed, weights, biases);
+            std::fclose(file);
+            if (payload_result.status != LoadStatus::Ok)
+                return payload_result;
+
+            return InstantiateQuantizedCNN(
+                parsed, weights, biases, arena, network, input_shape, input_rank);
+        }
 
         const std::size_t weights_bytes = parsed.header.weights_bytes;
         const std::size_t biases_bytes = parsed.header.biases_bytes;
@@ -2116,6 +2694,7 @@ namespace NkLoader
         std::fclose(file);
 
         return InstantiateCNN(parsed, weights, biases, arena, network, input_shape, input_rank);
+#endif
     }
 
     LoadResult LoadCNNFromBuffer(const uint8_t* data,
@@ -2138,6 +2717,19 @@ namespace NkLoader
         input_rank = parsed.header.input_rank;
         for (uint32_t i = 0; i < input_rank; ++i)
             input_shape[i] = parsed.header.input_shape[i];
+
+        if (ModelIsQuantized(parsed))
+        {
+            int8_t* weights = nullptr;
+            int32_t* biases = nullptr;
+            const LoadResult copy_result =
+                ResolveQuantizedPayloadFromBuffer(parsed, data, size, arena, weights, biases);
+            if (copy_result.status != LoadStatus::Ok)
+                return copy_result;
+
+            return InstantiateQuantizedCNN(
+                parsed, weights, biases, arena, network, input_shape, input_rank);
+        }
 
         float* weights = nullptr;
         float* biases = nullptr;

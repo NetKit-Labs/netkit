@@ -1,3 +1,4 @@
 # Optional deps for benchmark/tflm/tools/export_assets.py (onnx2tf path).
 onnx>=1.14
 onnx2tf>=1.20
+tensorflow>=2.14

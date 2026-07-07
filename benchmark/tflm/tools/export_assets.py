@@ -4,10 +4,12 @@
 Writes under benchmark/tflm/generated/:
   mnist_mlp.tflite, mnist_test_images.{h,cc}
   mnist_cnn.tflite, mnist_cnn_test_images.{h,cc}
+  mnist_cnn_int8.tflite, mnist_cnn_int8_model_data.{h,cc} (full int8 I/O)
 
 Run from repo root:
   python3 benchmark/tflm/tools/export_assets.py
   python3 benchmark/tflm/tools/export_assets.py --model cnn
+  python3 benchmark/tflm/tools/export_assets.py --model cnn-int8
 """
 
 from __future__ import annotations
@@ -22,9 +24,14 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
 BENCH = Path(__file__).resolve().parents[1]
+TOOLS = Path(__file__).resolve().parent
 GENERATED = BENCH / "generated"
 NUM_IMAGES = 10
 MNIST_DIGITS = tuple(range(10))
+NUM_CALIBRATION = 128
+IMG_H = 28
+IMG_W = 28
+IMG_C = 1
 
 
 def _one_per_digit_cases(cases: list, *, num: int = NUM_IMAGES) -> list:
@@ -75,6 +82,22 @@ MODELS = {
         "export_make": "export-mnist-cnn",
         "legacy_names": False,
     },
+    "cnn-int8": {
+        "nk": ROOT / "models" / "mnist_cnn.nk",
+        "onnx": ROOT / "models" / "mnist_cnn.onnx",
+        "tflite": GENERATED / "mnist_cnn_int8.tflite",
+        "saved_model": GENERATED / "cnn_saved_model",
+        "images_h": GENERATED / "mnist_cnn_test_images.h",
+        "images_cc": GENERATED / "mnist_cnn_test_images.cc",
+        "model_data_h": GENERATED / "mnist_cnn_int8_model_data.h",
+        "model_data_cc": GENERATED / "mnist_cnn_int8_model_data.cc",
+        "model_array": "g_mnist_cnn_int8_model_data",
+        "input_size": 784,
+        "prefix": "MnistCnn",
+        "array_prefix": "kMnistCnn",
+        "export_make": "export-mnist-cnn",
+        "legacy_names": False,
+    },
 }
 
 
@@ -83,6 +106,46 @@ def _import_reader():
     from netkit.reader import read_test_suite
 
     return read_test_suite
+
+
+def _read_first_conv_quant(nk_path: Path) -> tuple[float, int] | None:
+    """Return (input_scale, input_zero_point) from first quant layer in int8 .nk."""
+    import io
+    import struct
+
+    sys.path.insert(0, str(ROOT / "python"))
+    from netkit.format import (
+        FLAG_HAS_QUANT,
+        HEADER_BYTES,
+        MLP_LAYER_QUANT_BYTES,
+        QUANT_MAGIC,
+        skip_payload_alignment_padding,
+        unpack_header,
+    )
+
+    from netkit.inspect import _read_layer_body, _read_tensor_desc
+
+    stream = io.BytesIO(nk_path.read_bytes())
+    header = unpack_header(stream.read(HEADER_BYTES))
+    if not (header.get("flags", 0) & FLAG_HAS_QUANT):
+        return None
+
+    for _ in range(header["num_layers"]):
+        kind = struct.unpack("<B", stream.read(1))[0]
+        stream.read(3)
+        _read_layer_body(stream, kind)
+
+    for _ in range(header["num_weight_tensors"] + header["num_bias_tensors"]):
+        _read_tensor_desc(stream)
+
+    magic = stream.read(4)
+    if magic != QUANT_MAGIC:
+        return None
+    num_layers, _reserved = struct.unpack("<HH", stream.read(4))
+    if num_layers == 0:
+        return None
+    input_scale, input_zp = struct.unpack("<fi", stream.read(MLP_LAYER_QUANT_BYTES)[:8])
+    return float(input_scale), int(input_zp)
 
 
 def _onnx2tf_bin() -> str:
@@ -97,6 +160,76 @@ def _onnx2tf_bin() -> str:
         "  python3 -m venv benchmark/tflm/.venv\n"
         "  benchmark/tflm/.venv/bin/pip install onnx onnx2tf"
     )
+
+
+def _import_tensorflow():
+    try:
+        import tensorflow as tf
+    except ImportError as exc:
+        raise SystemExit(
+            "tensorflow not found. Install export deps with:\n"
+            "  python3 -m pip install -r benchmark/tflm/requirements-export.txt"
+        ) from exc
+    return tf
+
+
+def _load_mnist_calibration(num_samples: int) -> np.ndarray:
+    sys.path.insert(0, str(ROOT / "python"))
+    from netkit.datasets import load_mnist
+
+    x_train, _, _, _ = load_mnist()
+    if x_train.shape[0] < num_samples:
+        raise RuntimeError(f"MNIST train set has {x_train.shape[0]} rows, need {num_samples}")
+    return np.asarray(x_train[:num_samples], dtype=np.float32)
+
+
+def _export_int8_tflite_from_saved_model(
+    saved_model_dir: Path,
+    out: Path,
+    calibration: np.ndarray,
+) -> None:
+    tf = _import_tensorflow()
+
+    def representative_dataset():
+        for sample in calibration:
+            yield [sample.reshape(1, IMG_H, IMG_W, IMG_C).astype(np.float32)]
+
+    saved = tf.saved_model.load(str(saved_model_dir))
+
+    @tf.function(
+        input_signature=[
+            tf.TensorSpec(shape=[1, IMG_H, IMG_W, IMG_C], dtype=tf.float32),
+        ]
+    )
+    def serving_fn(x):
+        return saved(x)
+
+    converter = tf.lite.TFLiteConverter.from_concrete_functions(
+        [serving_fn.get_concrete_function()]
+    )
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.representative_dataset = representative_dataset
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    converter.inference_input_type = tf.int8
+    converter.inference_output_type = tf.int8
+
+    print(f"Quantizing {saved_model_dir.name} to full int8 ...")
+    tflite_model = converter.convert()
+    out.write_bytes(tflite_model)
+    print(f"Wrote {out} ({out.stat().st_size} bytes)")
+
+
+def _write_tflite_model_arrays(spec: dict) -> None:
+    sys.path.insert(0, str(TOOLS))
+    from tflite_model_data import write_tflite_model_arrays
+
+    write_tflite_model_arrays(
+        spec["tflite"],
+        out_h=spec["model_data_h"],
+        out_cc=spec["model_data_cc"],
+        array_name=spec["model_array"],
+    )
+    print(f"Wrote {spec['model_data_h'].name} and {spec['model_data_cc'].name}")
 
 
 def _export_tflite_via_onnx2tf(onnx_path: Path, out: Path, saved_model_dir: Path) -> None:
@@ -120,6 +253,9 @@ def _export_tflite_via_onnx2tf(onnx_path: Path, out: Path, saved_model_dir: Path
 
 
 def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
+    sys.path.insert(0, str(ROOT / "python"))
+    from netkit.quantize import quantize_float_input
+
     suite = read_test_suite(spec["nk"])
     if suite is None:
         raise RuntimeError(f"missing TCAS section in {spec['nk']}")
@@ -130,11 +266,16 @@ def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
     input_size = spec["input_size"]
     legacy = spec.get("legacy_names", False)
 
+    int8_nk = spec.get("int8_nk", ROOT / "models" / "mnist_cnn_int8.nk")
+    quant = _read_first_conv_quant(int8_nk) if int8_nk.is_file() else None
+    emit_int8 = quant is not None and prefix == "MnistCnn"
+
     count_name = "kMnistBenchmarkImageCount" if legacy else f"k{prefix}BenchmarkImageCount"
     size_name = "kMnistBenchmarkInputSize" if legacy else f"k{prefix}BenchmarkInputSize"
     sample_name = "MnistBenchmarkSample" if legacy else f"{prefix}BenchmarkSample"
     images_name = "kMnistBenchmarkImages" if legacy else f"k{prefix}BenchmarkImages"
     image_symbol = f"{array_prefix}Image" if legacy else f"{array_prefix}Image"
+    image_i8_symbol = f"{array_prefix}ImageI8" if legacy else f"{array_prefix}ImageI8"
 
     hdr_lines = [
         "#pragma once",
@@ -143,16 +284,37 @@ def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
         "",
         f"constexpr int {count_name} = {len(cases)};",
         f"constexpr int {size_name} = {input_size};",
-        "",
-        f"struct {sample_name} {{",
-        "  const char* name;",
-        "  int label;",
-        "  const float* pixels;",
-        "};",
-        "",
-        f"extern const {sample_name} {images_name}[{len(cases)}];",
-        "",
     ]
+    if emit_int8:
+        input_scale, input_zp = quant
+        hdr_lines.extend(
+            [
+                f"constexpr bool k{prefix}BenchmarkHasInt8Pixels = true;",
+                f"constexpr float k{prefix}BenchmarkInputScale = {input_scale:.8f}f;",
+                f"constexpr int k{prefix}BenchmarkInputZeroPoint = {input_zp};",
+            ]
+        )
+    else:
+        hdr_lines.append(f"constexpr bool k{prefix}BenchmarkHasInt8Pixels = false;")
+    hdr_lines.extend(
+        [
+            "",
+            f"struct {sample_name} {{",
+            "  const char* name;",
+            "  int label;",
+            "  const float* pixels;",
+        ]
+    )
+    if emit_int8:
+        hdr_lines.append("  const int8_t* pixels_i8;")
+    hdr_lines.extend(
+        [
+            "};",
+            "",
+            f"extern const {sample_name} {images_name}[{len(cases)}];",
+            "",
+        ]
+    )
     cc_lines = [f'#include "{spec["images_h"].name}"', ""]
 
     for idx, case in enumerate(cases):
@@ -163,13 +325,24 @@ def _write_test_image_arrays(read_test_suite, spec: dict) -> None:
         cc_lines.append(
             f"alignas(16) static const float {image_symbol}{idx}[{input_size}] = {{{pixel_text}}};"
         )
+        if emit_int8:
+            pixels_i8 = quantize_float_input(pixels, quant[0], quant[1])
+            i8_text = ", ".join(str(int(v)) for v in pixels_i8)
+            cc_lines.append(
+                f"alignas(16) static const int8_t {image_i8_symbol}{idx}[{input_size}] = {{{i8_text}}};"
+            )
         cc_lines.append("")
 
     cc_lines.append(f"const {sample_name} {images_name}[{len(cases)}] = {{")
     for idx, case in enumerate(cases):
-        cc_lines.append(
-            f'  {{"{case.name}", {int(case.label)}, {image_symbol}{idx}}},'
-        )
+        if emit_int8:
+            cc_lines.append(
+                f'  {{"{case.name}", {int(case.label)}, {image_symbol}{idx}, {image_i8_symbol}{idx}}},'
+            )
+        else:
+            cc_lines.append(
+                f'  {{"{case.name}", {int(case.label)}, {image_symbol}{idx}}},'
+            )
     cc_lines.append("};")
     cc_lines.append("")
 
@@ -187,6 +360,17 @@ def export_model(name: str, read_test_suite, *, images_only: bool) -> None:
     if images_only:
         if not spec["tflite"].is_file():
             raise SystemExit(f"{spec['tflite']} missing — run export without --images-only")
+    elif name == "cnn-int8":
+        if not spec["saved_model"].is_dir():
+            print(f"SavedModel missing — converting {spec['onnx'].name} first ...")
+            _export_tflite_via_onnx2tf(
+                spec["onnx"],
+                GENERATED / "mnist_cnn.tflite",
+                spec["saved_model"],
+            )
+        calibration = _load_mnist_calibration(NUM_CALIBRATION)
+        _export_int8_tflite_from_saved_model(spec["saved_model"], spec["tflite"], calibration)
+        _write_tflite_model_arrays(spec)
     else:
         _export_tflite_via_onnx2tf(spec["onnx"], spec["tflite"], spec["saved_model"])
 
@@ -198,7 +382,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model",
-        choices=("mlp", "cnn", "all"),
+        choices=("mlp", "cnn", "cnn-int8", "all"),
         default="all",
         help="Which model assets to export (default: all).",
     )
@@ -210,7 +394,10 @@ def main() -> None:
     args = parser.parse_args()
 
     read_test_suite = _import_reader()
-    names = ("mlp", "cnn") if args.model == "all" else (args.model,)
+    if args.model == "all":
+        names = ("mlp", "cnn", "cnn-int8")
+    else:
+        names = (args.model,)
     for name in names:
         export_model(name, read_test_suite, images_only=args.images_only)
 

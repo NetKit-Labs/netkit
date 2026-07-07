@@ -21,6 +21,11 @@ KernelWorkspace* GetActiveKernelWorkspace()
     return g_active_kernel_workspace;
 }
 
+void ResetActiveKernelWorkspace()
+{
+    g_active_kernel_workspace = nullptr;
+}
+
 bool BindCmsisWorkspace(void*& buf, int32_t& size, int32_t required_bytes)
 {
     buf = nullptr;

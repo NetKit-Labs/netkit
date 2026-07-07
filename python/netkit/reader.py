@@ -9,7 +9,19 @@ from pathlib import Path
 import numpy as np
 
 from .cnn_layers import _layer_weight_tensor_count, conv2d_input_channels, depthwise_arch_entry, reconcile_depthwise_kernel
-from .format import HEADER_BYTES, Activation, LayerKind, NetworkKind, FLAG_HAS_TESTS, TEST_MAGIC, skip_payload_alignment_padding, unpack_header
+from .format import (
+    HEADER_BYTES,
+    Activation,
+    FLAG_HAS_QUANT,
+    FLAG_HAS_TESTS,
+    LayerKind,
+    MLP_LAYER_QUANT_BYTES,
+    NetworkKind,
+    QUANT_MAGIC,
+    TEST_MAGIC,
+    skip_payload_alignment_padding,
+    unpack_header,
+)
 from .inspect import _read_layer_body, _read_tensor_desc
 from .writer import RegressionCase, RegressionSuite
 
@@ -140,6 +152,29 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
     return {"network": network, "input": input_shape, "layers": arch_layers}
 
 
+
+_DTYPE_ITEMSIZE: dict[str, tuple[str, int]] = {
+    "float32": ("float32", 4),
+    "int8": ("int8", 1),
+    "int32": ("int32", 4),
+}
+
+
+def _read_payload_arrays(blob: bytes, descs: list[dict]) -> list[np.ndarray]:
+    arrays: list[np.ndarray] = []
+    offset = 0
+    for desc in descs:
+        dtype_name, itemsize = _DTYPE_ITEMSIZE[desc["dtype"]]
+        nbytes = desc["num_elements"] * itemsize
+        chunk = blob[offset : offset + nbytes]
+        if len(chunk) != nbytes:
+            raise ValueError("truncated tensor payload in .nk bytes")
+        arrays.append(np.frombuffer(chunk, dtype=np.dtype(dtype_name)).copy())
+        offset += nbytes
+    if offset != len(blob):
+        raise ValueError("weight payload size mismatch in .nk bytes")
+    return arrays
+
 def read_nk_bytes(data: bytes) -> tuple[dict, np.ndarray]:
     """Return architecture dict and interleaved flat weights from in-memory .nk bytes."""
     return _read_nk_stream(io.BytesIO(data))
@@ -166,6 +201,13 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     weight_descs = [_read_tensor_desc(stream) for _ in range(header["num_weight_tensors"])]
     bias_descs = [_read_tensor_desc(stream) for _ in range(header["num_bias_tensors"])]
 
+    if header.get("flags", 0) & FLAG_HAS_QUANT:
+        magic = stream.read(4)
+        if magic != QUANT_MAGIC:
+            raise ValueError("invalid QUAN section in .nk file")
+        num_quant_layers, _reserved = struct.unpack("<HH", stream.read(4))
+        stream.read(num_quant_layers * MLP_LAYER_QUANT_BYTES)
+
     meta_end = stream.tell()
     payload_start = skip_payload_alignment_padding(stream, meta_end)
 
@@ -174,23 +216,8 @@ def _read_nk_stream(stream: io.BytesIO) -> tuple[dict, np.ndarray]:
     if len(weights_blob) != header["weights_bytes"] or len(biases_blob) != header["biases_bytes"]:
         raise ValueError("truncated weight payload in .nk bytes")
 
-    weight_arrays: list[np.ndarray] = []
-    offset = 0
-    for desc in weight_descs:
-        nbytes = desc["num_elements"] * 4
-        weight_arrays.append(
-            np.frombuffer(weights_blob, dtype=np.float32, count=desc["num_elements"], offset=offset).copy()
-        )
-        offset += nbytes
-
-    bias_arrays: list[np.ndarray] = []
-    offset = 0
-    for desc in bias_descs:
-        nbytes = desc["num_elements"] * 4
-        bias_arrays.append(
-            np.frombuffer(biases_blob, dtype=np.float32, count=desc["num_elements"], offset=offset).copy()
-        )
-        offset += nbytes
+    weight_arrays = _read_payload_arrays(weights_blob, weight_descs)
+    bias_arrays = _read_payload_arrays(biases_blob, bias_descs)
 
     flat_parts: list[np.ndarray] = []
     for w, b in zip(weight_arrays, bias_arrays):
@@ -256,6 +283,15 @@ def read_test_suite(path: str | Path) -> RegressionSuite | None:
     for _ in range(header["num_weight_tensors"] + header["num_bias_tensors"]):
         _read_tensor_desc(stream)
 
+    if header.get("flags", 0) & FLAG_HAS_QUANT:
+        magic = stream.read(4)
+        if magic != QUANT_MAGIC:
+            raise ValueError("invalid QUAN section in .nk file")
+        num_quant_layers, _reserved = struct.unpack("<HH", stream.read(4))
+        stream.read(num_quant_layers * MLP_LAYER_QUANT_BYTES)
+
+    meta_end = stream.tell()
+    skip_payload_alignment_padding(stream, meta_end)
     stream.read(header["weights_bytes"])
     stream.read(header["biases_bytes"])
 

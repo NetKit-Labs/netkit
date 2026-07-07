@@ -50,6 +50,9 @@ namespace NkLoader
         NkFormat::LayerDesc layers[NkFormat::kMaxLayers]{};
         NkFormat::TensorDesc weight_tensors[NkFormat::kMaxTensorCatalog]{};
         NkFormat::TensorDesc bias_tensors[NkFormat::kMaxTensorCatalog]{};
+        bool has_quant = false;
+        uint32_t num_quant_layers = 0;
+        NkFormat::MlpLayerQuantDesc layer_quant[NkFormat::kMaxLayers]{};
         std::size_t payload_offset = 0;
     };
 
@@ -99,8 +102,9 @@ namespace NkLoader
                                  MLPNetwork*& network,
                                  std::array<uint32_t, kMaxTensorRank>& input_shape,
                                  uint32_t& input_rank);
-    /* When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network (flash .rodata).
-       Misaligned payloads fall back to an arena copy. File load always copies. */
+    /* When NETKIT_WEIGHTS_IN_RAM=0 (default), `data` must outlive the network (flash .rodata
+       or arena/file-backed blob). Misaligned payloads fall back to arena copy. Set
+       NETKIT_WEIGHTS_IN_RAM=1 to opt into copying weight/bias payload into the arena. */
 
     LoadResult LoadCNN(const char* nk_path,
                        Arena& arena,
@@ -114,8 +118,9 @@ namespace NkLoader
                                  CNNNetwork*& network,
                                  std::array<uint32_t, kMaxTensorRank>& input_shape,
                                  uint32_t& input_rank);
-    /* When NETKIT_WEIGHTS_IN_RAM=0, `data` must outlive the network (flash .rodata).
-       Misaligned payloads fall back to an arena copy. File load always copies. */
+    /* When NETKIT_WEIGHTS_IN_RAM=0 (default), `data` must outlive the network (flash .rodata
+       or arena/file-backed blob). Misaligned payloads fall back to arena copy. Set
+       NETKIT_WEIGHTS_IN_RAM=1 to opt into copying weight/bias payload into the arena. */
 
     LoadResult Load(const char* nk_path,
                     Arena& arena,

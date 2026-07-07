@@ -39,6 +39,8 @@ namespace NkFormat
         switch (dtype)
         {
             case DType::Float32: return "float32";
+            case DType::Int8: return "int8";
+            case DType::Int32: return "int32";
         }
         return "unknown";
     }

@@ -23,6 +23,14 @@ std::size_t CmsisDepthwiseConv2dWorkspaceBytes(uint32_t in_h,
 
 std::size_t CmsisGeluWorkspaceBytes(uint32_t num_elements);
 
+std::size_t CmsisConv2dS8WorkspaceBytes(uint32_t in_h,
+                                        uint32_t in_w,
+                                        int kernel_size,
+                                        int in_channels,
+                                        int out_channels);
+
+std::size_t CmsisFullyConnectedS8WorkspaceBytes(uint32_t in_features, uint32_t out_features);
+
 void CmsisBeginKernelWorkspacePlan(std::size_t* max_out);
 void CmsisEndKernelWorkspacePlan();
 
@@ -34,6 +42,14 @@ void CmsisBumpConv2dWorkspace(uint32_t in_h,
                               int pad_w,
                               int in_channels,
                               int out_channels);
+
+void CmsisBumpConv2dS8Workspace(uint32_t in_h,
+                                uint32_t in_w,
+                                int kernel_size,
+                                int in_channels,
+                                int out_channels);
+
+void CmsisBumpFullyConnectedS8Workspace(uint32_t in_features, uint32_t out_features);
 
 void CmsisBumpDepthwiseConv2dWorkspace(uint32_t in_h,
                                        uint32_t in_w,

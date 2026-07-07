@@ -95,6 +95,7 @@ make -C benchmark/tflm run-cnn
 |-------|-------------|--------------|
 | MLP | `models/mnist_mlp.nk` | 784 → 128 ReLU → 10 softmax |
 | CNN | `models/mnist_cnn.nk` | Conv32/Pool/Conv64/Pool/Flatten/Dense128/Dense10 |
+| CNN int8 | `models/mnist_cnn_int8.nk` | Same topology, int8 weights + quant params |
 
 Shared test vectors: `benchmark/tflm/generated/mnist_*_test_images.{h,cc}`
 
@@ -129,6 +130,25 @@ These benchmarks run on the **host desktop** (macOS/Linux), not on Cortex-M firm
 Use these numbers for **relative regression tracking on the same machine** and for **per-op breakdown** (where Conv2D dominates the CNN gap on host). For firmware SLA, re-run on the target board or an cycle-accurate simulator with the intended `NETKIT_TARGET` and CMSIS flags.
 
 See also [docs/KERNELS.md](../docs/KERNELS.md) for reference conv optimizations (HWIO repack, input-stationary, im2col) that apply when CMSIS-NN is unavailable or falls back.
+
+## On-device MCU benchmarks (NUCLEO-F446RE)
+
+Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. For firmware SLA, use the board firmware targets:
+
+| Firmware | Model | Backend | Notes |
+|----------|-------|---------|-------|
+| [boards/nucleo-f446re](../boards/nucleo-f446re/README.md) | MNIST MLP f32 | CMSIS-DSP lowered AOT | ~10.7 ms, 10/10 |
+| [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN quant lowered AOT | ~145 ms, 10/10 |
+| [boards/nucleo-f446re-tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md) | MNIST CNN int8 | TFLite Micro | comparison baseline |
+
+Shared int8 test vectors: `benchmark/tflm/generated/mnist_cnn_test_images.{h,cc}` (`pixels_i8`, `input_scale=1/255`, `zp=-128`).
+
+```bash
+make export-mnist-cnn-int8
+python3 benchmark/tflm/tools/export_assets.py --model cnn-int8 --images-only
+make -C boards/nucleo-f446re-cnn-int8 && cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh
+./scripts/monitor.sh   # press RESET
+```
 
 ## Layout
 

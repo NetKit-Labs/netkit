@@ -228,8 +228,22 @@ namespace Cli
             return false;
         }
 
-        int CmdTest()
+        int CmdTest(int argc, char** argv, int start_index)
         {
+            if (start_index < argc)
+            {
+                const NkRegression::RunSummary summary =
+                    NkRegression::RunModelTests(argv[start_index]);
+
+                std::cout << "\n============================\n";
+                std::cout << " MODEL TEST SUMMARY\n";
+                std::cout << "============================\n";
+                std::cout << "Passed: " << summary.passed << "\n";
+                std::cout << "Failed: " << summary.failed << "\n";
+
+                return summary.failed == 0 ? 0 : 1;
+            }
+
             const NkRegression::RunSummary summary = run_all_tests();
 
             std::cout << "\n============================\n";
@@ -507,7 +521,7 @@ namespace Cli
         const char* command = argv[1];
 
         if (std::strcmp(command, "test") == 0)
-            return CmdTest();
+            return CmdTest(argc, argv, 2);
 
         if (std::strcmp(command, "inspect") == 0)
         {

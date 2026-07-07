@@ -1,7 +1,24 @@
-# CMSIS-NN float32 sources (minimal set for conv2d + max-pool used by netkit).
+# CMSIS-NN float32 + int8 sources for conv2d, pool, FC used by netkit.
 CMSIS_NN_DIR ?= third_party/CMSIS-NN
 
 CMSIS_NN_CFLAGS = -std=c11 -O2 -DARM_NN_ENABLE_F32=1 -I$(CMSIS_NN_DIR)/Include $(NETKIT_ARCH_CFLAGS)
+
+CMSIS_NN_S8_SOURCES := \
+	$(wildcard $(CMSIS_NN_DIR)/Source/ConvolutionFunctions/arm_*s8*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/FullyConnectedFunctions/arm_*s8*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/PoolingFunctions/arm_*s8*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/ActivationFunctions/arm_*s8*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/BasicMathFunctions/arm_*s8*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_*_s8*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_*_s8*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_q7_to_q15*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_s8_to_s16*.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_mat_mult_kernel_s8_s16.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_mat_mult_kernel_row_offset_s8_s16.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_mat_mult_nt_t_s8.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nn_vec_mat_mult_t_s8.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_memcpy_s8.c) \
+	$(wildcard $(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_memset_s8.c)
 
 CMSIS_NN_SOURCES = \
 	$(CMSIS_NN_DIR)/Source/ConvolutionFunctions/arm_convolve_f32.c \
@@ -27,7 +44,10 @@ CMSIS_NN_SOURCES = \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_batch_norm_f32.c \
 	$(CMSIS_NN_DIR)/Source/ActivationFunctions/arm_nn_activation_f32.c \
 	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_softmax_f32.c \
-	$(CMSIS_NN_DIR)/Source/BasicMathFunctions/arm_elementwise_add_f32.c
+	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_softmax_s8.c \
+	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c \
+	$(CMSIS_NN_DIR)/Source/BasicMathFunctions/arm_elementwise_add_f32.c \
+	$(CMSIS_NN_S8_SOURCES)
 
 CMSIS_NN_OBJECTS = $(CMSIS_NN_SOURCES:$(CMSIS_NN_DIR)/%.c=build/cmsis_nn/%.o)
 

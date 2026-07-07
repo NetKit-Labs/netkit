@@ -125,6 +125,59 @@ namespace TensorFactory
         return t;
     }
 
+    Tensor View2DInt8(int8_t* data, uint32_t rows, uint32_t cols)
+    {
+        Tensor t{};
+
+        t.data = data;
+        t.type = DataType::Int8;
+        t.rank = 2;
+        t.shape[0] = rows;
+        t.shape[1] = cols;
+        t.stride[0] = cols;
+        t.stride[1] = 1;
+        t.num_elements = rows * cols;
+        t.bytes = t.num_elements * sizeof(int8_t);
+
+        return t;
+    }
+
+    Tensor View3DInt8(int8_t* data, uint32_t depth, uint32_t rows, uint32_t cols)
+    {
+        Tensor t{};
+
+        t.data = data;
+        t.type = DataType::Int8;
+        t.rank = 3;
+        t.shape[0] = depth;
+        t.shape[1] = rows;
+        t.shape[2] = cols;
+        t.stride[0] = rows * cols;
+        t.stride[1] = cols;
+        t.stride[2] = 1;
+        t.num_elements = depth * rows * cols;
+        t.bytes = t.num_elements * sizeof(int8_t);
+
+        return t;
+    }
+
+    Tensor View1DInt32(int32_t* data, uint32_t length)
+    {
+        Tensor t{};
+
+        t.data = data;
+        t.type = DataType::Int32;
+        t.rank = 2;
+        t.shape[0] = 1;
+        t.shape[1] = length;
+        t.stride[0] = length;
+        t.stride[1] = 1;
+        t.num_elements = length;
+        t.bytes = t.num_elements * sizeof(int32_t);
+
+        return t;
+    }
+
     Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape)
     {
         Tensor t{};

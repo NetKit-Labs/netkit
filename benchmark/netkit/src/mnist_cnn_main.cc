@@ -22,7 +22,7 @@ namespace {
 
 constexpr const char* kDefaultModelPath = "models/mnist_cnn.nk";
 constexpr size_t kArenaCapacity = 4 * 1024 * 1024;
-constexpr int kRuns = BenchmarkStats::kDefaultRuns;
+constexpr int kRuns = BenchmarkStats::kCnnDefaultRuns;
 
 Tensor MakeNhwcView(float* data, uint32_t h, uint32_t w, uint32_t c)
 {

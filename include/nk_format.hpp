@@ -3,16 +3,19 @@
 #include <cstddef>
 #include <cstdint>
 
-// Binary netkit model container (.nk) — little-endian, float32 weights/biases.
+// Binary netkit model container (.nk) — little-endian weights/biases (float32 or int8/int32).
 // Spec: docs/NK_FILE_SPECIFICATION.md, docs/NK_FORMAT.md. Python writer: python/netkit/
 
 namespace NkFormat
 {
     constexpr char kMagic[4] = {'N', 'K', 'I', 'T'};
     constexpr char kTestMagic[4] = {'T', 'C', 'A', 'S'};
-    constexpr uint32_t kVersion = 3;
+    constexpr char kQuantMagic[4] = {'Q', 'U', 'A', 'N'};
+    constexpr uint32_t kVersion = 4;
+    constexpr uint32_t kVersionMinSupported = 3;
 
     constexpr uint16_t kFlagHasTests = 0x0001;
+    constexpr uint16_t kFlagHasQuant = 0x0002;
     constexpr uint32_t kMaxTestCases = 16;
     constexpr uint32_t kMaxCaseNameLen = 127;
     constexpr uint32_t kMaxCaseFloats = 16384;
@@ -54,8 +57,26 @@ namespace NkFormat
 
     enum class DType : uint8_t
     {
-        Float32 = 1
+        Float32 = 1,
+        Int8 = 2,
+        Int32 = 3
     };
+
+    struct MlpLayerQuantDesc
+    {
+        float input_scale = 1.0f;
+        int32_t input_zero_point = 0;
+        float weight_scale = 1.0f;
+        int32_t weight_zero_point = 0;
+        float bias_scale = 1.0f;
+        int32_t bias_zero_point = 0;
+        float output_scale = 1.0f;
+        int32_t output_zero_point = 0;
+    };
+
+    using LayerQuantDesc = MlpLayerQuantDesc;
+
+    constexpr std::size_t kMlpLayerQuantBytes = 32;
 
     enum class Activation : uint8_t
     {
@@ -195,4 +216,22 @@ namespace NkFormat
     const char* LayerKindName(LayerKind kind);
     const char* DTypeName(DType dtype);
     const char* ActivationName(Activation activation);
+
+    inline std::size_t DTypeElementBytes(DType dtype)
+    {
+        switch (dtype)
+        {
+            case DType::Float32:
+            case DType::Int32:
+                return 4;
+            case DType::Int8:
+                return 1;
+        }
+        return 0;
+    }
+
+    inline bool IsSupportedVersion(uint32_t version)
+    {
+        return version >= kVersionMinSupported && version <= kVersion;
+    }
 }

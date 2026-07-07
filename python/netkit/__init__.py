@@ -4,7 +4,16 @@ from .aot_compile import AotCompileResult, AotLanguage, compile_aot
 from .arch_writer import write_nk_from_arch
 from .nk_fuse import FuseArchResult, FuseOptions, fuse_composite_blocks
 from .nk_optimize import OptimizeOptions, OptimizeResult, optimize_nk
-from .onnx_convert import convert_onnx_to_nk
+from .quantize import (
+    QuantizedCnnPack,
+    QuantizedMlpPack,
+    forward_quantized_cnn,
+    forward_quantized_mlp,
+    quantize_cnn,
+    quantize_mlp,
+    quantized_cnn_to_spec,
+    quantized_mlp_to_spec,
+)
 from .inspect import inspect_nk
 from .reader import read_nk, read_test_suite
 from .writer import RegressionCase, RegressionSuite, write_nk
@@ -14,6 +23,14 @@ __all__ = [
     "AotLanguage",
     "compile_aot",
     "convert_onnx_to_nk",
+    "QuantizedCnnPack",
+    "QuantizedMlpPack",
+    "forward_quantized_cnn",
+    "forward_quantized_mlp",
+    "quantize_cnn",
+    "quantize_mlp",
+    "quantized_cnn_to_spec",
+    "quantized_mlp_to_spec",
     "fuse_composite_blocks",
     "FuseArchResult",
     "FuseOptions",

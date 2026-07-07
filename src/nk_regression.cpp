@@ -1,5 +1,7 @@
 #include "nk_regression.hpp"
+#include "kernel_workspace.hpp"
 #include "nk_loader.hpp"
+#include "quant_output.hpp"
 #include "tensor_factory.hpp"
 #include "arena_util.hpp"
 
@@ -74,7 +76,7 @@ namespace NkRegression
 
         Arena& RegressionHeapArena(std::size_t capacity)
         {
-            if (!g_regression_heap_ready || g_regression_heap_capacity < capacity)
+            if (!g_regression_heap_ready || g_regression_heap_capacity != capacity)
             {
                 if (g_regression_heap_ready)
                     ArenaUtil::Release(g_regression_heap_arena);
@@ -123,6 +125,26 @@ namespace NkRegression
                     best = i;
             }
             return best;
+        }
+
+        void CopyRegressionOutput(const Tensor& output, float* dest, uint32_t count)
+        {
+            if (output.type == DataType::Int8)
+            {
+                QuantOps::DequantizeSoftmaxOutput(static_cast<const int8_t*>(output.data), dest, count);
+                return;
+            }
+
+            const float* src = static_cast<const float*>(output.data);
+            for (uint32_t i = 0; i < count; ++i)
+                dest[i] = src[i];
+        }
+
+        uint32_t RegressionArgMax(const Tensor& output, uint32_t count)
+        {
+            if (output.type == DataType::Int8)
+                return QuantOps::ArgMaxInt8(static_cast<const int8_t*>(output.data), count);
+            return ArgMax(static_cast<const float*>(output.data), count);
         }
 
         void PrintElementComparison(const float* actual,
@@ -237,7 +259,17 @@ namespace NkRegression
                 input_data[i] = test_case.input[i];
 
             const uint32_t output_cols = output_elements / input_shape[0];
-            Tensor output = TensorFactory::Create2D(arena, input_shape[0], output_cols);
+            Tensor output{};
+            if (network.IsQuantized())
+            {
+                int8_t* out_i8 = static_cast<int8_t*>(
+                    arena.alloc(output_elements * sizeof(int8_t), alignof(int8_t)));
+                output = TensorFactory::View2DInt8(out_i8, input_shape[0], output_cols);
+            }
+            else
+            {
+                output = TensorFactory::Create2D(arena, input_shape[0], output_cols);
+            }
             if (!output.data)
             {
                 std::cout << "FAIL " << test_case.name << ": arena overflow while allocating output\n";
@@ -248,7 +280,9 @@ namespace NkRegression
                 PrintRegressionInput(input);
             network.forward(input, output, arena);
 
-            const float* actual = static_cast<const float*>(output.data);
+            float actual_buffer[NkFormat::kMaxCaseFloats] = {};
+            CopyRegressionOutput(output, actual_buffer, test_case.output_count);
+            const float* actual = actual_buffer;
             if (ShouldPrintAllOutputs(test_case.output_count))
                 PrintElementComparison(actual, test_case.expected, test_case.output_count, tolerance);
 
@@ -263,7 +297,8 @@ namespace NkRegression
             {
                 PrintClassificationSummary(actual, test_case.expected, test_case.output_count, test_case.label,
                                            tolerance);
-                const bool class_ok = ArgMax(actual, test_case.output_count) == static_cast<uint32_t>(test_case.label);
+                const bool class_ok =
+                    RegressionArgMax(output, test_case.output_count) == static_cast<uint32_t>(test_case.label);
                 if (outputs_ok && class_ok)
                 {
                     std::cout << "PASS " << test_case.name
@@ -327,7 +362,9 @@ namespace NkRegression
                 return false;
             }
 
-            const float* actual = static_cast<const float*>(output.data);
+            float actual_copy[NkFormat::kMaxCaseFloats] = {};
+            CopyRegressionOutput(output, actual_copy, test_case.output_count);
+            const float* actual = actual_copy;
             if (ShouldPrintAllOutputs(test_case.output_count))
                 PrintElementComparison(actual, test_case.expected, test_case.output_count, tolerance);
 
@@ -344,7 +381,8 @@ namespace NkRegression
             {
                 PrintClassificationSummary(actual, test_case.expected, test_case.output_count, test_case.label,
                                            tolerance);
-                const bool class_ok = ArgMax(actual, test_case.output_count) == static_cast<uint32_t>(test_case.label);
+                const bool class_ok =
+                    RegressionArgMax(output, test_case.output_count) == static_cast<uint32_t>(test_case.label);
                 if (!class_ok)
                 {
                     std::cout << "FAIL " << test_case.name << ": classification mismatch\n";
@@ -381,7 +419,9 @@ namespace NkRegression
             return summary;
         }
 
-        NkLoader::TestSuite tests{};
+        static NkLoader::TestSuite tests_storage{};
+        NkLoader::TestSuite& tests = tests_storage;
+        tests = NkLoader::TestSuite{};
         const NkLoader::LoadResult test_result = NkLoader::ReadTestSuite(resolved, tests);
         if (test_result.status != NkLoader::LoadStatus::Ok)
         {
@@ -396,6 +436,17 @@ namespace NkRegression
         const NkLoader::NetworkKind kind = parse_result.kind;
         const std::size_t arena_capacity = ArenaCapacityForModel(parsed);
 
+#if defined(NETKIT_ARENA_HEAP)
+        // Fresh heap per model file — large backbones must not share arena with smaller models.
+        ResetActiveKernelWorkspace();
+        if (g_regression_heap_ready)
+        {
+            ArenaUtil::Release(g_regression_heap_arena);
+            g_regression_heap_ready = false;
+            g_regression_heap_capacity = 0;
+        }
+#endif
+
         std::cout << "Model: " << resolved << "\n";
         std::cout << "Embedded cases: " << tests.num_cases << "\n";
         std::cout << "Output tolerance: " << tests.tolerance << "\n";
@@ -406,6 +457,13 @@ namespace NkRegression
             std::cout << "\nCase: " << test_case.name << "\n";
 
 #if defined(NETKIT_ARENA_HEAP)
+            ResetActiveKernelWorkspace();
+            if (g_regression_heap_ready)
+            {
+                ArenaUtil::Release(g_regression_heap_arena);
+                g_regression_heap_ready = false;
+                g_regression_heap_capacity = 0;
+            }
             Arena& arena = RegressionHeapArena(arena_capacity);
             if (!g_regression_heap_ready || !arena.base)
             {

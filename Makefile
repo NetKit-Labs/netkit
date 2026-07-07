@@ -12,7 +12,7 @@
 #   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
 #
 # Weight load policy (buffer / AOT path only; file load always copies to arena):
-#   NETKIT_WEIGHTS_IN_RAM=1|0 — default 0 on mcu (coefs in flash), 1 on cpu/mpu (copy to SRAM)
+#   NETKIT_WEIGHTS_IN_RAM=1|0 — default 0 (coefs in flash/blob); set 1 to copy payload to SRAM
 #
 # Optional CMSIS-NN kernels (Apache-2.0, fetch with ./tools/fetch_cmsis_nn.sh):
 #   NETKIT_CMSIS_NN=1      — Cortex-M MCU only (NETKIT_TARGET=mcu + NETKIT_ARCH=CM4|M33|...)
@@ -56,11 +56,7 @@
 NETKIT_TARGET ?= cpu
 NETKIT_GLOBAL_ARENA ?= 0
 NETKIT_HEAP_ARENA ?= 0
-ifeq ($(NETKIT_TARGET),mcu)
 NETKIT_WEIGHTS_IN_RAM ?= 0
-else
-NETKIT_WEIGHTS_IN_RAM ?= 1
-endif
 NETKIT_CMSIS_NN ?= 0
 NETKIT_CMSIS_DSP ?= 0
 NETKIT_LOOP_UNROLL ?= 0
@@ -83,7 +79,7 @@ LIB = libnetkit.a
 RUNTIME_SOURCES = src/arena.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
                     src/conv2d.cpp src/depthwise_conv2d.cpp src/conv2d_layout.cpp src/conv_dispatch.cpp src/conv1x1_kernel.cpp src/conv_depthwise_kernel.cpp \
                     src/conv_direct_kernel.cpp src/im2col_partial.cpp src/im2col_full.cpp \
-                    src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/cnn.cpp \
+                    src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/quant_ops.cpp src/quant_softmax_s8.cpp src/quant_trace.cpp src/cmsis_nn_quant_backend.cpp src/cmsis_quant_plan.cpp src/cnn_quant.cpp src/cnn.cpp \
                     src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_depthwise_conv2d.cpp \
                     src/layer_ops/nk_op_convnextv2_block.cpp src/layer_ops/nk_op_mobilenetv4_uib.cpp src/layer_ops/nk_op_yolox_decoupled_head.cpp src/layer_ops/nk_op_resnet_basic_block.cpp src/layer_ops/nk_op_layernorm2d.cpp \
                     src/layer_ops/nk_op_max_pool2d.cpp \
@@ -99,6 +95,15 @@ TARGET_CPPFLAGS = $(NETKIT_ARCH_CFLAGS)
 
 CMSIS_NN_OBJECTS =
 NETKIT_CMSIS_NN_EFFECTIVE := 0
+CMSIS_SOFTMAX_OBJECTS =
+CMSIS_NN_DIR ?= third_party/CMSIS-NN
+ifneq ($(wildcard $(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c),)
+  CMSIS_SOFTMAX_CFLAGS = -std=c11 -O2 -I$(CMSIS_NN_DIR)/Include
+  CMSIS_SOFTMAX_SOURCES = \
+    $(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c
+  CMSIS_SOFTMAX_OBJECTS = $(CMSIS_SOFTMAX_SOURCES:$(CMSIS_NN_DIR)/%.c=build/cmsis_softmax/%.o)
+  TARGET_CPPFLAGS += -DNETKIT_USE_CMSIS_SOFTMAX_S8=1 -I$(CMSIS_NN_DIR)/Include
+endif
 ifeq ($(NETKIT_CMSIS_NN),1)
   ifeq ($(NETKIT_TARGET),mcu)
     ifeq ($(NETKIT_ARCH_IS_M_PROFILE),1)
@@ -225,7 +230,7 @@ netkit-config-sync:
 	fi
 
 .PHONY: all lib clean rebuild test test-full test-cpp test-c test-python test-python-full run example-c example-cpp examples \
-        export-mnist export-mnist-cnn export-mnist-all export-op-matrix \
+        export-mnist export-mnist-int8 export-mnist-cnn export-mnist-all export-op-matrix \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
         cpu cpu-global mcu mcu-heap mpu mpu-heap embedded-smoke test-embedded-smoke \
         test-embedded-smoke-matrix trim-lib check-trim-lib
@@ -240,8 +245,12 @@ endif
 
 .DEFAULT_GOAL := all
 
-$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS)
+$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS) $(CMSIS_SOFTMAX_OBJECTS)
 	ar rcs $@ $^
+
+build/cmsis_softmax/%.o: $(CMSIS_NN_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CMSIS_SOFTMAX_CFLAGS) -c $< -o $@
 
 lib: netkit-config-sync $(LIB)
 
@@ -303,7 +312,7 @@ clean:
 	rm -f $(CORE_OBJECTS) $(TRIM_CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) \
 	      $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER) examples/trim_firmware examples/trim_firmware.o
 	rm -f src/*.o src/layer_ops/*.o examples/*.o tests/*.o tools/*.o
-	rm -rf build/cmsis_nn build/cmsis_dsp
+	rm -rf build/cmsis_nn build/cmsis_dsp build/cmsis_softmax
 
 rebuild: clean all
 
@@ -385,6 +394,18 @@ cmsis-init: cmsis-nn-init cmsis-dsp-init cmsis-core-init
 
 export-mnist:
 	PYTHONPATH=python python3 tools/export_mnist_mlp.py
+
+export-mnist-int8:
+	PYTHONPATH=python python3 tools/export_mnist_mlp_int8.py
+
+export-mnist-cnn-int8:
+	PYTHONPATH=python python3 tools/export_mnist_cnn_int8.py --from-nk models/mnist_cnn.nk --fast
+
+export-mnist-cnn-int8-retrain:
+	PYTHONPATH=python python3 tools/export_mnist_cnn_int8.py --retrain
+
+flash-mnist-cnn-int8:
+	cd boards/nucleo-f446re-cnn-int8 && chmod +x scripts/*.sh && ./scripts/deploy.sh all
 
 export-mnist-cnn:
 	PYTHONPATH=python python3 tools/export_mnist_cnn.py

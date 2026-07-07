@@ -97,13 +97,13 @@ def main(argv: list[str] | None = None) -> int:
         "--weights-in-ram",
         dest="weights_in_ram",
         action="store_true",
-        help="Size arena assuming weight/bias payload is copied into SRAM at buffer load",
+        help="Size arena assuming weight/bias payload is copied into SRAM at load (opt-in)",
     )
     weights_group.add_argument(
         "--no-weights-in-ram",
         dest="weights_in_ram",
         action="store_false",
-        help="Size arena for flash-backed coefs (MCU default when --target mcu)",
+        help="Size arena for flash-backed coefs (default)",
     )
     aot.set_defaults(weights_in_ram=None)
 
@@ -201,9 +201,7 @@ def main(argv: list[str] | None = None) -> int:
             arena_headroom_percent=args.arena_headroom,
             flash_section=not args.no_flash_section,
             weights_in_ram=(
-                args.weights_in_ram
-                if args.weights_in_ram is not None
-                else args.target != "mcu"
+                args.weights_in_ram if args.weights_in_ram is not None else False
             ),
             lower=not args.no_lower,
         )
@@ -213,7 +211,9 @@ def main(argv: list[str] | None = None) -> int:
             f"network={result.network} input={result.input_elements} "
             f"output={result.output_elements} bytes={result.nk_bytes} language={result.language.value}"
         )
-        if result.lowered:
+        if result.quant_fast:
+            print("quant_fast=true (quant lowered static CmsisQuantPlan call chain)")
+        elif result.lowered:
             print("lowered=true (static Kernels:: call chain)")
         print(
             f"arena_after_load={result.arena_bytes_after_load} "
