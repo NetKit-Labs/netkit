@@ -68,7 +68,9 @@ set(NETKIT_RUNTIME_SOURCES
     src/mlp.cpp
     src/quant_ops.cpp
     src/quant_softmax_s8.cpp
+    src/quant_trace.cpp
     src/cmsis_nn_quant_backend.cpp
+    src/cmsis_quant_plan.cpp
     src/cnn_quant.cpp
     src/cnn.cpp
     ${NETKIT_LAYER_OP_SOURCES}
