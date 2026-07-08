@@ -22,6 +22,12 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
                             const int32_t* bias,
                             int8_t* output);
 
+bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& plan,
+                                     const int8_t* input,
+                                     const int8_t* weights,
+                                     const int32_t* bias,
+                                     int8_t* output);
+
 bool TryMaxPool2dNhwcQuantPlan(const CmsisQuantPlan::Pool2DPlan& plan,
                                const int8_t* input,
                                int8_t* output);
@@ -35,6 +41,7 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
 bool TrySoftmaxS8Plan(const CmsisQuantPlan::SoftmaxPlan& plan, const int8_t* input, int8_t* output);
 
 void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& plan);
+void FinalizeDepthwiseConv2DPlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan);
 void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& plan);
 bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
                     const int8_t* weights,

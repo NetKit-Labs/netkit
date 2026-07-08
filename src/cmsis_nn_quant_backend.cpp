@@ -139,6 +139,35 @@ void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& plan)
 #endif
 }
 
+void FinalizeDepthwiseConv2DPlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan)
+{
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.ready || !plan.multipliers || !plan.shifts)
+        return;
+
+    plan.cmsis.dw_conv = {
+        .input_offset = plan.input_offset,
+        .output_offset = plan.output_offset,
+        .ch_mult = 1,
+        .stride = {.w = plan.stride, .h = plan.stride},
+        .padding = {.w = plan.pad_w, .h = plan.pad_h},
+        .dilation = {.w = 1, .h = 1},
+        .activation = activation_relu(plan.apply_relu),
+    };
+    plan.cmsis.quant = {
+        .multiplier = plan.multipliers,
+        .shift = plan.shifts,
+    };
+    plan.cmsis.input = {.n = 1, .h = plan.in_h, .w = plan.in_w, .c = plan.channels};
+    plan.cmsis.filter = {.n = 1, .h = plan.kernel_h, .w = plan.kernel_w, .c = plan.channels};
+    plan.cmsis.bias = {.n = 1, .h = 1, .w = 1, .c = plan.channels};
+    plan.cmsis.output = {.n = 1, .h = plan.out_h, .w = plan.out_w, .c = plan.channels};
+    plan.cmsis.ready = true;
+#else
+    (void)plan;
+#endif
+}
+
 void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& plan)
 {
 #if NETKIT_CMSIS_PLAN_HOIST
@@ -299,6 +328,97 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
                                                  bias,
                                                  &output_dims,
                                                  output)))
+#endif
+    {
+        QuantTrace::RecordConv2dCmsisFail(
+            QuantTrace::Conv2dFail::CmsisStatus, plan.workspace_bytes, workspace_bytes);
+        return false;
+    }
+
+    QuantTrace::RecordConv2dCmsisOk();
+    return true;
+}
+
+bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& plan,
+                                     const int8_t* input,
+                                     const int8_t* weights,
+                                     const int32_t* bias,
+                                     int8_t* output)
+{
+    const uint32_t workspace_bytes = ActiveWorkspaceBytes();
+
+    if (!plan.ready || !input || !weights || !bias || !output || !plan.multipliers || !plan.shifts)
+    {
+        QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::NullPtr, 0, workspace_bytes);
+        return false;
+    }
+
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!plan.cmsis.ready)
+    {
+        QuantTrace::RecordConv2dCmsisFail(QuantTrace::Conv2dFail::NullPtr, 0, workspace_bytes);
+        return false;
+    }
+#endif
+
+    cmsis_nn_context ctx = {0};
+    if (!BindContext(ctx, plan.workspace_bytes))
+    {
+        QuantTrace::RecordConv2dCmsisFail(
+            QuantTrace::Conv2dFail::BindContext, plan.workspace_bytes, workspace_bytes);
+        return false;
+    }
+
+#if NETKIT_CMSIS_PLAN_HOIST
+    if (!cmsis_status_ok(arm_depthwise_conv_wrapper_s8(&ctx,
+                                                       &plan.cmsis.dw_conv,
+                                                       &plan.cmsis.quant,
+                                                       &plan.cmsis.input,
+                                                       input,
+                                                       &plan.cmsis.filter,
+                                                       weights,
+                                                       &plan.cmsis.bias,
+                                                       bias,
+                                                       &plan.cmsis.output,
+                                                       output)))
+#else
+    const cmsis_nn_dw_conv_params dw_conv_params = {
+        .input_offset = plan.input_offset,
+        .output_offset = plan.output_offset,
+        .ch_mult = 1,
+        .stride = {.w = plan.stride, .h = plan.stride},
+        .padding = {.w = plan.pad_w, .h = plan.pad_h},
+        .dilation = {.w = 1, .h = 1},
+        .activation = activation_relu(plan.apply_relu),
+    };
+
+    const cmsis_nn_per_channel_quant_params quant_params = {
+        .multiplier = plan.multipliers,
+        .shift = plan.shifts,
+    };
+
+    const cmsis_nn_dims input_dims = {
+        .n = 1, .h = plan.in_h, .w = plan.in_w, .c = plan.channels,
+    };
+    const cmsis_nn_dims filter_dims = {
+        .n = 1, .h = plan.kernel_h, .w = plan.kernel_w, .c = plan.channels,
+    };
+    const cmsis_nn_dims bias_dims = {.n = 1, .h = 1, .w = 1, .c = plan.channels};
+    const cmsis_nn_dims output_dims = {
+        .n = 1, .h = plan.out_h, .w = plan.out_w, .c = plan.channels,
+    };
+
+    if (!cmsis_status_ok(arm_depthwise_conv_wrapper_s8(&ctx,
+                                                       &dw_conv_params,
+                                                       &quant_params,
+                                                       &input_dims,
+                                                       input,
+                                                       &filter_dims,
+                                                       weights,
+                                                       &bias_dims,
+                                                       bias,
+                                                       &output_dims,
+                                                       output)))
 #endif
     {
         QuantTrace::RecordConv2dCmsisFail(
@@ -810,6 +930,7 @@ namespace CmsisNnQuant
 {
 
 void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& /*plan*/) {}
+void FinalizeDepthwiseConv2DPlan(CmsisQuantPlan::DepthwiseConv2DPlan& /*plan*/) {}
 void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& /*plan*/) {}
 bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
                     const int8_t* /*weights*/,
@@ -824,6 +945,15 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& /*plan*/,
                             const int8_t* /*weights*/,
                             const int32_t* /*bias*/,
                             int8_t* /*output*/)
+{
+    return false;
+}
+
+bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& /*plan*/,
+                                     const int8_t* /*input*/,
+                                     const int8_t* /*weights*/,
+                                     const int32_t* /*bias*/,
+                                     int8_t* /*output*/)
 {
     return false;
 }

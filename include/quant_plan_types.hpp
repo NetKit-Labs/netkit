@@ -13,6 +13,7 @@ constexpr uint32_t kMaxPerChannel = 512;
 enum class LayerKind : uint8_t
 {
     Conv2D,
+    DepthwiseConv2D,
     MaxPool2D,
     FlattenView,
     Dense,
@@ -39,6 +40,31 @@ struct Conv2DPlan
     int32_t* shifts = nullptr;
 #if NETKIT_CMSIS_PLAN_HOIST
     Conv2DCmsisHoist cmsis{};
+#endif
+    bool ready = false;
+};
+
+struct DepthwiseConv2DPlan
+{
+    int32_t input_offset = 0;
+    int32_t output_offset = 0;
+    int32_t stride = 1;
+    int32_t pad_h = 0;
+    int32_t pad_w = 0;
+    bool apply_relu = false;
+    int32_t in_h = 0;
+    int32_t in_w = 0;
+    int32_t channels = 0;
+    int32_t out_h = 0;
+    int32_t out_w = 0;
+    int32_t kernel_h = 0;
+    int32_t kernel_w = 0;
+    int32_t workspace_bytes = 0;
+    int32_t* multipliers = nullptr;
+    int32_t* shifts = nullptr;
+    int8_t* weights_hwc = nullptr;
+#if NETKIT_CMSIS_PLAN_HOIST
+    DepthwiseConv2DCmsisHoist cmsis{};
 #endif
     bool ready = false;
 };
@@ -91,6 +117,7 @@ struct LayerPlan
     LayerKind kind = LayerKind::Conv2D;
     uint32_t output_elements = 0;
     Conv2DPlan conv{};
+    DepthwiseConv2DPlan depthwise{};
     Pool2DPlan pool{};
     FcPlan fc{};
     SoftmaxPlan softmax{};

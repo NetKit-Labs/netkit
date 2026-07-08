@@ -508,13 +508,16 @@ namespace NkRegression
                 std::array<uint32_t, kMaxTensorRank> input_shape{};
                 uint32_t input_rank = 0;
 
+                NkLoader::LoadResult load_result{};
                 if (ShouldPrintProgress())
                     std::cout << "  loading weights...\n" << std::flush;
-                if (NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank).status !=
-                        NkLoader::LoadStatus::Ok ||
-                    !network || !network->IsValid())
+                load_result = NkLoader::LoadCNN(resolved, arena, network, input_shape, input_rank);
+                if (load_result.status != NkLoader::LoadStatus::Ok || !network || !network->IsValid())
                 {
-                    std::cout << "FAIL " << test_case.name << ": could not load CNN weights\n";
+                    std::cout << "FAIL " << test_case.name << ": could not load CNN weights";
+                    if (load_result.message)
+                        std::cout << " (" << load_result.message << ")";
+                    std::cout << "\n";
                     ++summary.failed;
                     continue;
                 }

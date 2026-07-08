@@ -77,6 +77,44 @@ void CNNNetwork::InitQuantizedConvLayer(uint32_t layer_idx,
     blocks[layer_idx].conv.quant.enabled = true;
 }
 
+void CNNNetwork::InitQuantizedDepthwiseConvLayer(uint32_t layer_idx,
+                                                 int kernel_h,
+                                                 int kernel_w,
+                                                 int stride,
+                                                 int channels,
+                                                 int8_t* weights,
+                                                 int32_t* bias,
+                                                 const NkFormat::MlpLayerQuantDesc& quant,
+                                                 ConvActivationType activation,
+                                                 float leaky_alpha,
+                                                 int pad_h,
+                                                 int pad_w,
+                                                 int pad_h_end,
+                                                 int pad_w_end)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::DepthwiseConv2D;
+    DepthwiseConv2D& dw = blocks[layer_idx].depthwise_conv.depthwise;
+    dw.kernel_h = kernel_h;
+    dw.kernel_w = kernel_w;
+    dw.stride = stride;
+    dw.pad_h = pad_h;
+    dw.pad_w = pad_w;
+    dw.pad_h_end = pad_h_end >= 0 ? pad_h_end : pad_h;
+    dw.pad_w_end = pad_w_end >= 0 ? pad_w_end : pad_w;
+    dw.channels = channels;
+    dw.weights = nullptr;
+    dw.bias = nullptr;
+    dw.weights_q = weights;
+    dw.bias_q = bias;
+    blocks[layer_idx].depthwise_conv.activation = activation;
+    blocks[layer_idx].depthwise_conv.leaky_alpha = leaky_alpha;
+    blocks[layer_idx].depthwise_conv.quant.params = quant;
+    blocks[layer_idx].depthwise_conv.quant.enabled = true;
+}
+
 void CNNNetwork::InitQuantizedDenseLayer(uint32_t layer_idx,
                                          const Tensor& weights,
                                          const Tensor& bias,

@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 from .arch_writer import _split_cnn_weights
-from .cnn_layers import conv2d_input_channels
+from .cnn_layers import conv2d_input_channels, depthwise_kernel_hw
 from .reference_forward import _activate, _max_pool_nhwc, _out_dim
 from .format import DType, activation_from_name
 from .writer import LayerSpec, ModelSpec, QuantLayerParams
@@ -419,6 +419,51 @@ def _conv2d_quant_nhwc(
     return out
 
 
+def _depthwise_conv2d_quant_nhwc(
+    input_q: np.ndarray,
+    weight_q: np.ndarray,
+    bias_q: np.ndarray,
+    quant: QuantLayerParams,
+    *,
+    kernel_h: int,
+    kernel_w: int,
+    stride: int,
+    pad_h: int,
+    pad_w: int,
+    pad_h_end: int,
+    pad_w_end: int,
+    apply_relu: bool,
+) -> np.ndarray:
+    in_h, in_w, channels = input_q.shape
+    out_h = _out_dim(in_h, kernel_h, stride, pad_h, pad_h_end)
+    out_w = _out_dim(in_w, kernel_w, stride, pad_w, pad_w_end)
+    out = np.zeros((out_h, out_w, channels), dtype=np.int8)
+    effective_scale = quant.input_scale * quant.weight_scale
+
+    for oh in range(out_h):
+        for ow in range(out_w):
+            for c in range(channels):
+                acc = int(bias_q[c])
+                for kh in range(kernel_h):
+                    ih = oh * stride + kh - pad_h
+                    if ih < 0 or ih >= in_h:
+                        continue
+                    for kw in range(kernel_w):
+                        iw = ow * stride + kw - pad_w
+                        if iw < 0 or iw >= in_w:
+                            continue
+                        in_val = int(input_q[ih, iw, c]) - quant.input_zero_point
+                        wt_val = int(weight_q[c, kh, kw]) - quant.weight_zero_point
+                        acc += in_val * wt_val
+                out_real = float(acc) * effective_scale
+                if apply_relu:
+                    out_real = max(0.0, out_real)
+                out[oh, ow, c] = np.clip(
+                    int(round(out_real / quant.output_scale)) + quant.output_zero_point, -128, 127
+                )
+    return out
+
+
 def _max_pool_quant_nhwc(
     input_q: np.ndarray,
     *,
@@ -499,6 +544,35 @@ def forward_quantized_cnn(
             h, w, channels = x_i8.shape
             x_2d = None
             quant_idx += 1
+        elif layer_type == "depthwise_conv2d":
+            quant = pack.quant_layers[quant_idx]
+            weight_q = pack.weight_tensors[quant_idx]
+            bias_q = pack.bias_tensors[quant_idx]
+            if x_i8 is None:
+                x_q = quantize_float_input(x.reshape(-1), quant.input_scale, quant.input_zero_point)
+                x_i8 = x_q.reshape(h, w, channels)
+            kh, kw = depthwise_kernel_hw(layer)
+            pad_h = layer.get("pad_h", 0)
+            pad_w = layer.get("pad_w", 0)
+            pad_h_end = layer.get("pad_h_end", pad_h)
+            pad_w_end = layer.get("pad_w_end", pad_w)
+            x_i8 = _depthwise_conv2d_quant_nhwc(
+                x_i8,
+                weight_q.reshape(layer["filters"], kh, kw),
+                bias_q,
+                quant,
+                kernel_h=kh,
+                kernel_w=kw,
+                stride=layer.get("stride", 1),
+                pad_h=pad_h,
+                pad_w=pad_w,
+                pad_h_end=pad_h_end,
+                pad_w_end=pad_w_end,
+                apply_relu=layer.get("activation") == "relu",
+            )
+            h, w, channels = x_i8.shape
+            x_2d = None
+            quant_idx += 1
         elif layer_type == "max_pool2d":
             pool_h = layer["pool_size"]
             pool_w = layer.get("pool_w", pool_h)
@@ -539,6 +613,10 @@ def forward_quantized_cnn(
             q = np.round(out_real / quant.output_scale) + quant.output_zero_point
             x_2d = np.clip(q, -128, 127).astype(np.int8).reshape(1, -1)
             quant_idx += 1
+            if layer is arch["layers"][-1]:
+                if output_float:
+                    return out_real.astype(np.float32).reshape(-1)
+                return x_2d.reshape(-1).astype(np.int8)
         else:
             raise ValueError(f"unsupported quantized CNN layer: {layer_type}")
 
@@ -568,7 +646,9 @@ def quantize_cnn(
     quant_layers: list[QuantLayerParams] = []
 
     if aligned_quants is not None:
-        expected = sum(1 for layer in arch["layers"] if layer["type"] in ("conv2d", "dense"))
+        expected = sum(
+            1 for layer in arch["layers"] if layer["type"] in ("conv2d", "depthwise_conv2d", "dense")
+        )
         if len(aligned_quants) != expected:
             raise ValueError(f"aligned_quants length {len(aligned_quants)} != {expected}")
 
@@ -584,7 +664,7 @@ def quantize_cnn(
 
     for layer in arch["layers"]:
         layer_type = layer["type"]
-        if layer_type not in ("conv2d", "dense"):
+        if layer_type not in ("conv2d", "depthwise_conv2d", "dense"):
             if layer_type == "max_pool2d":
                 pool_h = layer["pool_size"]
                 pool_w = layer.get("pool_w", pool_h)
@@ -669,6 +749,28 @@ def quantize_cnn(
                     apply_relu=layer.get("activation") == "relu",
                 )
                 next_samples.append(out)
+        elif layer_type == "depthwise_conv2d":
+            kh, kw = depthwise_kernel_hw(layer)
+            w_q = weight_q.reshape(layer["filters"], kh, kw)
+            for sample in hidden_samples:
+                input_q = quantize_float_input(sample.reshape(-1), input_scale, input_zp).reshape(
+                    sample.shape
+                )
+                out = _depthwise_conv2d_quant_nhwc(
+                    input_q,
+                    w_q,
+                    bias_q,
+                    quant,
+                    kernel_h=kh,
+                    kernel_w=kw,
+                    stride=layer.get("stride", 1),
+                    pad_h=layer.get("pad_h", 0),
+                    pad_w=layer.get("pad_w", 0),
+                    pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                    pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
+                    apply_relu=layer.get("activation") == "relu",
+                )
+                next_samples.append(out)
         else:
             w_q = weight_q.reshape(layer["units"], -1)
             for sample in hidden_samples:
@@ -716,8 +818,25 @@ def quantized_cnn_to_spec(arch: dict[str, Any], pack: QuantizedCnnPack) -> Model
                     alpha=float(layer.get("alpha", 0.01)),
                     pad_h=layer.get("pad_h", 0),
                     pad_w=layer.get("pad_w", 0),
-                    pad_h_end=layer.get("pad_h_end", 0),
-                    pad_w_end=layer.get("pad_w_end", 0),
+                    pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                    pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
+                )
+            )
+        elif layer_type == "depthwise_conv2d":
+            kh, kw = depthwise_kernel_hw(layer)
+            layers.append(
+                LayerSpec(
+                    kind="depthwise_conv2d",
+                    kernel_h=kh,
+                    kernel_w=kw,
+                    stride=layer.get("stride", 1),
+                    filters=layer["filters"],
+                    activation=activation_from_name(layer.get("activation", "none")),
+                    alpha=float(layer.get("alpha", 0.01)),
+                    pad_h=layer.get("pad_h", 0),
+                    pad_w=layer.get("pad_w", 0),
+                    pad_h_end=layer.get("pad_h_end", layer.get("pad_h", 0)),
+                    pad_w_end=layer.get("pad_w_end", layer.get("pad_w", 0)),
                 )
             )
         elif layer_type == "max_pool2d":

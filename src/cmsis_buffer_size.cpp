@@ -202,6 +202,54 @@ std::size_t CmsisConv2dS8WorkspaceBytes(uint32_t in_h,
     return buf_size > 0 ? static_cast<std::size_t>(buf_size) : 0u;
 }
 
+std::size_t CmsisDepthwiseConv2dS8WorkspaceBytes(uint32_t in_h,
+                                                 uint32_t in_w,
+                                                 int kernel_h,
+                                                 int kernel_w,
+                                                 int stride,
+                                                 int pad_h,
+                                                 int pad_w,
+                                                 int channels)
+{
+    const uint32_t out_h =
+        static_cast<uint32_t>((static_cast<int>(in_h) + 2 * pad_h - kernel_h) / stride + 1);
+    const uint32_t out_w =
+        static_cast<uint32_t>((static_cast<int>(in_w) + 2 * pad_w - kernel_w) / stride + 1);
+
+    const cmsis_nn_dw_conv_params dw_conv_params = {
+        .input_offset = 0,
+        .output_offset = 0,
+        .ch_mult = 1,
+        .stride = {.w = stride, .h = stride},
+        .padding = {.w = pad_w, .h = pad_h},
+        .dilation = {.w = 1, .h = 1},
+        .activation = {.min = -128, .max = 127},
+    };
+
+    const cmsis_nn_dims input_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(in_h),
+        .w = static_cast<int32_t>(in_w),
+        .c = channels,
+    };
+    const cmsis_nn_dims filter_dims = {
+        .n = 1,
+        .h = kernel_h,
+        .w = kernel_w,
+        .c = channels,
+    };
+    const cmsis_nn_dims output_dims = {
+        .n = 1,
+        .h = static_cast<int32_t>(out_h),
+        .w = static_cast<int32_t>(out_w),
+        .c = channels,
+    };
+
+    const int32_t buf_size = arm_depthwise_conv_wrapper_s8_get_buffer_size(
+        &dw_conv_params, &input_dims, &filter_dims, &output_dims);
+    return buf_size > 0 ? static_cast<std::size_t>(buf_size) : 0u;
+}
+
 std::size_t CmsisFullyConnectedS8WorkspaceBytes(uint32_t in_features, uint32_t out_features)
 {
     const cmsis_nn_dims filter_dims = {
@@ -254,6 +302,18 @@ std::size_t CmsisConv2dS8WorkspaceBytes(uint32_t /*in_h*/,
                                         int /*pad_w*/,
                                         int /*in_channels*/,
                                         int /*out_channels*/)
+{
+    return 0;
+}
+
+std::size_t CmsisDepthwiseConv2dS8WorkspaceBytes(uint32_t /*in_h*/,
+                                                 uint32_t /*in_w*/,
+                                                 int /*kernel_h*/,
+                                                 int /*kernel_w*/,
+                                                 int /*stride*/,
+                                                 int /*pad_h*/,
+                                                 int /*pad_w*/,
+                                                 int /*channels*/)
 {
     return 0;
 }
@@ -318,6 +378,19 @@ void CmsisBumpDepthwiseConv2dWorkspace(uint32_t in_h,
                                        int channels)
 {
     BumpMaxKernelWorkspace(CmsisDepthwiseConv2dWorkspaceBytes(
+        in_h, in_w, kernel_h, kernel_w, stride, pad_h, pad_w, channels));
+}
+
+void CmsisBumpDepthwiseConv2dS8Workspace(uint32_t in_h,
+                                           uint32_t in_w,
+                                           int kernel_h,
+                                           int kernel_w,
+                                           int stride,
+                                           int pad_h,
+                                           int pad_w,
+                                           int channels)
+{
+    BumpMaxKernelWorkspace(CmsisDepthwiseConv2dS8WorkspaceBytes(
         in_h, in_w, kernel_h, kernel_w, stride, pad_h, pad_w, channels));
 }
 

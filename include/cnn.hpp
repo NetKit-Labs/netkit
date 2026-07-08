@@ -55,6 +55,7 @@ struct DepthwiseConv2DLayer
     DepthwiseConv2D depthwise;
     ConvActivationType activation;
     float leaky_alpha = 0.01f;
+    LayerQuant quant;
 
     void forward(const Tensor& input, Tensor& output);
 };
@@ -230,6 +231,21 @@ public:
                                 int pad_w = 0,
                                 int pad_h_end = -1,
                                 int pad_w_end = -1);
+
+    void InitQuantizedDepthwiseConvLayer(uint32_t layer_idx,
+                                         int kernel_h,
+                                         int kernel_w,
+                                         int stride,
+                                         int channels,
+                                         int8_t* weights,
+                                         int32_t* bias,
+                                         const NkFormat::MlpLayerQuantDesc& quant,
+                                         ConvActivationType activation,
+                                         float leaky_alpha = 0.01f,
+                                         int pad_h = 0,
+                                         int pad_w = 0,
+                                         int pad_h_end = -1,
+                                         int pad_w_end = -1);
 
     void InitQuantizedDenseLayer(uint32_t layer_idx,
                                  const Tensor& weights,

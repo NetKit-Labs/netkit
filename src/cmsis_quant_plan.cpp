@@ -67,6 +67,15 @@ namespace
                 c = static_cast<uint32_t>(conv.out_channels);
                 break;
             }
+            case CnnBlockType::DepthwiseConv2D:
+            {
+                const DepthwiseConv2D& dw = block.depthwise_conv.depthwise;
+                h = nk_op_detail::CalcOutputDimAsymmetric(
+                    h, dw.kernel_h, dw.stride, dw.pad_h, dw.pad_h_end);
+                w = nk_op_detail::CalcOutputDimAsymmetric(
+                    w, dw.kernel_w, dw.stride, dw.pad_w, dw.pad_w_end);
+                break;
+            }
             case CnnBlockType::MaxPool2D:
             {
                 const MaxPool2DLayer& pool = block.pool;
@@ -172,6 +181,111 @@ namespace
         return true;
     }
 
+    void RepackDepthwiseChwToHwc(const int8_t* chw,
+                                 int8_t* hwc,
+                                 int kernel_h,
+                                 int kernel_w,
+                                 int channels)
+    {
+        const int kh = kernel_h;
+        const int kw = kernel_w;
+        const int ch = channels;
+        for (int c = 0; c < ch; ++c)
+        {
+            for (int y = 0; y < kh; ++y)
+            {
+                for (int x = 0; x < kw; ++x)
+                {
+                    hwc[(y * kw + x) * ch + c] =
+                        chw[(c * kh + y) * kw + x];
+                }
+            }
+        }
+    }
+
+    bool BuildDepthwisePlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan,
+                            const DepthwiseConv2D& dw,
+                            const NkFormat::MlpLayerQuantDesc& quant,
+                            bool apply_relu,
+                            uint32_t in_h,
+                            uint32_t in_w,
+                            uint32_t in_c,
+                            const int8_t* weights_chw,
+                            Arena& arena)
+    {
+        if (dw.pad_h != dw.pad_h_end || dw.pad_w != dw.pad_w_end)
+            return false;
+        if (dw.channels <= 0 || static_cast<uint32_t>(dw.channels) != in_c ||
+            static_cast<uint32_t>(dw.channels) > CmsisQuantPlan::kMaxPerChannel)
+            return false;
+        if (quant.output_scale <= 0.0f)
+            return false;
+
+        const uint32_t out_h = nk_op_detail::CalcOutputDimAsymmetric(
+            in_h, dw.kernel_h, dw.stride, dw.pad_h, dw.pad_h_end);
+        const uint32_t out_w = nk_op_detail::CalcOutputDimAsymmetric(
+            in_w, dw.kernel_w, dw.stride, dw.pad_w, dw.pad_w_end);
+
+        plan.input_offset = -quant.input_zero_point;
+        plan.output_offset = -quant.output_zero_point;
+        plan.stride = dw.stride;
+        plan.pad_h = dw.pad_h;
+        plan.pad_w = dw.pad_w;
+        plan.apply_relu = apply_relu;
+        plan.in_h = static_cast<int32_t>(in_h);
+        plan.in_w = static_cast<int32_t>(in_w);
+        plan.channels = dw.channels;
+        plan.out_h = static_cast<int32_t>(out_h);
+        plan.out_w = static_cast<int32_t>(out_w);
+        plan.kernel_h = dw.kernel_h;
+        plan.kernel_w = dw.kernel_w;
+
+        const int32_t channels = dw.channels;
+        plan.multipliers = static_cast<int32_t*>(arena.alloc(
+            static_cast<std::size_t>(channels) * sizeof(int32_t) * 2, alignof(int32_t)));
+        if (!plan.multipliers)
+            return false;
+        plan.shifts = plan.multipliers + channels;
+
+        const double effective = static_cast<double>(quant.input_scale) *
+                                 static_cast<double>(quant.weight_scale) /
+                                 static_cast<double>(quant.output_scale);
+        int32_t multiplier = 0;
+        int32_t shift = 0;
+        QuantizeMultiplier(effective, &multiplier, &shift);
+        for (int32_t c = 0; c < channels; ++c)
+        {
+            plan.multipliers[c] = multiplier;
+            plan.shifts[c] = shift;
+        }
+
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+        const std::size_t kernel_area =
+            static_cast<std::size_t>(dw.kernel_h) * static_cast<std::size_t>(dw.kernel_w) *
+            static_cast<std::size_t>(dw.channels);
+        plan.weights_hwc = static_cast<int8_t*>(arena.alloc(kernel_area, alignof(int8_t)));
+        if (!plan.weights_hwc || !weights_chw)
+            return false;
+        RepackDepthwiseChwToHwc(weights_chw, plan.weights_hwc, dw.kernel_h, dw.kernel_w, dw.channels);
+
+        plan.workspace_bytes = static_cast<int32_t>(CmsisDepthwiseConv2dS8WorkspaceBytes(
+            in_h,
+            in_w,
+            dw.kernel_h,
+            dw.kernel_w,
+            dw.stride,
+            dw.pad_h,
+            dw.pad_w,
+            dw.channels));
+#else
+        plan.weights_hwc = nullptr;
+        plan.workspace_bytes = 0;
+#endif
+        plan.ready = true;
+        CmsisNnQuant::FinalizeDepthwiseConv2DPlan(plan);
+        return true;
+    }
+
     bool BuildPoolPlan(CmsisQuantPlan::Pool2DPlan& plan,
                        const MaxPool2DLayer& pool,
                        uint32_t in_h,
@@ -272,6 +386,11 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
         runtime->input_scale = first.conv.quant.params.input_scale;
         runtime->input_zero_point = first.conv.quant.params.input_zero_point;
     }
+    else if (first.type == CnnBlockType::DepthwiseConv2D && first.depthwise_conv.quant.enabled)
+    {
+        runtime->input_scale = first.depthwise_conv.quant.params.input_scale;
+        runtime->input_zero_point = first.depthwise_conv.quant.params.input_zero_point;
+    }
 
     for (uint32_t i = 0; i < n; ++i)
     {
@@ -307,6 +426,24 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                     return false;
                 workspace_bytes = std::max(workspace_bytes,
                                            static_cast<std::size_t>(lp.conv.workspace_bytes));
+                break;
+            }
+            case CnnBlockType::DepthwiseConv2D:
+            {
+                lp.kind = LayerKind::DepthwiseConv2D;
+                const bool apply_relu = block.depthwise_conv.activation == ConvActivationType::ReLU;
+                if (!BuildDepthwisePlan(lp.depthwise,
+                                        block.depthwise_conv.depthwise,
+                                        block.depthwise_conv.quant.params,
+                                        apply_relu,
+                                        in_h_layer,
+                                        in_w_layer,
+                                        in_c_layer,
+                                        block.depthwise_conv.depthwise.weights_q,
+                                        arena))
+                    return false;
+                workspace_bytes = std::max(workspace_bytes,
+                                           static_cast<std::size_t>(lp.depthwise.workspace_bytes));
                 break;
             }
             case CnnBlockType::MaxPool2D:
@@ -494,6 +631,38 @@ namespace
                                               block.conv.quant.params,
                                               lp.conv.apply_relu,
                                               out);
+                    break;
+#endif
+                }
+                case LayerKind::DepthwiseConv2D:
+                {
+                    const DepthwiseConv2D& dw = block.depthwise_conv.depthwise;
+                    const int8_t* weights = lp.depthwise.weights_hwc ? lp.depthwise.weights_hwc
+                                                                     : dw.weights_q;
+                    if (CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                            lp.depthwise, current, weights, dw.bias_q, out))
+                    {
+                        break;
+                    }
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+                    return false;
+#else
+                    QuantOps::DepthwiseConv2dNhwcQuant(current,
+                                                       static_cast<uint32_t>(lp.depthwise.in_h),
+                                                       static_cast<uint32_t>(lp.depthwise.in_w),
+                                                       static_cast<uint32_t>(lp.depthwise.channels),
+                                                       dw.weights_q,
+                                                       dw.bias_q,
+                                                       lp.depthwise.kernel_h,
+                                                       lp.depthwise.kernel_w,
+                                                       lp.depthwise.stride,
+                                                       lp.depthwise.pad_h,
+                                                       lp.depthwise.pad_w,
+                                                       dw.pad_h_end,
+                                                       dw.pad_w_end,
+                                                       block.depthwise_conv.quant.params,
+                                                       lp.depthwise.apply_relu,
+                                                       out);
                     break;
 #endif
                 }

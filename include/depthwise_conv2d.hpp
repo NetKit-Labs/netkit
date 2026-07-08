@@ -16,6 +16,8 @@ struct DepthwiseConv2D
 
     float* weights; // [ch][kh][kw]
     float* bias;    // [ch]
+    const int8_t* weights_q = nullptr;
+    const int32_t* bias_q = nullptr;
 
     bool forward(const Tensor& input,
                  Tensor& output,

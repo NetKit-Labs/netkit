@@ -1976,6 +1976,63 @@ namespace NkLoader
                         in_channels = layer.filters;
                         break;
                     }
+                    case NkFormat::LayerKind::DepthwiseConv2D:
+                    {
+                        const NkFormat::ConvLayerDesc& layer = parsed.layers[i].conv;
+                        const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                        const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+
+                        if (w_desc.dtype != NkFormat::DType::Int8 || b_desc.dtype != NkFormat::DType::Int32)
+                            return Fail(LoadStatus::UnsupportedLayer,
+                                          "Quantized CNN expects int8 weights and int32 biases");
+
+                        const nk_op_detail::DepthwiseMeta dw_meta = nk_op_detail::DecodeDepthwiseMeta(
+                            layer,
+                            static_cast<std::size_t>(w_desc.num_elements),
+                            static_cast<std::size_t>(layer.filters));
+                        const uint32_t kernel_h = dw_meta.kernel_h;
+                        const uint32_t kernel_w = dw_meta.kernel_w;
+                        if (kernel_w == 0)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "Depthwise conv kernel_w must be non-zero in .nk");
+
+                        const std::size_t weight_elems =
+                            static_cast<std::size_t>(kernel_h) * kernel_w * layer.filters;
+
+                        if (layer.filters != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "Depthwise conv filters must match input channels in .nk");
+
+                        if (w_desc.num_elements != weight_elems || b_desc.num_elements != layer.filters)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "CNN depthwise conv tensor shape mismatch in .nk catalog");
+
+                        network->InitQuantizedDepthwiseConvLayer(
+                            i,
+                            static_cast<int>(kernel_h),
+                            static_cast<int>(kernel_w),
+                            static_cast<int>(layer.stride),
+                            static_cast<int>(layer.filters),
+                            weights + weight_offset,
+                            biases + bias_offset,
+                            parsed.layer_quant[quant_index++],
+                            ToConvActivation(layer.activation),
+                            layer.alpha,
+                            static_cast<int>(layer.pad_h),
+                            static_cast<int>(layer.pad_w),
+                            dw_meta.pad_h_end,
+                            dw_meta.pad_w_end);
+
+                        weight_offset += weight_elems;
+                        bias_offset += layer.filters;
+                        h = nk_op_detail::CalcOutputDimAsymmetric(
+                            h, static_cast<int>(kernel_h), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_h), dw_meta.pad_h_end);
+                        w = nk_op_detail::CalcOutputDimAsymmetric(
+                            w, static_cast<int>(kernel_w), static_cast<int>(layer.stride),
+                            static_cast<int>(layer.pad_w), dw_meta.pad_w_end);
+                        break;
+                    }
                     case NkFormat::LayerKind::MaxPool2D:
                     {
                         const NkFormat::PoolLayerDesc& layer = parsed.layers[i].pool;

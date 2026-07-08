@@ -60,6 +60,26 @@ namespace QuantOps
                          bool apply_relu,
                          int8_t* output);
 
+    // NHWC per-tensor int8 depthwise conv; weights [channels, kernel_h, kernel_w]
+    // (output channel c reduces only over input channel c). Mirrors the float
+    // DepthwiseConv2D layout and the int8 Conv2dNhwcQuant requantize path.
+    void DepthwiseConv2dNhwcQuant(const int8_t* input,
+                                  uint32_t in_h,
+                                  uint32_t in_w,
+                                  uint32_t channels,
+                                  const int8_t* weights,
+                                  const int32_t* bias,
+                                  int kernel_h,
+                                  int kernel_w,
+                                  int stride,
+                                  int pad_h,
+                                  int pad_w,
+                                  int pad_h_end,
+                                  int pad_w_end,
+                                  const NkFormat::MlpLayerQuantDesc& quant,
+                                  bool apply_relu,
+                                  int8_t* output);
+
     void MaxPool2dNhwcQuant(const int8_t* input,
                             uint32_t in_h,
                             uint32_t in_w,

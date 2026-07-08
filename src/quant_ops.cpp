@@ -301,6 +301,80 @@ namespace QuantOps
         }
     }
 
+    void DepthwiseConv2dNhwcQuant(const int8_t* input,
+                                  uint32_t in_h,
+                                  uint32_t in_w,
+                                  uint32_t channels,
+                                  const int8_t* weights,
+                                  const int32_t* bias,
+                                  int kernel_h,
+                                  int kernel_w,
+                                  int stride,
+                                  int pad_h,
+                                  int pad_w,
+                                  int pad_h_end,
+                                  int pad_w_end,
+                                  const NkFormat::MlpLayerQuantDesc& quant,
+                                  bool apply_relu,
+                                  int8_t* output)
+    {
+        QuantTrace::RecordConv2dReference();
+        const uint32_t out_h =
+            nk_op_detail::CalcOutputDimAsymmetric(in_h, kernel_h, stride, pad_h, pad_h_end);
+        const uint32_t out_w =
+            nk_op_detail::CalcOutputDimAsymmetric(in_w, kernel_w, stride, pad_w, pad_w_end);
+        const uint32_t kernel_area =
+            static_cast<uint32_t>(kernel_h) * static_cast<uint32_t>(kernel_w);
+        const float effective_scale = quant.input_scale * quant.weight_scale;
+
+        for (size_t oh = 0; oh < out_h; ++oh)
+        {
+            for (size_t ow = 0; ow < out_w; ++ow)
+            {
+                const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
+                for (uint32_t c = 0; c < channels; ++c)
+                {
+                    int32_t acc = bias[c];
+                    const int8_t* filter = weights + c * kernel_area;
+
+                    for (int kh = 0; kh < kernel_h; ++kh)
+                    {
+                        const int32_t ih = static_cast<int32_t>(oh) * stride + kh - pad_h;
+                        if (ih < 0 || ih >= static_cast<int32_t>(in_h))
+                            continue;
+
+                        for (int kw = 0; kw < kernel_w; ++kw)
+                        {
+                            const int32_t iw = static_cast<int32_t>(ow) * stride + kw - pad_w;
+                            if (iw < 0 || iw >= static_cast<int32_t>(in_w))
+                                continue;
+
+                            const int8_t in_val_q =
+                                input[(static_cast<uint32_t>(ih) * in_w +
+                                       static_cast<uint32_t>(iw)) *
+                                          channels +
+                                      c];
+                            const int8_t wt_val_q =
+                                filter[static_cast<uint32_t>(kh) * static_cast<uint32_t>(kernel_w) +
+                                       static_cast<uint32_t>(kw)];
+                            const int32_t in_val =
+                                static_cast<int32_t>(in_val_q) - quant.input_zero_point;
+                            const int32_t wt_val =
+                                static_cast<int32_t>(wt_val_q) - quant.weight_zero_point;
+                            acc += in_val * wt_val;
+                        }
+                    }
+
+                    float out_real = static_cast<float>(acc) * effective_scale;
+                    if (apply_relu)
+                        out_real = std::max(0.0f, out_real);
+                    output[out_spatial_base + c] =
+                        QuantizeFloat(out_real, quant.output_scale, quant.output_zero_point);
+                }
+            }
+        }
+    }
+
     void MaxPool2dNhwcQuant(const int8_t* input,
                             uint32_t in_h,
                             uint32_t in_w,

@@ -25,6 +25,25 @@ ARCH = {
     ],
 }
 
+DW_ARCH = {
+    "network": "cnn",
+    "input": [8, 8, 4],
+    "layers": [
+        {
+            "type": "depthwise_conv2d",
+            "kernel_h": 3,
+            "kernel_w": 3,
+            "stride": 1,
+            "filters": 4,
+            "pad_h": 1,
+            "pad_w": 1,
+            "activation": "relu",
+        },
+        {"type": "flatten"},
+        {"type": "dense", "units": 3, "activation": "softmax"},
+    ],
+}
+
 
 def _tiny_cnn_weights() -> np.ndarray:
     conv_w = np.linspace(-0.5, 0.5, 18, dtype=np.float32).reshape(2, 3, 3, 1)
@@ -32,6 +51,14 @@ def _tiny_cnn_weights() -> np.ndarray:
     fc_w = np.array([[0.3, -0.1], [-0.2, 0.4], [0.1, -0.1]], dtype=np.float32)
     fc_b = np.array([0.0, 0.01, -0.01], dtype=np.float32)
     return np.concatenate([conv_w.reshape(-1), conv_b, fc_w.reshape(-1), fc_b]).astype(np.float32)
+
+
+def _tiny_dw_cnn_weights() -> np.ndarray:
+    dw_w = np.linspace(-0.4, 0.4, 36, dtype=np.float32).reshape(4, 3, 3)
+    dw_b = np.array([0.01, -0.02, 0.03, -0.01], dtype=np.float32)
+    fc_w = np.linspace(-0.2, 0.2, 768, dtype=np.float32).reshape(3, 256)
+    fc_b = np.array([0.0, 0.01, -0.01], dtype=np.float32)
+    return np.concatenate([dw_w.reshape(-1), dw_b, fc_w.reshape(-1), fc_b]).astype(np.float32)
 
 
 class TestQuantizeCnn(unittest.TestCase):
@@ -78,6 +105,40 @@ class TestQuantizeCnn(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             nk_path = Path(tmp) / "tiny_cnn_int8.nk"
+            nk_path.write_bytes(blob)
+            proc = subprocess.run(
+                ["./netkit", "test", str(nk_path.resolve())],
+                cwd=Path(__file__).resolve().parents[2],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stdout + proc.stderr)
+
+    def test_depthwise_round_trip_nk_v4(self) -> None:
+        weights = _tiny_dw_cnn_weights()
+        cal = np.random.default_rng(2).uniform(0.0, 1.0, (16, 256)).astype(np.float32)
+        pack = quantize_cnn(DW_ARCH, weights, cal)
+        spec = quantized_cnn_to_spec(DW_ARCH, pack)
+        spec.tests = RegressionSuite(
+            tolerance=0.08,
+            cases=[
+                RegressionCase(
+                    name="tiny dw cnn quant",
+                    input=cal[0],
+                    expected=forward_quantized_cnn(cal[0], DW_ARCH, pack, output_float=True),
+                )
+            ],
+        )
+        blob = write_nk_bytes(spec)
+        header = unpack_header(blob[:HEADER_BYTES])
+        self.assertEqual(header["version"], 4)
+        self.assertTrue(header["flags"] & FLAG_HAS_QUANT)
+
+        if os.environ.get("NETKIT_FAST_TESTS") == "1":
+            return
+
+        with tempfile.TemporaryDirectory() as tmp:
+            nk_path = Path(tmp) / "tiny_dw_cnn_int8.nk"
             nk_path.write_bytes(blob)
             proc = subprocess.run(
                 ["./netkit", "test", str(nk_path.resolve())],
