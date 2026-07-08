@@ -3,6 +3,8 @@
 #include "kernel_activation.hpp"
 #include "tensor_access.hpp"
 
+#include <cstddef>
+
 namespace
 {
     float ConvOutputValue(float sum, NetkitKernelActivation fuse_activation)
@@ -35,9 +37,9 @@ bool ConvDepthwiseForward(const Tensor& input,
     const uint32_t in_w_u = input.shape[1];
     const uint32_t ch_u = static_cast<uint32_t>(channels);
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t out_spatial_base = (oh * out_w + ow) * ch_u;
 

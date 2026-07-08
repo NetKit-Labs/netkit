@@ -25,7 +25,7 @@ Int8 inference is available for the MNIST CNN on **MCU + CMSIS-NN**:
 | `.nk` quant payload | int8 weights, int32 biases, per-layer `QuantLayerParams` |
 | Activations | int8 (CMSIS-NN conv/pool/FC + int8 softmax) |
 | Export | `make export-mnist-cnn-int8` (`tools/export_mnist_cnn_int8.py`) |
-| MCU firmware | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — quant lowered AOT, **10/10** @ ~145 ms |
+| MCU firmware | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — interpreter embed, **10/10** @ ~95 ms (94.9–97.0 ms typical) |
 
 TFLite input-quant alignment (layer 0 only) is optional when `benchmark/tflm/generated/mnist_cnn_int8.tflite` exists. Weight and output scales are calibrated from netkit float weights.
 

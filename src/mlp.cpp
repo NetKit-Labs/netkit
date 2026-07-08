@@ -107,7 +107,7 @@ bool MLPNetwork::InitActivationBuffers(Arena& arena, uint32_t batch_rows)
         return layers != nullptr;
 
     uint32_t max_hidden_cols = 0;
-    for (uint32_t i = 0; i < num_layers - 1; ++i)
+    for (size_t i = 0; i < num_layers - 1; ++i)
     {
         const uint32_t cols = layers[i].weights.shape[0];
         const uint32_t elements = batch_rows * cols;
@@ -204,7 +204,7 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
         Tensor* write_view = &ping_i8_view_a_;
         bool input_is_float = true;
 
-        for (uint32_t i = 0; i < num_layers; ++i)
+        for (size_t i = 0; i < num_layers; ++i)
         {
             if (i == num_layers - 1)
             {
@@ -245,7 +245,7 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
     const Tensor* current_input = &input;
     Tensor* write_view = &ping_view_a_;
 
-    for (uint32_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; ++i)
     {
         if (i == num_layers - 1)
         {
@@ -292,7 +292,7 @@ void MLPNetwork::forward_timed(const Tensor& input,
         Tensor* write_view = &ping_i8_view_a_;
         bool input_is_float = true;
 
-        for (uint32_t i = 0; i < num_layers; ++i)
+        for (size_t i = 0; i < num_layers; ++i)
         {
             if (i == num_layers - 1)
             {
@@ -334,7 +334,7 @@ void MLPNetwork::forward_timed(const Tensor& input,
     const Tensor* current_input = &input;
     Tensor* write_view = &ping_view_a_;
 
-    for (uint32_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; ++i)
     {
         if (i == num_layers - 1)
         {

@@ -59,12 +59,12 @@ namespace
     {
         const bool fuse_in_kernel = kernel_activation_is_fused(fuse_activation);
 
-        for (uint32_t b = 0; b < batch; ++b)
+        for (size_t b = 0; b < batch; ++b)
         {
             const float* in_row = in + b * in_features;
             float* out_row = out + b * out_features;
 
-            for (uint32_t oc = 0; oc < out_features; ++oc)
+            for (size_t oc = 0; oc < out_features; ++oc)
             {
                 const float sum =
                     CmsisDspUtil::DotProductF32(in_row, wt + oc * in_features, in_features);
@@ -88,13 +88,13 @@ namespace
                                  uint32_t out_h,
                                  uint32_t out_w)
     {
-        for (uint32_t oh = 0; oh < out_h; ++oh)
+        for (size_t oh = 0; oh < out_h; ++oh)
         {
             const uint32_t ih0 = oh * 2u;
             const uint32_t row0 = ih0 * in_w;
             const uint32_t row1 = (ih0 + 1u) * in_w;
 
-            for (uint32_t ow = 0; ow < out_w; ++ow)
+            for (size_t ow = 0; ow < out_w; ++ow)
             {
                 const uint32_t iw0 = ow * 2u;
                 const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
@@ -103,7 +103,7 @@ namespace
                 const uint32_t base2 = (row1 + iw0) * channels;
                 const uint32_t base3 = base2 + channels;
 
-                for (uint32_t c = 0; c < channels; ++c)
+                for (size_t c = 0; c < channels; ++c)
                 {
                     float max_val = in[base0 + c];
                     const float v1 = in[base1 + c];
@@ -154,9 +154,9 @@ void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
         return;
     }
 
-    for (uint32_t i = 0; i < rows; i++)
+    for (size_t i = 0; i < rows; i++)
     {
-        for (uint32_t j = 0; j < cols; j++)
+        for (size_t j = 0; j < cols; j++)
         {
             const uint32_t a_idx = i * a.stride[0] + j * a.stride[1];
             const uint32_t b_idx = i * b.stride[0] + j * b.stride[1];
@@ -184,10 +184,10 @@ void ReferenceKernel::MatMulImpl(const Tensor& a, const Tensor& b, Tensor& c)
     const uint32_t k = a.shape[1];
     const uint32_t n = b.shape[1];
 
-    for (uint32_t i = 0; i < m; i++)
+    for (size_t i = 0; i < m; i++)
     {
         const float* a_row = a_data + i * a.stride[0];
-        for (uint32_t j = 0; j < n; j++)
+        for (size_t j = 0; j < n; j++)
         {
             const float sum = NetkitLoopUnroll::dot_strided_b_offset(
                 a_row, a.stride[1], b_data, b.stride[0], j * b.stride[1], k);
@@ -214,10 +214,10 @@ void ReferenceKernel::FullyConnectedImpl(const Tensor& input, const Tensor& kern
     const uint32_t in_features = input.shape[1];
     const uint32_t out_features = kernel.shape[0];
 
-    for (uint32_t b = 0; b < batch; ++b)
+    for (size_t b = 0; b < batch; ++b)
     {
         const float* in_row = in + b * input.stride[0];
-        for (uint32_t oc = 0; oc < out_features; ++oc)
+        for (size_t oc = 0; oc < out_features; ++oc)
         {
             const float* wt_row = wt + oc * kernel.stride[0];
             const float sum =
@@ -253,10 +253,10 @@ bool ReferenceKernel::FullyConnectedWithBiasImpl(const Tensor& input,
     const uint32_t in_features = input.shape[1];
     const uint32_t out_features = weights.shape[0];
 
-    for (uint32_t b = 0; b < batch; ++b)
+    for (size_t b = 0; b < batch; ++b)
     {
         const float* in_row = in + b * input.stride[0];
-        for (uint32_t oc = 0; oc < out_features; ++oc)
+        for (size_t oc = 0; oc < out_features; ++oc)
         {
             const float* wt_row = wt + oc * weights.stride[0];
             const float sum =
@@ -330,7 +330,7 @@ void ReferenceKernel::SoftmaxImpl(const Tensor& a, Tensor& c)
 
     const uint32_t n = a.num_elements;
     float max_val = a_data[0];
-    for (uint32_t i = 1; i < n; i++)
+    for (size_t i = 1; i < n; i++)
     {
         if (a_data[i] > max_val)
             max_val = a_data[i];
@@ -385,7 +385,7 @@ void ReferenceKernel::Grn2dForwardImpl(const Tensor& input,
     if (input.shape[2] != channel_count || output.shape[2] != channel_count)
         return;
 
-    for (uint32_t c = 0; c < channel_count; ++c)
+    for (size_t c = 0; c < channel_count; ++c)
     {
         double sum_sq = 0.0;
         NetkitLoopUnroll::for_count(spatial, [&](uint32_t i) {
@@ -396,14 +396,14 @@ void ReferenceKernel::Grn2dForwardImpl(const Tensor& input,
     }
 
     float mean_norm = 0.0f;
-    for (uint32_t c = 0; c < channel_count; ++c)
+    for (size_t c = 0; c < channel_count; ++c)
         mean_norm += channel_norm_scratch[c];
     mean_norm /= static_cast<float>(channel_count);
 
     const float denom = mean_norm + eps;
-    for (uint32_t i = 0; i < spatial; ++i)
+    for (size_t i = 0; i < spatial; ++i)
     {
-        for (uint32_t c = 0; c < channel_count; ++c)
+        for (size_t c = 0; c < channel_count; ++c)
         {
             const float nx = channel_norm_scratch[c] / denom;
             const float x = in[i * channel_count + c];
@@ -499,13 +499,13 @@ void ReferenceKernel::MaxPool2dForwardImpl(const Tensor& input,
 
     const uint32_t in_h = input.shape[0];
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
 
-            for (uint32_t c = 0; c < channels; ++c)
+            for (size_t c = 0; c < channels; ++c)
             {
                 float max_val = -FLT_MAX;
                 for (int kh = 0; kh < pool_h; ++kh)
@@ -554,13 +554,13 @@ void ReferenceKernel::AvgPool2dForwardImpl(const Tensor& input,
     const uint32_t out_h = output.shape[0];
     const uint32_t out_w = output.shape[1];
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
 
-            for (uint32_t c = 0; c < channels; ++c)
+            for (size_t c = 0; c < channels; ++c)
             {
                 float sum = 0.0f;
                 uint32_t count = 0;
@@ -618,15 +618,15 @@ void ReferenceKernel::LayerNorm2dForwardImpl(const Tensor& input,
     const uint32_t width = input.shape[1];
     const uint32_t channel_count = static_cast<uint32_t>(channels);
 
-    for (uint32_t oh = 0; oh < height; ++oh)
+    for (size_t oh = 0; oh < height; ++oh)
     {
-        for (uint32_t ow = 0; ow < width; ++ow)
+        for (size_t ow = 0; ow < width; ++ow)
         {
             const float* pixel_in = in + (oh * width + ow) * channel_count;
             float* pixel_out = out + (oh * width + ow) * channel_count;
 
             float mean = 0.0f;
-            for (uint32_t c = 0; c < channel_count; ++c)
+            for (size_t c = 0; c < channel_count; ++c)
                 mean += pixel_in[c];
             mean /= static_cast<float>(channel_count);
 

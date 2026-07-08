@@ -40,7 +40,7 @@ void ConvNeXtV2Block::forward(const Tensor& input, Tensor& output)
     Kernels::LayerNorm2dForward(
         branch_view, ln_weight, ln_bias, channels, eps, branch_view);
 
-    for (uint32_t i = 0; i < spatial; ++i)
+    for (size_t i = 0; i < spatial; ++i)
     {
         fused_ops::FullyConnected1x1(branch + i * channel_count,
                                      channels,
@@ -60,7 +60,7 @@ void ConvNeXtV2Block::forward(const Tensor& input, Tensor& output)
                             grn_norms);
 
     float* out = tensor_data_f32(output);
-    for (uint32_t i = 0; i < spatial; ++i)
+    for (size_t i = 0; i < spatial; ++i)
     {
         fused_ops::FullyConnected1x1(expanded_buf + i * expanded,
                                      static_cast<int>(expanded),

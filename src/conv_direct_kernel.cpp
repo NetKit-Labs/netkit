@@ -4,6 +4,8 @@
 #include "kernel_activation.hpp"
 #include "netkit_loop_unroll.hpp"
 
+#include <cstddef>
+
 namespace
 {
     constexpr uint32_t kInputStationaryMinOutChannels = 16u;
@@ -28,14 +30,14 @@ bool ConvDirectForward3x3S1P0(const float* in,
 {
     const uint32_t filter_elems = 9u * in_ch;
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
         const uint32_t ih0 = oh;
         const uint32_t in_row0 = ih0 * in_w;
         const uint32_t in_row1 = (ih0 + 1u) * in_w;
         const uint32_t in_row2 = (ih0 + 2u) * in_w;
 
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t iw0 = ow;
             const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
@@ -90,11 +92,11 @@ bool ConvDirectForwardNoPad(const float* in,
     const uint32_t k_kernel = static_cast<uint32_t>(kernel_size);
     const uint32_t filter_spatial = k_kernel * k_kernel;
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
         const uint32_t ih_base = static_cast<uint32_t>(oh) * static_cast<uint32_t>(stride);
 
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t iw_base = static_cast<uint32_t>(ow) * static_cast<uint32_t>(stride);
             const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
@@ -104,11 +106,11 @@ bool ConvDirectForwardNoPad(const float* in,
                 float sum = bias ? bias[oc] : 0.0f;
                 const uint32_t oc_u = static_cast<uint32_t>(oc);
 
-                for (uint32_t kh = 0; kh < k_kernel; ++kh)
+                for (size_t kh = 0; kh < k_kernel; ++kh)
                 {
                     const uint32_t in_row = (ih_base + kh) * in_w;
 
-                    for (uint32_t kw = 0; kw < k_kernel; ++kw)
+                    for (size_t kw = 0; kw < k_kernel; ++kw)
                     {
                         const uint32_t in_base = (in_row + iw_base + kw) * in_ch;
                         const uint32_t w_base = (oc_u * filter_spatial + kh * k_kernel + kw) * in_ch;
@@ -144,9 +146,9 @@ bool ConvDirectForwardPadded(const float* in,
     const int in_h_i = static_cast<int>(in_h);
     const int in_w_i = static_cast<int>(in_w);
 
-    for (uint32_t oh = 0; oh < out_h; oh++)
+    for (size_t oh = 0; oh < out_h; oh++)
     {
-        for (uint32_t ow = 0; ow < out_w; ow++)
+        for (size_t ow = 0; ow < out_w; ow++)
         {
             const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
 
@@ -214,9 +216,9 @@ bool ConvDirectTryInputStationaryForward(const float* in,
     if (!weights_hwio || out_channels < static_cast<int>(kInputStationaryMinOutChannels))
         return false;
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;
 
@@ -225,11 +227,11 @@ bool ConvDirectTryInputStationaryForward(const float* in,
                 out[out_spatial_base + static_cast<uint32_t>(oc)] = bias ? bias[oc] : 0.0f;
             }
 
-            for (uint32_t kh = 0; kh < kernel_h; ++kh)
+            for (size_t kh = 0; kh < kernel_h; ++kh)
             {
                 const int ih = static_cast<int>(oh) * stride + static_cast<int>(kh) - pad_h;
 
-                for (uint32_t kw = 0; kw < kernel_w; ++kw)
+                for (size_t kw = 0; kw < kernel_w; ++kw)
                 {
                     const int iw = static_cast<int>(ow) * stride + static_cast<int>(kw) - pad_w;
                     if (ih < 0 || ih >= static_cast<int>(in_h) || iw < 0 ||
@@ -241,7 +243,7 @@ bool ConvDirectTryInputStationaryForward(const float* in,
                     const uint32_t in_base =
                         (static_cast<uint32_t>(ih) * in_w + static_cast<uint32_t>(iw)) * in_ch;
 
-                    for (uint32_t ic = 0; ic < in_ch; ++ic)
+                    for (size_t ic = 0; ic < in_ch; ++ic)
                     {
                         const float value = in[in_base + ic];
                         if (value == 0.0f)
@@ -250,7 +252,7 @@ bool ConvDirectTryInputStationaryForward(const float* in,
                         const float* w_slice =
                             weights_hwio + ((kh * kernel_w + kw) * in_ch + ic) * out_ch;
 
-                        for (uint32_t oc = 0; oc < out_ch; ++oc)
+                        for (size_t oc = 0; oc < out_ch; ++oc)
                         {
                             out[out_spatial_base + oc] += value * w_slice[oc];
                         }

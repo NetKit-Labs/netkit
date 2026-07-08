@@ -4,6 +4,6 @@
 
 struct LayerQuant
 {
-    NkFormat::LayerQuantDesc params{};
+    NkFormat::MlpLayerQuantDesc params{};
     bool enabled = false;
 };

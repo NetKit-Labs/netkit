@@ -34,7 +34,7 @@ namespace QuantOps
                           int32_t output_zero_point,
                           int8_t* output)
     {
-        for (uint32_t i = 0; i < count; ++i)
+        for (size_t i = 0; i < count; ++i)
             output[i] = QuantizeFloat(values[i], output_scale, output_zero_point);
     }
 
@@ -44,7 +44,7 @@ namespace QuantOps
                              const int8_t* weights,
                              const int32_t* bias,
                              uint32_t out_features,
-                             const NkFormat::LayerQuantDesc& quant,
+                             const NkFormat::MlpLayerQuantDesc& quant,
                              bool apply_relu,
                              int8_t* output_int8,
                              float* output_float)
@@ -67,14 +67,14 @@ namespace QuantOps
         QuantTrace::RecordFcReference();
         const float effective_scale = quant.input_scale * quant.weight_scale;
 
-        for (uint32_t b = 0; b < batch; ++b)
+        for (size_t b = 0; b < batch; ++b)
         {
             const int8_t* in_row = input + b * in_features;
-            for (uint32_t oc = 0; oc < out_features; ++oc)
+            for (size_t oc = 0; oc < out_features; ++oc)
             {
                 int32_t acc = bias[oc];
                 const int8_t* wt_row = weights + oc * in_features;
-                for (uint32_t ic = 0; ic < in_features; ++ic)
+                for (size_t ic = 0; ic < in_features; ++ic)
                 {
                     const int32_t in_val = static_cast<int32_t>(in_row[ic]) - quant.input_zero_point;
                     const int32_t wt_val = static_cast<int32_t>(wt_row[ic]) - quant.weight_zero_point;
@@ -112,7 +112,7 @@ namespace QuantOps
         if (input_is_float)
         {
             const float* in_f = static_cast<const float*>(input.data);
-            for (uint32_t i = 0; i < batch * in_features; ++i)
+            for (size_t i = 0; i < batch * in_features; ++i)
                 quant_scratch[i] =
                     QuantizeFloat(in_f[i], quant.params.input_scale, quant.params.input_zero_point);
             input_i8 = quant_scratch;
@@ -218,7 +218,7 @@ namespace QuantOps
                          int pad_h_end,
                          int pad_w_end,
                          int out_channels,
-                         const NkFormat::LayerQuantDesc& quant,
+                         const NkFormat::MlpLayerQuantDesc& quant,
                          bool apply_relu,
                          int8_t* output)
     {
@@ -252,9 +252,9 @@ namespace QuantOps
         const uint32_t filter_elems = kernel_area * in_c;
         const float effective_scale = quant.input_scale * quant.weight_scale;
 
-        for (uint32_t oh = 0; oh < out_h; ++oh)
+        for (size_t oh = 0; oh < out_h; ++oh)
         {
-            for (uint32_t ow = 0; ow < out_w; ++ow)
+            for (size_t ow = 0; ow < out_w; ++ow)
             {
                 const uint32_t out_spatial_base = (oh * out_w + ow) * static_cast<uint32_t>(out_channels);
                 for (int oc = 0; oc < out_channels; ++oc)
@@ -280,7 +280,7 @@ namespace QuantOps
                                                              static_cast<uint32_t>(kw)) *
                                                             in_c;
 
-                            for (uint32_t ic = 0; ic < in_c; ++ic)
+                            for (size_t ic = 0; ic < in_c; ++ic)
                             {
                                 const int32_t in_val =
                                     static_cast<int32_t>(in_ptr[ic]) - quant.input_zero_point;
@@ -337,11 +337,11 @@ namespace QuantOps
         const uint32_t out_w = nk_op_detail::CalcOutputDimAsymmetric(
             in_w, pool_w, stride, pad_w, pad_w_end);
 
-        for (uint32_t oh = 0; oh < out_h; ++oh)
+        for (size_t oh = 0; oh < out_h; ++oh)
         {
-            for (uint32_t ow = 0; ow < out_w; ++ow)
+            for (size_t ow = 0; ow < out_w; ++ow)
             {
-                for (uint32_t c = 0; c < in_c; ++c)
+                for (size_t c = 0; c < in_c; ++c)
                 {
                     int8_t max_val = -128;
                     bool found = false;

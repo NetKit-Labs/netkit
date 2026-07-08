@@ -23,10 +23,10 @@ Int8 conv/pool/dense/softmax use CMSIS-NN kernels on Cortex-M4 (`CmsisQuantPlan`
 
 | Metric | Value |
 |--------|-------|
-| Mean invoke | **~95 ms** (interpreter embed; CMSIS-NN s8) |
+| Mean invoke | **~95 ms** (typical **94.9–97.0 ms** across captures; interpreter embed, CMSIS-NN s8) |
 | Accuracy | **10/10** |
 | Arena | **64 KiB** static buffer (fixed; verified 10/10 on-device) |
-| Flash (text + data) | **~353 KiB** (of 512 KiB) |
+| Flash (text + data) | **~334 KiB** (of 512 KiB) |
 | SRAM (bss + data) | **~75 KiB** (of 128 KiB; ~53 KiB headroom) |
 
 Compare with TFLM int8 on the same board: [nucleo-f446re-tflm-cnn-int8](../nucleo-f446re-tflm-cnn-int8/README.md).
@@ -37,7 +37,7 @@ The board has **512 KiB flash** and **128 KiB SRAM**. Default firmware uses **in
 
 | Region | Approx. size | Notes |
 |--------|--------------|-------|
-| `.text` + `.rodata` (code + embedded `.nk`) | ~351 KiB | ~258 KiB is the embedded `mnist_cnn_int8.nk` blob |
+| `.text` + `.rodata` (code + embedded `.nk`) | ~334 KiB | ~258 KiB is the embedded `mnist_cnn_int8.nk` blob |
 | `.data` + `.bss` (SRAM) | ~75 KiB | Includes **64 KiB** interpreter arena + output scratch |
 | SRAM headroom | ~53 KiB | Stack, heap (none used), ST-Link/USB buffers |
 
@@ -120,7 +120,11 @@ make flash-mnist-cnn-int8
 | **Interpreter embed** (default) | `make` | Embedded `.nk` blob + runtime loader (fair vs TFLM `MicroInterpreter`) |
 | **Quant lowered** (deployment) | `make NETKIT_LOWERED=1` | Static `CmsisQuantPlan` call chain; activations in static BSS, tiny arena |
 
-Compiler/linker flags match TFLM microlite tiers via `boards/nucleo-f446re/mcu_tflm_toolchain.mk` (CORE `-Os`, CMSIS-NN / quant dispatch `-O2`, `-flto` link with `--gc-sections`).
+Compiler/linker flags match TFLM microlite tiers via `boards/nucleo-f446re/mcu_tflm_toolchain.mk` (CORE `-Os`, CMSIS-NN / quant dispatch `-O2`, `-flto` link with `--gc-sections`). `NETKIT_CPPFLAGS` is passed on the final link so CMSIS macros survive LTO.
+
+**CMSIS always on for this board:** the Makefile uses `override NETKIT_CMSIS_DSP := 1` and `override NETKIT_CMSIS_NN := 1` so host/CI env vars (`NETKIT_CMSIS_NN=0`, `GITHUB_ACTIONS=true`, etc.) cannot accidentally link CMSIS **stub** kernels that fail forward at runtime.
+
+**Optional kernel trace (bring-up only):** `make NETKIT_QUANT_TRACE=1` links `quant_trace.cpp` and prints a CMSIS vs reference summary over UART after the probe forward. Default `make` uses zero-cost inline stubs — no trace overhead on the hot path.
 
 Regenerate embed sources after changing mode:
 
@@ -133,33 +137,38 @@ rm -f generated/.embed_stamp && make NETKIT_LOWERED=1   # lowered
 
 ```
 netkit NUCLEO-F446RE MNIST CNN int8 benchmark
-  backend:     cmsis-nn int8 (MCU CM4, .nk loader)
+  backend:     cmsis-nn int8 + cmsis-dsp utils (MCU CM4, .nk loader)
   weights:     flash (embedded .nk blob)
-  dtype:       int8 end-to-end (softmax int8, prequantized inputs)
+  dtype:       int8 end-to-end (weights, activations, inputs, softmax)
   arena bytes: 65536
   nk bytes:    258440
+  sysclk:      180000000 Hz
+  model:       loaded
   probe:       label=0 pred=0 pred_i8=127 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
 
   per-digit results (final run, int8 only — dequant in Python):
     image  label  pred  pred_i8  ok
         0      0     0      127  yes
-        1      1     1      126  yes
         ...
 DIGIT_SUMMARY runtime=netkit model=cnn_int8 image=0 label=0 pred=0 pred_i8=127 ok=1 out_i8=127,-128,-128,-128,-128,-128,-128,-128,-128,-128
 ...
+
+  accuracy:    10/10 on final run
+
+netkit MNIST cnn int8 benchmark summary
+  mean:   94904.878 us (94.905 ms)
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=cmsis-nn-int8 mean_us=94904.878 runs=10
+
+DONE
+```
+
+Single-capture means vary by roughly **±2%** (e.g. 94.9–97.0 ms) on the same firmware — normal for DWT timing on this board. Average several captures for regression tracking.
 
 Dequantized confidence is **not** printed on-device. Parse the log offline:
 
 ```bash
 python3 benchmark/tools/parse_mcu_cnn_int8_log.py boards/nucleo-f446re-cnn-int8/uart.log
 python3 benchmark/tools/parse_mcu_cnn_int8_log.py --compare netkit.log tflm.log
-```
-
-  accuracy:    10/10 on final run
-  mean:   144141.967 us (144.142 ms)
-BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=cmsis-nn-int8 mean_us=144141.967 runs=10
-
-DONE
 ```
 
 ## Related docs

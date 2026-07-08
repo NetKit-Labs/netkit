@@ -15,13 +15,13 @@ void RepackConv2dOkiToHwio(const float* oki,
 
     const uint32_t filter_spatial = kernel_h * kernel_w;
 
-    for (uint32_t oc = 0; oc < out_channels; ++oc)
+    for (size_t oc = 0; oc < out_channels; ++oc)
     {
-        for (uint32_t kh = 0; kh < kernel_h; ++kh)
+        for (size_t kh = 0; kh < kernel_h; ++kh)
         {
-            for (uint32_t kw = 0; kw < kernel_w; ++kw)
+            for (size_t kw = 0; kw < kernel_w; ++kw)
             {
-                for (uint32_t ic = 0; ic < in_channels; ++ic)
+                for (size_t ic = 0; ic < in_channels; ++ic)
                 {
                     const uint32_t oki_idx =
                         ((oc * filter_spatial + kh * kernel_w + kw) * in_channels) + ic;

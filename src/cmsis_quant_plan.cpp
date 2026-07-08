@@ -101,7 +101,7 @@ namespace
 
     bool BuildConvPlan(CmsisQuantPlan::Conv2DPlan& plan,
                        const Conv2D& conv,
-                       const NkFormat::LayerQuantDesc& quant,
+                       const NkFormat::MlpLayerQuantDesc& quant,
                        bool apply_relu,
                        uint32_t in_h,
                        uint32_t in_w,
@@ -199,7 +199,7 @@ namespace
     }
 
     bool BuildFcPlan(CmsisQuantPlan::FcPlan& plan,
-                     const NkFormat::LayerQuantDesc& quant,
+                     const NkFormat::MlpLayerQuantDesc& quant,
                      bool apply_relu,
                      uint32_t in_features,
                      uint32_t out_features)
@@ -470,38 +470,119 @@ namespace
                 case LayerKind::Conv2D:
                 {
                     const Conv2D& conv = block.conv.conv;
-                    if (!CmsisNnQuant::TryConv2dNhwcQuantPlan(
+                    if (CmsisNnQuant::TryConv2dNhwcQuantPlan(
                             lp.conv, current, conv.weights_q, conv.bias_q, out))
-                        return false;
+                    {
+                        break;
+                    }
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+                    return false;
+#else
+                    QuantOps::Conv2dNhwcQuant(current,
+                                              static_cast<uint32_t>(lp.conv.in_h),
+                                              static_cast<uint32_t>(lp.conv.in_w),
+                                              static_cast<uint32_t>(lp.conv.in_c),
+                                              conv.weights_q,
+                                              conv.bias_q,
+                                              conv.kernel_size,
+                                              conv.stride,
+                                              conv.pad_h,
+                                              conv.pad_w,
+                                              conv.pad_h_end,
+                                              conv.pad_w_end,
+                                              conv.out_channels,
+                                              block.conv.quant.params,
+                                              lp.conv.apply_relu,
+                                              out);
                     break;
+#endif
                 }
                 case LayerKind::MaxPool2D:
                 {
-                    if (!CmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
-                        return false;
+                    if (CmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
+                        break;
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+                    return false;
+#else
+                    const MaxPool2DLayer& pool = block.pool;
+                    QuantOps::MaxPool2dNhwcQuant(current,
+                                                   static_cast<uint32_t>(lp.pool.in_h),
+                                                   static_cast<uint32_t>(lp.pool.in_w),
+                                                   static_cast<uint32_t>(lp.pool.in_c),
+                                                   pool.pool_h,
+                                                   pool.pool_w,
+                                                   pool.stride,
+                                                   pool.pad_h,
+                                                   pool.pad_w,
+                                                   pool.pad_h_end,
+                                                   pool.pad_w_end,
+                                                   out);
                     break;
+#endif
                 }
                 case LayerKind::Dense:
                 {
                     const int8_t* weights = static_cast<const int8_t*>(block.dense.weights.data);
                     const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
                     int8_t* dense_out = (is_last && output_dest != nullptr) ? output_dest : out;
-                    if (!CmsisNnQuant::TryFullyConnectedQuantPlan(lp.fc, current, weights, bias, dense_out))
-                        return false;
+                    if (CmsisNnQuant::TryFullyConnectedQuantPlan(lp.fc, current, weights, bias, dense_out))
+                    {
+                        if (dense_out == output_dest)
+                            out = output_dest;
+                        break;
+                    }
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+                    return false;
+#else
+                    QuantOps::FullyConnectedQuant(current,
+                                                  1u,
+                                                  static_cast<uint32_t>(lp.fc.in_features),
+                                                  weights,
+                                                  bias,
+                                                  static_cast<uint32_t>(lp.fc.out_features),
+                                                  block.dense.quant.params,
+                                                  lp.fc.apply_relu,
+                                                  dense_out,
+                                                  nullptr);
                     if (dense_out == output_dest)
                         out = output_dest;
                     break;
+#endif
                 }
                 case LayerKind::DenseSoftmax:
                 {
                     const int8_t* weights = static_cast<const int8_t*>(block.dense.weights.data);
                     const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
+                    int8_t* softmax_out = (output_dest != nullptr) ? output_dest : out;
                     if (!CmsisNnQuant::TryFullyConnectedQuantPlan(
                             lp.fc, current, weights, bias, runtime.logits))
+                    {
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                         return false;
-                    int8_t* softmax_out = (output_dest != nullptr) ? output_dest : out;
+#else
+                        QuantOps::FullyConnectedQuant(current,
+                                                      1u,
+                                                      static_cast<uint32_t>(lp.fc.in_features),
+                                                      weights,
+                                                      bias,
+                                                      static_cast<uint32_t>(lp.fc.out_features),
+                                                      block.dense.quant.params,
+                                                      lp.fc.apply_relu,
+                                                      runtime.logits,
+                                                      nullptr);
+#endif
+                    }
                     if (!CmsisNnQuant::TrySoftmaxS8Plan(lp.softmax, runtime.logits, softmax_out))
+                    {
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                         return false;
+#else
+                        QuantOps::SoftmaxS8(runtime.logits,
+                                            static_cast<uint32_t>(lp.softmax.row_size),
+                                            block.dense.quant.params.output_scale,
+                                            softmax_out);
+#endif
+                    }
                     out = softmax_out;
                     (void)output_format;
                     break;

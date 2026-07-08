@@ -223,7 +223,7 @@ public:
                                 int out_channels,
                                 int8_t* weights,
                                 int32_t* bias,
-                                const NkFormat::LayerQuantDesc& quant,
+                                const NkFormat::MlpLayerQuantDesc& quant,
                                 ConvActivationType activation,
                                 float leaky_alpha = 0.01f,
                                 int pad_h = 0,
@@ -234,7 +234,7 @@ public:
     void InitQuantizedDenseLayer(uint32_t layer_idx,
                                  const Tensor& weights,
                                  const Tensor& bias,
-                                 const NkFormat::LayerQuantDesc& quant,
+                                 const NkFormat::MlpLayerQuantDesc& quant,
                                  ActivationType activation,
                                  float leaky_alpha = 0.01f);
 

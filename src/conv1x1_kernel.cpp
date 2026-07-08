@@ -3,6 +3,8 @@
 #include "cmsis_dsp_util.hpp"
 #include "kernel_activation.hpp"
 
+#include <cstddef>
+
 namespace
 {
     float ConvOutputValue(float sum, NetkitKernelActivation fuse_activation)
@@ -26,9 +28,9 @@ bool Conv1x1Forward(const float* in,
 {
     (void)in_h;
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t in_base = (oh * in_w + ow) * in_ch;
             const uint32_t out_spatial_base = (oh * out_w + ow) * out_ch;

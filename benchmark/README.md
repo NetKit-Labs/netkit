@@ -142,7 +142,7 @@ Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. For firmw
 | Firmware | Model | Backend | Notes |
 |----------|-------|---------|-------|
 | [boards/nucleo-f446re](../boards/nucleo-f446re/README.md) | MNIST MLP f32 | CMSIS-DSP lowered AOT | ~10.7 ms, 10/10 |
-| [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN interpreter embed | ~144 ms, 10/10; 64 KiB arena, ~353 KiB flash / ~75 KiB SRAM |
+| [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN interpreter embed | ~95 ms (94.9–97.0 ms typical), 10/10; 64 KiB arena, ~334 KiB flash / ~75 KiB SRAM |
 | [boards/nucleo-f446re-tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md) | MNIST CNN int8 | TFLite Micro | comparison baseline |
 
 Shared **float** test vectors: `benchmark/tflm/generated/mnist_*_test_images.{h,cc}`

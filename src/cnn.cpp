@@ -109,7 +109,7 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
     if (!blocks || num_layers == 0)
         return blocks != nullptr;
 
-    for (uint32_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; ++i)
     {
         if (blocks[i].type == CnnBlockType::Conv2D &&
             !RepackConv2dWeights(blocks[i].conv.conv, arena))
@@ -123,7 +123,7 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
     NkCnnSpatialPlan plan{in_h, in_w, in_c, &max_activation_elements};
 
     CmsisBeginKernelWorkspacePlan(&max_kernel_workspace_bytes);
-    for (uint32_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; ++i)
     {
         const NkLayerOpRegistration* registration =
             resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
@@ -170,7 +170,7 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
 
     const std::array<uint32_t, 3> input_shape = {in_h, in_w, in_c};
     Tensor current_input = ViewND(nullptr, 3, input_shape);
-    for (uint32_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; ++i)
     {
         const NkLayerOpRegistration* registration =
             resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
@@ -592,7 +592,7 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
     Tensor current_input = input;
     float* write_buffer = ping_a;
 
-    for (uint32_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; ++i)
     {
         const NkLayerOpRegistration* registration =
             resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));
@@ -652,7 +652,7 @@ Tensor& CNNNetwork::forward_timed(const Tensor& input, Arena& /*arena*/, LayerTi
     Tensor current_input = input;
     float* write_buffer = ping_a;
 
-    for (uint32_t i = 0; i < num_layers; ++i)
+    for (size_t i = 0; i < num_layers; ++i)
     {
         const NkLayerOpRegistration* registration =
             resolver.Find(static_cast<uint8_t>(ToOpCode(blocks[i].type)));

@@ -216,7 +216,7 @@ The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only (refere
 3. Example and CLI smoke tests
 4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
 
-CMSIS backends are validated **locally** (`make cmsis-init`, `make NETKIT_CMSIS_DSP=1 test-cpp`, `./tools/run_cmsis_dsp_smoke.sh`, `make test-embedded-smoke-matrix`) — not in CI.
+CMSIS backends are validated **locally** (`make cmsis-init`, `make NETKIT_CMSIS_DSP=1 test-cpp`, `./tools/run_cmsis_dsp_smoke.sh`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
 
 **CI build notes**
 

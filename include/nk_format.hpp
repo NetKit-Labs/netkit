@@ -74,8 +74,6 @@ namespace NkFormat
         int32_t output_zero_point = 0;
     };
 
-    using LayerQuantDesc = MlpLayerQuantDesc;
-
     constexpr std::size_t kMlpLayerQuantBytes = 32;
 
     enum class Activation : uint8_t

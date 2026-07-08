@@ -26,17 +26,17 @@ namespace
     {
         uint32_t k_idx = 0;
 
-        for (uint32_t kh = 0; kh < kernel_h; ++kh)
+        for (size_t kh = 0; kh < kernel_h; ++kh)
         {
             const int ih = static_cast<int>(oh) * stride + static_cast<int>(kh) - pad_h;
 
-            for (uint32_t kw = 0; kw < kernel_w; ++kw)
+            for (size_t kw = 0; kw < kernel_w; ++kw)
             {
                 const int iw = static_cast<int>(ow) * stride + static_cast<int>(kw) - pad_w;
                 const bool in_bounds =
                     ih >= 0 && ih < static_cast<int>(in_h) && iw >= 0 && iw < static_cast<int>(in_w);
 
-                for (uint32_t ic = 0; ic < in_ch; ++ic)
+                for (size_t ic = 0; ic < in_ch; ++ic)
                 {
                     float value = 0.0f;
                     if (in_bounds)
@@ -88,9 +88,9 @@ bool ConvPartialIm2ColForward(const float* in,
 
     const uint32_t patch_elems = kernel_h * kernel_w * in_ch;
 
-    for (uint32_t oh = 0; oh < out_h; ++oh)
+    for (size_t oh = 0; oh < out_h; ++oh)
     {
-        for (uint32_t ow = 0; ow < out_w; ++ow)
+        for (size_t ow = 0; ow < out_w; ++ow)
         {
             const uint32_t spatial_idx = oh * out_w + ow;
 

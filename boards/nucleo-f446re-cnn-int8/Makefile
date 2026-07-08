@@ -53,12 +53,20 @@ INCLUDES := \
 
 NETKIT_WEIGHTS_IN_RAM ?= 0
 
-# Board firmware always requires CMSIS — do not inherit CI/host NETKIT_CMSIS_*=0 from env.
-override NETKIT_CMSIS_DSP := 1
-override NETKIT_CMSIS_NN := 1
-
 NETKIT_QUANT_TRACE ?= 0
 NETKIT_MCU_QUANT_ONLY ?= 1
+NETKIT_IM2COL_PARTIAL ?= 1
+# 1 = netkit reference int8 quant loops (QuantOps) instead of CMSIS-NN kernels.
+NETKIT_REFERENCE_QUANT_LOOPS ?= 0
+
+# Board firmware: CMSIS-DSP always on. CMSIS-NN on unless reference quant loops requested.
+# Do not inherit CI/host NETKIT_CMSIS_*=0 from env.
+override NETKIT_CMSIS_DSP := 1
+ifeq ($(NETKIT_REFERENCE_QUANT_LOOPS),1)
+override NETKIT_CMSIS_NN := 0
+else
+override NETKIT_CMSIS_NN := 1
+endif
 
 ifeq ($(NETKIT_QUANT_TRACE),1)
 NETKIT_TRACE_SOURCES := $(NETKIT_ROOT)/src/quant_trace.cpp
@@ -77,6 +85,8 @@ NETKIT_CPPFLAGS := \
 	$(if $(filter 0,$(NETKIT_QUANT_TRACE)),,-DNETKIT_QUANT_TRACE_UART=1) \
 	-DNETKIT_LOOP_UNROLL=0 \
 	-DNETKIT_IM2COL_FULL=0 \
+	-DNETKIT_IM2COL_PARTIAL=$(NETKIT_IM2COL_PARTIAL) \
+	-DNETKIT_REFERENCE_QUANT_LOOPS=$(NETKIT_REFERENCE_QUANT_LOOPS) \
 	-DARM_MATH_CM4 \
 	-DARM_MATH_LOOPUNROLL \
 	-DARM_NN_ENABLE_F32=0
@@ -182,10 +192,14 @@ include $(NETKIT_ROOT)/third_party/cmsis_nn.mk
 
 ifeq ($(NETKIT_MCU_QUANT_ONLY),1)
 CMSIS_NN_CFLAGS := -std=c11 -O2 -DARM_NN_ENABLE_F32=0 -I$(CMSIS_NN_DIR)/Include $(NETKIT_ARCH_CFLAGS)
+ifeq ($(NETKIT_REFERENCE_QUANT_LOOPS),1)
+CMSIS_NN_SOURCES :=
+else
 CMSIS_NN_SOURCES := \
 	$(CMSIS_NN_S8_SOURCES) \
 	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_softmax_s8.c \
 	$(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c
+endif
 ifeq ($(NETKIT_CMSIS_DSP),1)
 CMSIS_DSP_SOURCES := \
 	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_q7.c \

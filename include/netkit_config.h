@@ -30,6 +30,11 @@
  * Optional reference-kernel tuning (Makefile / CMake):
  *   NETKIT_IM2COL_FULL — When 1, float Conv2D may use full im2col + GEMM on large layers
  *     (default 0). Default is partial im2col everywhere (MCU, MPU, CPU).
+ *   NETKIT_IM2COL_PARTIAL — When 0, float Conv2D never uses partial im2col (direct loops only).
+ *     Full im2col still allowed when NETKIT_IM2COL_FULL=1.
+ *   NETKIT_REFERENCE_QUANT_LOOPS — When 1, int8 quantized forward uses netkit QuantOps
+ *     reference loops (scalar conv/pool/FC + reference softmax) instead of CMSIS-NN kernels.
+ *     Default 0 (CMSIS-NN). Used for MCU firmware profiling / kernel validation.
  *   NETKIT_LOOP_UNROLL — EXPERIMENTAL. When 1, 4× manual loop unroll in netkit reference
  *     kernels only (default 0). Increases .text/flash size; can exceed program memory on
  *     small MCUs. Independent of CMSIS-DSP ARM_MATH_LOOPUNROLL.
@@ -94,6 +99,22 @@
 
 #if NETKIT_IM2COL_FULL != 0 && NETKIT_IM2COL_FULL != 1
 #error "NETKIT_IM2COL_FULL must be 0 or 1"
+#endif
+
+#ifndef NETKIT_IM2COL_PARTIAL
+#define NETKIT_IM2COL_PARTIAL 1
+#endif
+
+#if NETKIT_IM2COL_PARTIAL != 0 && NETKIT_IM2COL_PARTIAL != 1
+#error "NETKIT_IM2COL_PARTIAL must be 0 or 1"
+#endif
+
+#ifndef NETKIT_REFERENCE_QUANT_LOOPS
+#define NETKIT_REFERENCE_QUANT_LOOPS 0
+#endif
+
+#if NETKIT_REFERENCE_QUANT_LOOPS != 0 && NETKIT_REFERENCE_QUANT_LOOPS != 1
+#error "NETKIT_REFERENCE_QUANT_LOOPS must be 0 or 1"
 #endif
 
 #ifndef NETKIT_LOOP_UNROLL

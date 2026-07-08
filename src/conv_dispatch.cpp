@@ -294,8 +294,10 @@ Conv2dExecMode SelectConv2dExecMode(int kernel_h,
         if (full_gemm_volume)
             return Conv2dExecMode::FullIm2Col;
 #endif
+#if NETKIT_IM2COL_PARTIAL
         if (large_volume)
             return Conv2dExecMode::PartialIm2Col;
+#endif
         return Conv2dExecMode::Direct;
     }
 
@@ -305,8 +307,10 @@ Conv2dExecMode SelectConv2dExecMode(int kernel_h,
         if (large_volume)
             return Conv2dExecMode::FullIm2Col;
 #endif
+#if NETKIT_IM2COL_PARTIAL
         if (large_volume)
             return Conv2dExecMode::PartialIm2Col;
+#endif
         return Conv2dExecMode::Direct;
     }
 
@@ -314,8 +318,10 @@ Conv2dExecMode SelectConv2dExecMode(int kernel_h,
     if (large_volume)
         return Conv2dExecMode::FullIm2Col;
 #endif
+#if NETKIT_IM2COL_PARTIAL
     if (large_volume)
         return Conv2dExecMode::PartialIm2Col;
+#endif
     return Conv2dExecMode::Direct;
 }
 

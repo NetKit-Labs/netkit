@@ -12,7 +12,7 @@ namespace
     void ApplySiluInPlace(Tensor& tensor)
     {
         float* data = tensor_data_f32(tensor);
-        for (uint32_t i = 0; i < tensor.num_elements; ++i)
+        for (size_t i = 0; i < tensor.num_elements; ++i)
         {
             const float x = data[i];
             const float sigmoid = 1.0f / (1.0f + std::exp(-x));
@@ -86,9 +86,9 @@ namespace
                          int pred_channels,
                          const float* pred)
     {
-        for (uint32_t y = 0; y < h; ++y)
+        for (size_t y = 0; y < h; ++y)
         {
-            for (uint32_t x = 0; x < w; ++x)
+            for (size_t x = 0; x < w; ++x)
             {
                 const std::size_t out_base =
                     (static_cast<std::size_t>(y) * w + x) * static_cast<std::size_t>(out_channels);

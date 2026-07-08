@@ -26,7 +26,7 @@ namespace QuantOps
                              const int8_t* weights,
                              const int32_t* bias,
                              uint32_t out_features,
-                             const NkFormat::LayerQuantDesc& quant,
+                             const NkFormat::MlpLayerQuantDesc& quant,
                              bool apply_relu,
                              int8_t* output_int8,
                              float* output_float);
@@ -56,7 +56,7 @@ namespace QuantOps
                          int pad_h_end,
                          int pad_w_end,
                          int out_channels,
-                         const NkFormat::LayerQuantDesc& quant,
+                         const NkFormat::MlpLayerQuantDesc& quant,
                          bool apply_relu,
                          int8_t* output);
 

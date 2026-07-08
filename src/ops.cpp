@@ -8,7 +8,7 @@ namespace Ops
         if (A.rank != B.rank)
             return false;
 
-        for (uint32_t i = 0; i < A.rank; i++)
+        for (size_t i = 0; i < A.rank; i++)
         {
             if (A.shape[i] != B.shape[i])
                 return false;
@@ -63,7 +63,7 @@ namespace Ops
         if (A.rank != B.rank || A.rank != C.rank)
             return false;
 
-        for (uint32_t i = 0; i < A.rank; i++)
+        for (size_t i = 0; i < A.rank; i++)
         {
             if (A.shape[i] != B.shape[i] || A.shape[i] != C.shape[i])
                 return false;
@@ -105,7 +105,7 @@ namespace Ops
         if (A.rank != B.rank || A.rank != C.rank)
             return false;
 
-        for (uint32_t i = 0; i < A.rank; i++)
+        for (size_t i = 0; i < A.rank; i++)
         {
             if (A.shape[i] != B.shape[i] || A.shape[i] != C.shape[i])
                 return false;
@@ -130,7 +130,7 @@ namespace Ops
         if (A.rank != C.rank)
             return false;
 
-        for (uint32_t i = 0; i < A.rank; i++)
+        for (size_t i = 0; i < A.rank; i++)
         {
             if (A.shape[i] != C.shape[i])
                 return false;
