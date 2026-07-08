@@ -7,7 +7,8 @@ examples/trim_firmware
 tests/test_c_api
 tests/embedded_smoke
 tools/nk_infer
-benchmark/netkit/mnist_*_bench*
+benchmark/netkit/*_bench*
+!benchmark/netkit/*.mk
 benchmark/netkit/tmp_*
 benchmark/tflm/.venv/
 benchmark/tflm/third_party/
@@ -20,6 +21,9 @@ libnetkit_trim.a
 # Object files
 *.o
 *.o.tmp
+
+# Logs
+*.log
 
 # VS Code
 .vscode/
