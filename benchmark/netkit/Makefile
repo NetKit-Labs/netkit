@@ -5,6 +5,7 @@
 ROOT := $(abspath ../..)
 
 .PHONY: all run run-mlp run-cnn run-mlp-cmsis run-cnn-cmsis run-cmsis run-cnn-profile run-mlp-profile \
+  run-mobilenetv4 run-mobilenetv4-cmsis \
   run-aot run-aot-mlp run-aot-cnn run-aot-cmsis run-aot-mlp-cmsis run-aot-cnn-cmsis run-all clean clean-all
 
 all: run
@@ -75,6 +76,23 @@ run-cnn-cmsis:
 	  CNN_MAIN_OBJ=src/mnist_cnn_main_cmsis.o \
 	  run-cnn
 
+# MobileNetV4-small float32 (host/CPU) — depthwise-heavy invoke benchmark.
+run-mobilenetv4:
+	$(MAKE) -f bench.mk BACKEND=reference CMSIS_DSP=0 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_OBJDIR=bench_obj \
+	  BENCH_LIB=libnetkit_bench.a \
+	  MNV4_BENCH=mobilenetv4_bench \
+	  MNV4_MAIN_OBJ=src/mobilenetv4_main.o \
+	  run-mobilenetv4
+
+run-mobilenetv4-cmsis:
+	$(MAKE) -f bench.mk BACKEND=cmsis-dsp CMSIS_DSP=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_OBJDIR=bench_obj_cmsis \
+	  BENCH_LIB=libnetkit_bench_cmsis.a \
+	  MNV4_BENCH=mobilenetv4_bench_cmsis \
+	  MNV4_MAIN_OBJ=src/mobilenetv4_main_cmsis.o \
+	  run-mobilenetv4
+
 run-cnn-profile:
 	$(MAKE) -f bench.mk BACKEND=reference CMSIS_DSP=0 NETKIT_LOOP_UNROLL=0 \
 	  BENCH_OBJDIR=bench_obj \
@@ -110,11 +128,13 @@ run-aot-cnn-cmsis:
 clean:
 	rm -f mnist_mlp_bench mnist_cnn_bench mnist_cnn_profile_bench mnist_mlp_profile_bench \
 	  mnist_mlp_bench_cmsis mnist_cnn_bench_cmsis \
+	  mobilenetv4_bench mobilenetv4_bench_cmsis \
 	  mnist_mlp_bench_aot mnist_cnn_bench_aot \
 	  mnist_mlp_bench_aot_cmsis mnist_cnn_bench_aot_cmsis \
 	  libnetkit_bench.a libnetkit_bench_cmsis.a \
 	  src/main.o src/mnist_cnn_main.o src/mnist_cnn_profile_main.o src/mnist_mlp_profile_main.o \
 	  src/main_cmsis.o src/mnist_cnn_main_cmsis.o \
+	  src/mobilenetv4_main.o src/mobilenetv4_main_cmsis.o \
 	  src/mnist_mlp_aot_main.o src/mnist_cnn_aot_main.o \
 	  src/mnist_mlp_aot_main_cmsis.o src/mnist_cnn_aot_main_cmsis.o \
 	  generated/aot/mnist_mlp_aot.o generated/aot/mnist_cnn_aot.o \

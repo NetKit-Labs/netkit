@@ -6,6 +6,15 @@
 
 #include <cstddef>
 
+// Depthwise cross-row accumulator strategy (A/B experiment knob):
+//   1 = round-robin each kernel row across 4 independent accumulators, breaking the
+//       cross-row serial dependency (default; matches the FC/CNN multi-accumulator style).
+//   0 = single serial accumulator across rows (rows still use the 4-accumulator dot_strided
+//       for the inner tap reduction).
+#ifndef NETKIT_DW_ROW_ACCUM
+#define NETKIT_DW_ROW_ACCUM 1
+#endif
+
 namespace
 {
     float ConvOutputValue(float sum, NetkitKernelActivation fuse_activation)
@@ -66,10 +75,12 @@ bool ConvDepthwiseForward(const Tensor& input,
             {
                 const uint32_t c_u = static_cast<uint32_t>(c);
 
+#if NETKIT_DW_ROW_ACCUM
                 // Independent accumulators (rows round-robined across 4) break the
                 // cross-row serial dependency; each row's tap reduction uses the
                 // header-inline 4-accumulator dot_strided (input stride = channels,
-                // weight stride = 1).
+                // weight stride = 1). One dot_strided call site keeps code size small
+                // (~+144 B vs serial); the per-row switch is the only added cost.
                 float s0 = 0.0f;
                 float s1 = 0.0f;
                 float s2 = 0.0f;
@@ -106,6 +117,27 @@ bool ConvDepthwiseForward(const Tensor& input,
                 }
 
                 const float sum = (bias ? bias[c] : 0.0f) + ((s0 + s1) + (s2 + s3));
+#else
+                // Serial cross-row combine (rows still use the 4-accumulator dot_strided
+                // for the inner tap reduction).
+                float acc = 0.0f;
+                if (kw_count > 0u)
+                {
+                    for (int kh = kh_lo; kh < kh_hi; ++kh)
+                    {
+                        const uint32_t in_row = static_cast<uint32_t>(base_h + kh) * in_w_u;
+                        const uint32_t in_base =
+                            (in_row + static_cast<uint32_t>(base_w + kw_lo)) * ch_u + c_u;
+                        const uint32_t w_base =
+                            (c_u * kernel_h_u + static_cast<uint32_t>(kh)) * kernel_w_u +
+                            static_cast<uint32_t>(kw_lo);
+                        acc += NetkitLoopUnroll::dot_strided(in + in_base, ch_u, weights + w_base,
+                                                             1u, kw_count);
+                    }
+                }
+
+                const float sum = (bias ? bias[c] : 0.0f) + acc;
+#endif
                 out[out_spatial_base + c_u] = ConvOutputValue(sum, fuse_activation);
             }
         }

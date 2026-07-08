@@ -93,6 +93,17 @@ make -C benchmark/netkit run-cnn-cmsis
 make -C benchmark/tflm run-cnn
 ```
 
+## MobileNetV4-small (depthwise-heavy, host only)
+
+`models/mobilenetv4_small.nk` (CNN, input **56×56×3**, 10 classes, 12 UIB blocks) is a larger, **depthwise-heavy** float32 model used to exercise `ConvDepthwiseForward`. It is host/CPU only (the model + activations are too large for the target MCU). It reuses the 10 embedded MNIST images (one per class), upsampled 28×28×1 → 56×56×3, and times **every** invoke over 10 images × 30 loops (300 invokes), reporting the cold first invoke plus warm median/min/mean/stddev.
+
+```bash
+make -C benchmark/netkit run-mobilenetv4         # netkit reference kernels
+make -C benchmark/netkit run-mobilenetv4-cmsis   # netkit CMSIS-DSP
+```
+
+This benchmark is **not** part of `compare.sh` / `run-all` (no TFLM counterpart) and accuracy is not meaningful (fixture weights) — it measures invoke latency only.
+
 ## Models
 
 | Model | netkit file | Architecture |

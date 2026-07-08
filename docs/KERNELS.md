@@ -79,6 +79,13 @@ On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP acceler
 
 **Float32 path:** when `NETKIT_USE_CMSIS_DSP=1`, `cmsis_dsp_util.cpp` provides contiguous f32/q7 helpers (`arm_copy_f32`, `arm_max_f32`, `arm_dot_prod_f32`, `arm_add_f32`, `arm_mult_f32`, `arm_scale_f32`) used by reference fallbacks, im2col/direct conv kernels, and board firmware staging/argmax. Asymmetric pool layers route through `Kernels::MaxPool2dForwardPadded` / `AvgPool2dForwardPadded` instead of bypassing to `ReferenceKernel`.
 
+**Hot dot product is header-inline (code-size note).** `CmsisDspUtil::DotProductF32` (in `cmsis_dsp_util.hpp`) is `inline` so the FC/conv reduction loops inline at `-O2` without LTO. It resolves at compile time:
+
+- **`NETKIT_USE_CMSIS_DSP=1`** → out-of-line call to `arm_dot_prod_f32` (via the `DotProductF32Cmsis` shim). Callers (`conv1x1`, `conv_direct`, `im2col_partial`, dense FC) stay small.
+- **CMSIS-DSP off (pure reference)** → the 4-accumulator `NetkitLoopUnroll::dot_contiguous` is inlined into **every** caller. This is the speed win (no cross-TU call, no LTO) but it grows `.text`. Measured at `-O2` (Cortex-M4): `conv_direct` ~4.0 KB → ~10.3 KB (**+6.2 KB**), with smaller bumps in `reference_kernel`/`conv1x1`/`im2col_partial` (~+9.4 KB total across the float conv/FC kernels). CMSIS-DSP builds see almost none of this (the dot is a call), and firmwares that do not link the float conv path (e.g. FC/AOT MLP, int8 CMSIS-NN CNN) pay nothing after `--gc-sections`.
+
+  **Consideration — reclaiming the ~6 KB:** the only config that actually pays it is a **float CNN built with CMSIS-DSP disabled** (e.g. a flash-constrained MCU running float conv on reference kernels). If you hit that, make the reference `DotProductF32` *out-of-line* (a single shared definition in `cmsis_dsp_util.cpp` instead of the header-inline `dot_contiguous`) so `conv_direct`/`conv1x1` call it once rather than inlining per output. That recovers most of the size at a small speed cost **only in that reference-only config** — CMSIS builds are unaffected because they already call the shim. Left inlined by default because netkit prioritizes speed and no shipped firmware currently pays the size.
+
 **Int8 quant path:** layer compute is CMSIS-NN (`arm_convolve_wrapper_s8`, pool, FC, softmax). When `NETKIT_USE_CMSIS_DSP=1`, the same util module uses CMSIS-DSP for int8 copy/argmax (`arm_copy_q7`, `arm_max_q7`). MCU firmware should stage int8 inputs in SRAM before the first conv (TFLM copies into the tensor arena; netkit benchmark firmware uses `g_input_staging` in `main.cpp`) so the conv kernel reads activations from SRAM, not flash-resident test vectors.
 
 ### CMSIS kernel workspace

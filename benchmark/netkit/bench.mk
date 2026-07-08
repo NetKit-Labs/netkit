@@ -105,6 +105,7 @@ BENCH_MAIN_CPPFLAGS := -DNETKIT_BENCH_BACKEND=\"$(BACKEND)\"
 
 MLP_SRC := src/main.cc
 CNN_SRC := src/mnist_cnn_main.cc
+MNV4_SRC := src/mobilenetv4_main.cc
 MLP_PROFILE_SRC := src/mnist_mlp_profile_main.cc
 CNN_PROFILE_SRC := src/mnist_cnn_profile_main.cc
 MLP_IMAGES_CC := $(SHARED_GEN)/mnist_test_images.cc
@@ -116,16 +117,19 @@ CNN_PROFILE_BENCH ?= mnist_cnn_profile_bench
 CNN_PROFILE_MAIN_OBJ ?= src/mnist_cnn_profile_main.o
 MLP_PROFILE_BENCH ?= mnist_mlp_profile_bench
 MLP_PROFILE_MAIN_OBJ ?= src/mnist_mlp_profile_main.o
+MNV4_BENCH ?= mobilenetv4_bench
+MNV4_MAIN_OBJ ?= src/mobilenetv4_main.o
 
 BENCH_LIB_OBJS := $(addprefix $(BENCH_OBJDIR)/,$(BENCH_RUNTIME_SOURCES:.cpp=.o))
 
-.PHONY: build-mlp build-cnn build-cnn-profile build-mlp-profile build-lib
+.PHONY: build-mlp build-cnn build-cnn-profile build-mlp-profile build-lib build-mobilenetv4 run-mobilenetv4
 
 build-lib: $(BENCH_LIB)
 build-mlp: $(MLP_BENCH)
 build-cnn: $(CNN_BENCH)
 build-cnn-profile: $(CNN_PROFILE_BENCH)
 build-mlp-profile: $(MLP_PROFILE_BENCH)
+build-mobilenetv4: $(MNV4_BENCH)
 
 $(MLP_IMAGES_CC) $(CNN_IMAGES_CC):
 	$(MAKE) -C ../tflm export-assets
@@ -149,6 +153,11 @@ $(CNN_BENCH): $(BENCH_LIB) $(CNN_MAIN_OBJ) $(CNN_IMAGES_OBJ)
 	$(TFLM_HOST_CXX) $(TFLM_CXXFLAGS) $(BENCH_KERNEL_CPPFLAGS) $(TFLM_BENCH_INCLUDES) \
 	  -o $@ $(CNN_MAIN_OBJ) $(CNN_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS)
 
+# MobileNetV4-small reuses the embedded MNIST CNN images (upsampled 28x28x1 -> 56x56x3).
+$(MNV4_BENCH): $(BENCH_LIB) $(MNV4_MAIN_OBJ) $(CNN_IMAGES_OBJ)
+	$(TFLM_HOST_CXX) $(TFLM_CXXFLAGS) $(BENCH_KERNEL_CPPFLAGS) $(TFLM_BENCH_INCLUDES) \
+	  -o $@ $(MNV4_MAIN_OBJ) $(CNN_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS)
+
 $(CNN_PROFILE_BENCH): $(BENCH_LIB) $(CNN_PROFILE_MAIN_OBJ) $(CNN_IMAGES_OBJ)
 	$(TFLM_HOST_CXX) $(TFLM_CXXFLAGS) $(BENCH_KERNEL_CPPFLAGS) $(TFLM_BENCH_INCLUDES) \
 	  -o $@ $(CNN_PROFILE_MAIN_OBJ) $(CNN_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS)
@@ -161,6 +170,9 @@ $(MLP_MAIN_OBJ): $(MLP_SRC) $(MLP_IMAGES_CC)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
 
 $(CNN_MAIN_OBJ): $(CNN_SRC) $(CNN_IMAGES_CC)
+	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
+
+$(MNV4_MAIN_OBJ): $(MNV4_SRC) $(CNN_IMAGES_CC)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
 
 $(CNN_PROFILE_MAIN_OBJ): $(CNN_PROFILE_SRC) $(CNN_IMAGES_CC)
@@ -180,6 +192,9 @@ run-mlp: $(MLP_BENCH)
 
 run-cnn: $(CNN_BENCH)
 	@cd $(ROOT) && ./benchmark/netkit/$(CNN_BENCH) models/mnist_cnn.nk
+
+run-mobilenetv4: $(MNV4_BENCH)
+	@cd $(ROOT) && ./benchmark/netkit/$(MNV4_BENCH) models/mobilenetv4_small.nk
 
 run-cnn-profile: $(CNN_PROFILE_BENCH)
 	@cd $(ROOT) && ./benchmark/netkit/$(CNN_PROFILE_BENCH) models/mnist_cnn.nk

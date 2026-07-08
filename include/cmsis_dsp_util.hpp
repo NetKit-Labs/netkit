@@ -23,6 +23,12 @@ float DotProductF32Cmsis(const float* a, const float* b, uint32_t count);
 // Contiguous dot product. Header-inline so the hot FC/CNN reduction loops inline into their
 // kernels at -O2 (no cross-translation-unit call, no LTO needed). The reference path uses the
 // 4-accumulator dot_contiguous; the CMSIS path dispatches to arm_dot_prod_f32 via the shim.
+//
+// Code-size note: in CMSIS-off (reference) builds the 4-accumulator body is inlined into every
+// caller (conv_direct/conv1x1/im2col_partial/dense FC), costing ~+6 KB in conv_direct alone at
+// -O2 (Cortex-M4). CMSIS builds pay ~nothing (this is a call). If a flash-constrained,
+// reference-only float-CNN build needs that space back, move the reference branch out-of-line
+// into cmsis_dsp_util.cpp. See docs/KERNELS.md "Hot dot product is header-inline".
 inline float DotProductF32(const float* a, const float* b, uint32_t count)
 {
 #if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP

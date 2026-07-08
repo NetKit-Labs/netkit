@@ -72,6 +72,7 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP backends enabled (see CMSIS section) |
 | `NETKIT_IM2COL` | float Conv2D strategy (single tri-state knob): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets** (cpu/mcu/mpu) — direct convolution with the multi-accumulator dot is fastest for the small models we target. Leave unset for the default, or opt into `1`/`2` per workload. Int8 quantized inference uses CMSIS-NN, not float im2col. |
 | `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Most likely worth considering on **MPU** targets with flash headroom — avoid on tight MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
+| `NETKIT_DW_ROW_ACCUM` | Depthwise conv cross-row accumulator strategy (default **1**). `1` = round-robin kernel rows across 4 independent accumulators (breaks the cross-row serial dependency; +~144 B). `0` = single serial cross-row accumulator. Both keep the 4-accumulator inner tap reduction (`dot_strided`). Benchmarks show no measurable difference on out-of-order hosts; the break can help in-order MCUs with tall (5×5) kernels. Defined in `src/conv_depthwise_kernel.cpp`. |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
