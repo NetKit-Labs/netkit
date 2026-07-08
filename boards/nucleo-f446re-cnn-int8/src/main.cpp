@@ -8,7 +8,6 @@
 #include "mnist_cnn_int8_aot.hpp"
 #include "mnist_cnn_int8_test_images.h"
 #include "netkit_config.h"
-#include "quant_trace.hpp"
 #include "stm32f446xx.h"
 #include "uart.h"
 
@@ -101,8 +100,6 @@ extern "C" int main(void)
     Arena arena;
     arena.init(g_arena_memory, kArenaCapacity);
 
-    QuantTrace::Reset();
-
     aot::Model model;
     if (!model.load(arena))
     {
@@ -130,7 +127,6 @@ extern "C" int main(void)
                     static_cast<int>(g_output_i8[predicted]));
         PrintOutI8Uart(g_output_i8);
         uart_write("\r\n");
-        QuantTrace::PrintSummaryUart();
     }
 
     std::array<double, kRuns> run_averages_us{};

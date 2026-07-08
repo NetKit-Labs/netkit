@@ -53,11 +53,18 @@ INCLUDES := \
 
 NETKIT_WEIGHTS_IN_RAM ?= 0
 
-NETKIT_CMSIS_DSP ?= 1
-NETKIT_CMSIS_NN ?= 1
+# Board firmware always requires CMSIS — do not inherit CI/host NETKIT_CMSIS_*=0 from env.
+override NETKIT_CMSIS_DSP := 1
+override NETKIT_CMSIS_NN := 1
 
 NETKIT_QUANT_TRACE ?= 0
 NETKIT_MCU_QUANT_ONLY ?= 1
+
+ifeq ($(NETKIT_QUANT_TRACE),1)
+NETKIT_TRACE_SOURCES := $(NETKIT_ROOT)/src/quant_trace.cpp
+else
+NETKIT_TRACE_SOURCES :=
+endif
 
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU=1 \
@@ -94,7 +101,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/resnet_basic_block.cpp \
 	$(NETKIT_ROOT)/src/convnextv2_block.cpp \
 	$(NETKIT_ROOT)/src/yolox_decoupled_head.cpp \
-	$(NETKIT_ROOT)/src/quant_trace.cpp \
+	$(NETKIT_TRACE_SOURCES) \
 	$(NETKIT_ROOT)/src/nk_format.cpp \
 	$(NETKIT_ROOT)/src/nk_loader.cpp
 else
@@ -122,7 +129,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/mlp.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp \
 	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
-	$(NETKIT_ROOT)/src/quant_trace.cpp \
+	$(NETKIT_TRACE_SOURCES) \
 	$(NETKIT_ROOT)/src/cmsis_nn_quant_backend.cpp \
 	$(NETKIT_ROOT)/src/cmsis_quant_plan.cpp \
 	$(NETKIT_ROOT)/src/cnn_quant.cpp \
@@ -212,7 +219,7 @@ GEN_SOURCES := \
 CFLAGS := $(MCU_CORE_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
 CXXFLAGS := $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
 ASFLAGS := $(MCU_ASFLAGS) $(MCU_DEBUG_FLAGS)
-LDFLAGS := $(MCU_LDFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+LDFLAGS := $(MCU_LDFLAGS) $(NETKIT_CPPFLAGS) -T$(LINKER_SCRIPT) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map
 
 LIBNETKIT := $(LIB_DIR)/libnetkit_cnn_int8.a
 

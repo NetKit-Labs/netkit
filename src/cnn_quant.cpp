@@ -1,7 +1,6 @@
 #include "cnn.hpp"
 #include "cmsis_quant_plan.hpp"
 #include "netkit_config.h"
-#include "quant_trace.hpp"
 #include "tensor_factory.hpp"
 
 #include <algorithm>

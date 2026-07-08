@@ -4,6 +4,8 @@
 
 #include <cstdio>
 
+#if defined(NETKIT_QUANT_TRACE) && NETKIT_QUANT_TRACE
+
 #if defined(NETKIT_QUANT_TRACE_UART) && NETKIT_QUANT_TRACE_UART
 #include "uart.h"
 #endif
@@ -215,3 +217,5 @@ namespace QuantTrace
 #endif
 
 }  // namespace QuantTrace
+
+#endif  // NETKIT_QUANT_TRACE

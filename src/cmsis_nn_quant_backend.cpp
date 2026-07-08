@@ -811,12 +811,12 @@ namespace CmsisNnQuant
 
 void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& /*plan*/) {}
 void FinalizePool2DPlan(CmsisQuantPlan::Pool2DPlan& /*plan*/) {}
-bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& /*plan*/,
+bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
                     const int8_t* /*weights*/,
                     const int32_t* /*bias*/,
                     Arena& /*arena*/)
 {
-    return false;
+    return plan.ready;
 }
 
 bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& /*plan*/,

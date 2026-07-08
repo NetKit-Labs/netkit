@@ -56,6 +56,8 @@ struct Stats
     uint32_t ping_buffer_bytes = 0;
 };
 
+#if defined(NETKIT_QUANT_TRACE) && NETKIT_QUANT_TRACE
+
 void Reset();
 
 const Stats& GetStats();
@@ -79,10 +81,30 @@ void RecordSoftmaxReference();
 // Write a multi-line summary into buf (NUL-terminated). Returns bytes written excluding NUL.
 std::size_t FormatSummary(char* buf, std::size_t capacity);
 
-#if defined(NETKIT_QUANT_TRACE) && NETKIT_QUANT_TRACE
 void PrintSummaryUart();
-#else
+
+#else  // !NETKIT_QUANT_TRACE
+
+inline void Reset() {}
+inline const Stats& GetStats()
+{
+    static const Stats kEmpty{};
+    return kEmpty;
+}
+inline void RecordKernelPlan(uint32_t, uint32_t) {}
+inline void RecordConv2dCmsisOk() {}
+inline void RecordConv2dCmsisFail(Conv2dFail, int32_t = 0, uint32_t = 0) {}
+inline void RecordConv2dReference() {}
+inline void RecordPoolCmsisOk() {}
+inline void RecordPoolReference() {}
+inline void RecordFcCmsisOk() {}
+inline void RecordFcCmsisFail(FcFail, int32_t = 0, uint32_t = 0) {}
+inline void RecordFcReference() {}
+inline void RecordSoftmaxCmsisOk() {}
+inline void RecordSoftmaxReference() {}
+inline std::size_t FormatSummary(char*, std::size_t) { return 0; }
 inline void PrintSummaryUart() {}
-#endif
+
+#endif  // NETKIT_QUANT_TRACE
 
 }  // namespace QuantTrace
