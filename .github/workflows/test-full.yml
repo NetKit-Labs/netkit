@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Install Clang
         run: |
@@ -33,4 +35,4 @@ jobs:
       - name: Run full regression
         env:
           GITHUB_ACTIONS: true
-        run: make NETKIT_CMSIS_DSP=0 rebuild test-full
+        run: make NETKIT_CMSIS_DSP=1 rebuild test-full

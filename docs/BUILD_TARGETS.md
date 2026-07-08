@@ -233,9 +233,9 @@ Both backends are **compile-time only** — one binary, one backend set; no runt
 
 ### Make flags
 
-CMSIS backends are **not** inferred from `NETKIT_ARCH` alone — use `NETKIT_CMSIS_*=1` or the **profile defaults** below. Override with `make NETKIT_CMSIS_DSP=0` (CI uses reference kernels this way).
+CMSIS backends are **not** inferred from `NETKIT_ARCH` alone — use `NETKIT_CMSIS_*=1` or the **profile defaults** below. Override with `make NETKIT_CMSIS_DSP=0` for a reference-kernel build (the CMake smoke step in CI builds this way).
 
-**MCU board firmware:** `boards/nucleo-f446re-cnn-int8/Makefile` **overrides** `NETKIT_CMSIS_DSP` and `NETKIT_CMSIS_NN` to `1` so CI/host env (`NETKIT_CMSIS_NN=0`, `GITHUB_ACTIONS=true`) cannot link CMSIS stub kernels. Pass `NETKIT_CPPFLAGS` on the LTO link line so CMSIS macros match compile units.
+**MCU board firmware:** `boards/nucleo-f446re-cnn-int8/Makefile` **overrides** `NETKIT_CMSIS_DSP` and `NETKIT_CMSIS_NN` to `1` so a host env that leaves CMSIS-NN off cannot link CMSIS stub kernels. Pass `NETKIT_CPPFLAGS` on the LTO link line so CMSIS macros match compile units.
 
 | `NETKIT_TARGET` | Default `NETKIT_CMSIS_DSP` | Default `NETKIT_CMSIS_NN` |
 |-----------------|----------------------------|---------------------------|

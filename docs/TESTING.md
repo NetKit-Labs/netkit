@@ -209,14 +209,14 @@ Re-run the fast workflow manually if needed:
 gh workflow run ci.yml
 ```
 
-The **`build-and-test`** job on `ubuntu-latest` uses **host Clang** only (reference kernels — no CMSIS compile smoke). The workflow sets `NETKIT_CMSIS_DSP=0` and `NETKIT_CMSIS_NN=0` for all steps (CI runners do not fetch CMSIS submodules):
+The **`build-and-test`** job on `ubuntu-latest` uses **host Clang**. The checkout fetches the CMSIS submodules (`submodules: recursive`), so the Make build runs the **CMSIS-DSP** float32 path (`NETKIT_CMSIS_DSP=1`). CMSIS-NN stays off — it is Cortex-M (MCU) only and cannot link on the host `cpu` target:
 
-1. `make` — initial build (reference kernels)
-2. `make rebuild test` — default C++ embedded + C API + fast Python suite
+1. `make` — initial build (cpu profile: CMSIS-DSP on)
+2. `make NETKIT_CMSIS_DSP=1 rebuild test` — default C++ embedded + C API + fast Python suite, CMSIS-DSP kernels
 3. Example and CLI smoke tests
-4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release build)
+4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release, `-DNETKIT_CMSIS_DSP=OFF`) — cross-checks the **reference-kernel** path in the same run
 
-CMSIS backends are validated **locally** (`make cmsis-init`, `make NETKIT_CMSIS_DSP=1 test-cpp`, `./tools/run_cmsis_dsp_smoke.sh`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
+The **`Test full`** workflow uses the same setup (`submodules: recursive`, `make NETKIT_CMSIS_DSP=1 rebuild test-full`). CMSIS-NN and on-device paths are still validated **locally only** (`make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 ...`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
 
 **CI build notes**
 

@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Install Clang
         run: |
@@ -39,7 +41,7 @@ jobs:
       - name: Run C++, C API, and Python tests
         env:
           GITHUB_ACTIONS: true
-        run: make NETKIT_CMSIS_DSP=0 rebuild test
+        run: make NETKIT_CMSIS_DSP=1 rebuild test
 
       - name: CMake configure and build
         run: |

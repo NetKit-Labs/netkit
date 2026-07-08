@@ -74,11 +74,6 @@ else
   NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
 endif
-# GitHub Actions runners do not fetch CMSIS submodules — use reference kernels in CI.
-ifeq ($(GITHUB_ACTIONS),true)
-  override NETKIT_CMSIS_DSP := 0
-  override NETKIT_CMSIS_NN := 0
-endif
 NETKIT_IM2COL_FULL ?= 0
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_ARCH ?=
