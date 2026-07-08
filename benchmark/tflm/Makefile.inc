@@ -30,6 +30,19 @@ $(EXTERNAL_DIR)/generated/mnist_cnn.tflite
 $(eval $(call microlite_test,mnist_cnn_benchmark,\
 $(MNIST_CNN_BENCHMARK_SRCS),$(MNIST_CNN_BENCHMARK_HDRS),$(MNIST_CNN_BENCHMARK_GENERATOR_INPUTS)))
 
+MOBILENETV4_BENCHMARK_SRCS := \
+$(EXTERNAL_DIR)/src/mobilenetv4_main.cc \
+$(EXTERNAL_DIR)/generated/mnist_cnn_test_images.cc
+
+MOBILENETV4_BENCHMARK_HDRS := \
+$(EXTERNAL_DIR)/generated/mnist_cnn_test_images.h
+
+MOBILENETV4_BENCHMARK_GENERATOR_INPUTS := \
+$(EXTERNAL_DIR)/generated/mobilenetv4_small.tflite
+
+$(eval $(call microlite_test,mobilenetv4_benchmark,\
+$(MOBILENETV4_BENCHMARK_SRCS),$(MOBILENETV4_BENCHMARK_HDRS),$(MOBILENETV4_BENCHMARK_GENERATOR_INPUTS)))
+
 # Profile build only — not linked into mnist_cnn_benchmark.
 MNIST_CNN_PROFILE_BENCHMARK_SRCS := \
 $(EXTERNAL_DIR)/src/mnist_cnn_profile_main.cc \

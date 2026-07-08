@@ -37,12 +37,22 @@ struct MobileNetV4Uib
     float* scratch = nullptr;
     uint32_t scratch_elems = 0;
 
+    // Set once forward() has folded each BatchNorm into its preceding conv's
+    // weights/bias (see FoldBatchNorm). Guards against re-folding on later calls.
+    bool bn_folded = false;
+
     static uint32_t MakeDivisible(float value, uint32_t divisor = 8);
     uint32_t expanded_channels() const;
     uint32_t start_dw_stride() const;
     uint32_t middle_dw_stride() const;
     void output_spatial(uint32_t in_h, uint32_t in_w, uint32_t& out_h, uint32_t& out_w) const;
     bool has_residual() const;
+
+    // Fold every BatchNorm (out = in*scale + beta) into the weights/bias of the
+    // conv/depthwise that produces it, so forward() can drop the standalone BN
+    // pass and fuse the following ReLU into the conv epilogue (matches how a
+    // TFLite converter folds BN + fused activation). Idempotent via bn_folded.
+    void FoldBatchNorm();
 
     void forward(const Tensor& input, Tensor& output);
 };

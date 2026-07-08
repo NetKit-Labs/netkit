@@ -12,7 +12,7 @@ ifeq ($(GMAKE),)
   GMAKE := make
 endif
 
-.PHONY: all fetch-tflm export-assets install-benchmark build build-mlp build-cnn build-cnn-profile build-mlp-profile run run-mlp run-cnn run-cnn-profile run-mlp-profile clean
+.PHONY: all fetch-tflm export-assets export-mobilenetv4 install-benchmark build build-mlp build-cnn build-cnn-profile build-mlp-profile build-mobilenetv4 run run-mlp run-cnn run-cnn-profile run-mlp-profile run-mobilenetv4 clean
 
 all: run
 
@@ -27,6 +27,9 @@ export-cnn-int8:
 
 export-int8-test-images:
 	@python3 tools/export_int8_test_images.py
+
+export-mobilenetv4:
+	@python3 tools/export_mobilenetv4.py
 
 install-benchmark: fetch-tflm
 	@cp Makefile.inc $(TFLM_ROOT)/tensorflow/lite/micro/tools/make/additional_tests.inc
@@ -47,6 +50,11 @@ build-mlp-profile: install-benchmark
 	@test -f generated/mnist_mlp.tflite && test -f generated/mnist_test_images.cc || $(MAKE) export-assets
 	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) mnist_mlp_profile_benchmark
 
+build-mobilenetv4: install-benchmark
+	@test -f generated/mobilenetv4_small.tflite || $(MAKE) export-mobilenetv4
+	@test -f generated/mnist_cnn_test_images.cc || $(MAKE) export-assets
+	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) mobilenetv4_benchmark
+
 build: build-mlp build-cnn
 
 run-mlp: build-mlp
@@ -60,6 +68,9 @@ run-cnn-profile: build-cnn-profile
 
 run-mlp-profile: build-mlp-profile
 	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) run_mnist_mlp_profile_benchmark
+
+run-mobilenetv4: build-mobilenetv4
+	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) EXTERNAL_DIR=$(EXTERNAL_REL) run_mobilenetv4_benchmark
 
 run: run-mlp run-cnn
 

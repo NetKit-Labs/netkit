@@ -6,7 +6,7 @@
 #include "tensor_access.hpp"
 
 #include <algorithm>
-#include <cmath>
+#include <cstddef>
 #include <cstring>
 
 namespace
@@ -71,6 +71,79 @@ bool MobileNetV4Uib::has_residual() const
     return stride == 1 && in_channels == out_channels;
 }
 
+namespace
+{
+    // Fold BatchNorm (y = x*scale + beta, per output channel) into the conv that
+    // produced x. Conv output channel o is sum(W[o]*in) + conv_bias[o], so
+    //   BN(o) = scale[o]*(sum(W[o]*in) + conv_bias[o]) + beta[o]
+    //         = sum((scale[o]*W[o])*in) + (scale[o]*conv_bias[o] + beta[o]).
+    // Weights are laid out as out_ch contiguous blocks of weights_per_out
+    // (pointwise: in_c per out channel; depthwise: kh*kw per channel). Returns
+    // the effective bias pointer to hand the kernel (the folded conv_bias, or
+    // beta itself when the conv had no bias).
+    float* FoldBnIntoConv(float* weights,
+                          float* conv_bias,
+                          const float* bn_scale,
+                          const float* bn_bias,
+                          uint32_t out_ch,
+                          uint32_t weights_per_out)
+    {
+        for (uint32_t o = 0; o < out_ch; ++o)
+        {
+            const float s = bn_scale[o];
+            float* w = weights + static_cast<std::size_t>(o) * weights_per_out;
+            for (uint32_t k = 0; k < weights_per_out; ++k)
+                w[k] *= s;
+        }
+        if (conv_bias)
+        {
+            for (uint32_t o = 0; o < out_ch; ++o)
+                conv_bias[o] = bn_scale[o] * conv_bias[o] + bn_bias[o];
+            return conv_bias;
+        }
+        // No conv bias: BN's beta becomes the (unscaled) fused bias.
+        return const_cast<float*>(bn_bias);
+    }
+}
+
+void MobileNetV4Uib::FoldBatchNorm()
+{
+    if (bn_folded)
+        return;
+
+    const uint32_t in_c = static_cast<uint32_t>(in_channels);
+    const uint32_t out_c = static_cast<uint32_t>(out_channels);
+    const uint32_t expand_c = expanded_channels();
+
+    if (start_dw_kernel > 0 && start_bn_scale && start_bn_bias)
+    {
+        const uint32_t k2 = static_cast<uint32_t>(start_dw_kernel * start_dw_kernel);
+        start_dw_bias =
+            FoldBnIntoConv(start_dw_weights, start_dw_bias, start_bn_scale, start_bn_bias, in_c, k2);
+    }
+
+    if (expand_bn_scale && expand_bn_bias)
+    {
+        expand_bias =
+            FoldBnIntoConv(expand_weights, expand_bias, expand_bn_scale, expand_bn_bias, expand_c, in_c);
+    }
+
+    if (middle_dw_kernel > 0 && middle_bn_scale && middle_bn_bias)
+    {
+        const uint32_t k2 = static_cast<uint32_t>(middle_dw_kernel * middle_dw_kernel);
+        middle_dw_bias = FoldBnIntoConv(
+            middle_dw_weights, middle_dw_bias, middle_bn_scale, middle_bn_bias, expand_c, k2);
+    }
+
+    if (proj_bn_scale && proj_bn_bias)
+    {
+        proj_bias =
+            FoldBnIntoConv(proj_weights, proj_bias, proj_bn_scale, proj_bn_bias, out_c, expand_c);
+    }
+
+    bn_folded = true;
+}
+
 void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
 {
     const uint32_t in_h = input.shape[0];
@@ -88,6 +161,10 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
 
     if (!scratch || scratch_elems < required_scratch || !output.data)
         return;
+
+    // Fold BN into conv weights/bias once so the passes below need no standalone
+    // BN and can fuse ReLU into the conv epilogue.
+    FoldBatchNorm();
 
     float* work_a = scratch;
     float* work_b = scratch + static_cast<std::size_t>(max_spatial) * expand_c;
@@ -127,7 +204,6 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                         in_channels,
                                         NetkitKernelActivation::None,
                                         next);
-        fused_ops::BatchNormInPlace(next, in_channels, start_bn_scale, start_bn_bias);
 
         cur_h = next_h;
         cur_w = next_w;
@@ -148,10 +224,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                0,
                                static_cast<int>(cur_c),
                                static_cast<int>(expand_c),
-                               NetkitKernelActivation::None,
+                               NetkitKernelActivation::ReLU,
                                next);
-        fused_ops::BatchNormInPlace(next, static_cast<int>(expand_c), expand_bn_scale, expand_bn_bias);
-        fused_ops::ReluInPlace(next);
 
         cur_c = expand_c;
         cur_data = expand_out;
@@ -180,10 +254,8 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                         pad,
                                         pad,
                                         static_cast<int>(expand_c),
-                                        NetkitKernelActivation::None,
+                                        NetkitKernelActivation::ReLU,
                                         next);
-        fused_ops::BatchNormInPlace(next, static_cast<int>(expand_c), middle_bn_scale, middle_bn_bias);
-        fused_ops::ReluInPlace(next);
 
         cur_h = next_h;
         cur_w = next_w;
@@ -203,7 +275,6 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                out_channels,
                                NetkitKernelActivation::None,
                                output);
-        fused_ops::BatchNormInPlace(output, out_channels, proj_bn_scale, proj_bn_bias);
     }
 
     if (has_residual())
