@@ -4,7 +4,7 @@
 # vs TFLM Micro comparison (MNIST / compare.sh). Refresh if TFLM defaults change.
 #
 # For TF Lite / LiteRT (MPU) ImageNet benches, use tflite_host_flags.mk instead
-# (BENCH_FLAG_PROFILE=tflite): -O3 -DNDEBUG and no TF_LITE_DISABLE_X86_NEON.
+# (BENCH_FLAG_PROFILE=tflite): LiteRT-matched -O3 -DNDEBUG, no TFLM Micro flags.
 #
 # Include from benchmark/netkit/bench.mk when BENCH_FLAG_PROFILE=tflm (default):
 #   include ../common/tflm_host_flags.mk
@@ -55,10 +55,12 @@ TFLM_LDFLAGS := -lm
 
 # netkit CPU runtime defines (benchmark uses file-loaded .nk models).
 # Default direct Conv2D loops (0) on cpu/mcu/mpu benchmark builds.
+# Explicit mmap: CPU/host file load matches TF Lite model_path mmap default.
 NETKIT_IM2COL ?= 0
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_BENCH_CPPFLAGS := \
   -DNETKIT_TARGET_CPU=1 \
+  -DNETKIT_USE_MMAP=1 \
   -DNETKIT_IM2COL=$(NETKIT_IM2COL) \
   -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
 

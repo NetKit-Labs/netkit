@@ -31,6 +31,18 @@ struct Runtime
     int32_t input_zero_point = 0;
     // When true, DenseSoftmax writes FC logits and skips Softmax (argmax-equivalent).
     bool omit_final_softmax = false;
+    // xnn_weights_cache_t when XNNPACK enabled; owned by Runtime, deleted in DestroyRuntime.
+    void* xnn_weights_cache = nullptr;
+    // Shared xnn_workspace_t (TF Lite XNNPACK delegate default); owned by Runtime.
+    void* xnn_workspace = nullptr;
+    // Full-network XNNPACK qs8 subgraph (MobileNetV4 ImageNet int8, etc.).
+    void* xnn_network_runtime = nullptr;  // xnn_runtime_t
+    bool xnn_network_ready = false;
+    uint32_t xnn_net_ext_in = 0;
+    uint32_t xnn_net_ext_out = 1;
+    // Owned per-channel bias scale arrays for network subgraph tensors.
+    float** xnn_net_bias_scales = nullptr;
+    uint32_t xnn_net_bias_scales_count = 0;
 };
 
 bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);

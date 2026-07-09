@@ -16,7 +16,11 @@ bool CNNNetwork::InitQuantizedActivationBuffers(Arena& arena, uint32_t in_h, uin
     max_activation_elements = 0;
     layer_output_views_ = nullptr;
     output_cache_ = {};
-    quant_runtime_ = nullptr;
+    if (quant_runtime_)
+    {
+        CmsisQuantPlan::DestroyRuntime(*quant_runtime_);
+        quant_runtime_ = nullptr;
+    }
 
     if (!blocks || num_layers == 0)
         return blocks != nullptr;

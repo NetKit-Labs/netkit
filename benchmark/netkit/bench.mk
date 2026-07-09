@@ -15,8 +15,10 @@
 ROOT := $(abspath ../..)
 SHARED_GEN := ../tflm/generated
 # Flag profile:
-#   tflm   — match TFLM Micro host (-O2, TF_LITE_DISABLE_X86_NEON); MNIST/TFLM compare
-#   tflite — match TF Lite / LiteRT MPU host (-O3 -DNDEBUG, SIMD on); ImageNet compare
+#   tflm   — match TFLM Micro host (-O2, TF_LITE_DISABLE_X86_NEON, -fno-exceptions…);
+#            MNIST / compare.sh
+#   tflite — match LiteRT opt wheel (-O3 -DNDEBUG, host cc/c++, SIMD on, no TFLM
+#            Micro extras); ImageNet / TF Lite peer benches
 BENCH_FLAG_PROFILE ?= tflm
 ifeq ($(BENCH_FLAG_PROFILE),tflite)
   include ../common/tflite_host_flags.mk
@@ -31,6 +33,7 @@ XNNPACK ?= 0
 
 BENCH_RUNTIME_SOURCES := \
   src/arena.cpp \
+  src/nk_mmap.cpp \
   src/tensor_factory.cpp \
   src/tensor_access.cpp \
   src/reference_kernel.cpp \
