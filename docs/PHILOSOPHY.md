@@ -69,7 +69,7 @@ Details: [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmw
 
 The C++ engine described above is an **interpreter-style forward executor** (see [Deployment modes](#deployment-modes-interpreter-or-compiled)):
 
-1. Load a `.nk` file (architecture descriptor + float32 weights).
+1. Load a `.nk` file (architecture descriptor + float32 or int8 weights).
 2. Walk the layer list at runtime (Dense, Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, activations).
 3. Execute kernel ops via the compile-time `Kernels` facade (`MatMul`, `Conv2D`, pool, activations) — reference implementations with optional CMSIS-NN / CMSIS-DSP backends ([KERNELS.md](KERNELS.md)).
 4. Allocate weights and **ping-pong activation buffers** from a bump arena.
@@ -131,9 +131,9 @@ Only **CPU** builds include `NETKIT_DESKTOP` APIs (`nk_cli_run`, `nk_run_all_tes
 
 ## Numeric precision
 
-**Today:** float32 only for weights, activations, and math.
+**Today:** float32 and int8 (PTQ `.nk` payloads; int8 activations end-to-end on host/MCU). Int8 I/O stays integer in C/C++ — no runtime float quant/dequant.
 
-**Planned:** float16, int16, int8, int4 — see [DATATYPES.md](DATATYPES.md). Expect new `.nk` format versions and packager-side quantization, with runtime decode stubs or native kernels per type.
+**Planned:** float16, int16, int4 — see [DATATYPES.md](DATATYPES.md). Expect new `.nk` format versions and packager-side quantization, with runtime decode stubs or native kernels per type.
 
 ## Design principles
 

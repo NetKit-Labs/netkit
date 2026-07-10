@@ -1462,6 +1462,9 @@ namespace
                     MobilenetV4UibPlan& up = runtime.layers[i].uib;
                     bool ran_plans = false;
 
+#if NETKIT_XNNPACK_PLAN_HOIST
+                    // Fused UIB subgraph only exists when XNNPACK plan hoist is on (CI forces
+                    // NETKIT_XNNPACK=0 and compiles reference / Try* fallbacks instead).
                     if (up.xnn_subgraph_ready)
                     {
                         int8_t* residual_buf = nullptr;
@@ -1502,6 +1505,7 @@ namespace
                             ran_plans = true;
                         }
                     }
+#endif
 
                     if (!ran_plans && up.ready && up.scratch)
                     {

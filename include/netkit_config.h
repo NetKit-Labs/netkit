@@ -126,7 +126,11 @@
 #define NETKIT_CMSIS_NN_ALLOWED 0
 #endif
 
-/* XNNPACK: host CPU and Cortex-A MPU only (not MCU). */
+/*
+ * XNNPACK (optional LayerFast backend): host CPU and Cortex-A MPU only (not MCU).
+ * Enable with Makefile/CMake NETKIT_XNNPACK=1 (default on cpu/mpu). Defines
+ * NETKIT_USE_XNNPACK at compile time when allowed. See docs/BUILD_TARGETS.md.
+ */
 #if (defined(NETKIT_TARGET_CPU) || defined(NETKIT_TARGET_MPU)) && !defined(NETKIT_TARGET_MCU)
 #define NETKIT_XNNPACK_ALLOWED 1
 #else

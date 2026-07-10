@@ -11,8 +11,8 @@ Version **3** — single-file inference bundle for embedded runtimes. Produced b
 | Header | Magic, version, network kind, input shape, layer/tensor counts, payload sizes |
 | Layer descriptors | One record per layer (dense, conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, convnextv2_block, flatten) |
 | Tensor catalog | Shape + dtype for each weight tensor, then each bias tensor |
-| Weight payload | All weight tensors concatenated (float32, little-endian) |
-| Bias payload | All bias tensors concatenated (float32, little-endian) |
+| Weight payload | All weight tensors concatenated (float32, or int8 for quantized `.nk`) |
+| Bias payload | All bias tensors concatenated (float32, or int32 for quantized `.nk`) |
 
 Weights and biases are **split into separate sections** within the `.nk` file (weights payload first, then biases payload).
 
@@ -110,7 +110,7 @@ Weight/bias tensor pairs (in layer order, W then B each):
 | Field | Type |
 |-------|------|
 | `rank` | `uint8` |
-| `dtype` | `uint8` (`1=float32`) |
+| `dtype` | `uint8` (`1=float32`, `2=int8`, … — see [DATATYPES.md](DATATYPES.md)) |
 | pad | `uint16` |
 | `dims` | `uint32[4]` (unused dims `0`) |
 | `num_elements` | `uint32` |
@@ -205,4 +205,4 @@ Headers: `include/nk_format.hpp`, `include/nk_loader.hpp`
 ## Related docs
 
 - [ONNX.md](ONNX.md) — supported ONNX ops for conversion
-- [DATATYPES.md](DATATYPES.md) — float32-only inference today
+- [DATATYPES.md](DATATYPES.md) — float32 and int8 inference today; quant payload layout

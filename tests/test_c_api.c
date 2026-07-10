@@ -358,6 +358,71 @@ static void TestBufferLoad(void)
     ExpectTrue(!nk_cnn_is_quantized(&cnn), "test cnn not quantized");
 }
 
+static void TestInt8Parity(void)
+{
+    printf("\n--- int8 C API parity ---\n");
+
+    /* Tensor helpers (no model load required). */
+    int8_t mlp_buf[8] = {1, -2, 3, -4, 5, -6, 7, -8};
+    nk_tensor_t t2 = {0};
+    nk_tensor_view_2d_int8(mlp_buf, 2, 4, &t2);
+    ExpectTrue(t2.dtype == NK_DTYPE_INT8, "view2d int8 dtype");
+    ExpectTrue(t2.rank == 2 && t2.shape[0] == 2 && t2.shape[1] == 4, "view2d int8 shape");
+    ExpectTrue(nk_tensor_data_i8(&t2) == mlp_buf, "view2d int8 data ptr");
+    ExpectTrue(nk_tensor_data_f32(&t2) == nullptr, "f32 accessor null on int8");
+    ExpectTrue(nk_tensor_data_i8_const(&t2) == mlp_buf, "view2d int8 const data");
+
+    int8_t nhwc[12] = {0};
+    nk_tensor_t t3 = {0};
+    nk_tensor_view_3d_int8(nhwc, 2, 2, 3, &t3);
+    ExpectTrue(t3.dtype == NK_DTYPE_INT8 && t3.rank == 3, "view3d int8 dtype/rank");
+    ExpectTrue(t3.shape[0] == 2 && t3.shape[1] == 2 && t3.shape[2] == 3, "view3d int8 shape");
+    ExpectTrue(nk_tensor_index_nhwc(&t3, 1, 0, 2) == 1u * 2u * 3u + 2u, "nhwc index on int8");
+
+    FILE* file = fopen("models/mnist_mlp_int8.nk", "rb");
+    if (!file)
+    {
+        printf("SKIP int8 model load (models/mnist_mlp_int8.nk missing)\n");
+        return;
+    }
+    static uint8_t blob[512 * 1024];
+    const size_t nbytes = fread(blob, 1, sizeof(blob), file);
+    fclose(file);
+    ExpectTrue(nbytes > 0, "read mnist_mlp_int8.nk");
+
+    alignas(max_align_t) static unsigned char memory[4u * 1024u * 1024u];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    nk_model_t model;
+    ExpectStatus(nk_model_load_memory(blob, nbytes, &arena, &model), NK_OK, "load mlp int8");
+    ExpectTrue(nk_model_is_quantized(&model), "mlp int8 is_quantized");
+    ExpectTrue(nk_model_kind(&model) == NK_NETWORK_MLP, "mlp int8 kind");
+
+    nk_model_set_omit_final_softmax(&model, true);
+    ExpectTrue(nk_model_omit_final_softmax(&model), "omit_final_softmax set");
+    nk_model_set_omit_final_softmax(&model, false);
+    ExpectTrue(!nk_model_omit_final_softmax(&model), "omit_final_softmax clear");
+
+    const uint32_t in_n = nk_model_input_count(&model);
+    const uint32_t out_n = nk_model_output_count(&model);
+    ExpectTrue(in_n == 784, "mlp int8 input elems");
+    ExpectTrue(out_n == 10, "mlp int8 output elems");
+
+    uint32_t written = 0;
+    ExpectStatus(nk_model_run(&model, &arena, (const float*)&written, in_n, (float*)&written, out_n, &written),
+                 NK_ERR_INVALID_ARGUMENT,
+                 "float run rejected on int8 model");
+
+    static int8_t in_i8[784];
+    static int8_t out_i8[10];
+    memset(in_i8, 0, sizeof(in_i8));
+    ExpectStatus(nk_model_run_int8(&model, &arena, in_i8, in_n, out_i8, out_n, &written),
+                 NK_OK,
+                 "nk_model_run_int8 zeros");
+    ExpectTrue(written == out_n, "int8 run wrote outputs");
+}
+
 static void TestInspectModel(void)
 {
     printf("\n--- inspect model ---\n");
@@ -610,6 +675,7 @@ int main(void)
     TestArchPrint();
     TestModelMetadata();
     TestBufferLoad();
+    TestInt8Parity();
     TestInspectModel();
     TestMnistCnnLoad();
     TestModelLoadRun();

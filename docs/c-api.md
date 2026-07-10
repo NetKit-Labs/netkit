@@ -101,7 +101,7 @@ const char* nk_last_error(void);  // detail after failed call; thread-local
 
 ### `nk_dtype_t`, `nk_activation_t`, `nk_conv_activation_t`
 
-Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. **Only `NK_DTYPE_FLOAT32` is used for inference today** — see [DATATYPES.md](DATATYPES.md).
+Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. Inference uses **`NK_DTYPE_FLOAT32`** or **`NK_DTYPE_INT8`** (int8 models: `nk_model_run_int8`, int8 tensor views). float16 / int16 / int4 remain on the roadmap — [DATATYPES.md](DATATYPES.md).
 
 ### `nk_cnn_block_type_t`
 
@@ -241,6 +241,8 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_tensor_create_2d` | `TensorFactory::Create2D` |
 | `nk_tensor_create_nd` | `TensorFactory::CreateND` |
 | `nk_tensor_view_2d` | `TensorFactory::View2D` |
+| `nk_tensor_view_2d_int8` | `TensorFactory::View2DInt8` |
+| `nk_tensor_view_3d_int8` | `TensorFactory::View3DInt8` |
 | `nk_tensor_fill` | `TensorFactory::Fill` (`std::span<const float>`) |
 | `nk_tensor_print` | `TensorFactory::Print` |
 | `nk_tensor_print_labeled` | `TensorFactory::PrintLabeled` |
@@ -249,8 +251,10 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 
 | C function | C++ equivalent |
 |------------|----------------|
-| `nk_tensor_data_f32` | `tensor_data_f32` |
-| `nk_tensor_data_f32_const` | `tensor_data_f32` (const) |
+| `nk_tensor_data_f32` | `tensor_data_f32` (nullptr if not float32) |
+| `nk_tensor_data_f32_const` | `tensor_data_f32` (const; nullptr if not float32) |
+| `nk_tensor_data_i8` | `tensor_data_i8` (nullptr if not int8) |
+| `nk_tensor_data_i8_const` | `tensor_data_i8` (const; nullptr if not int8) |
 | `nk_tensor_index_nhwc` | `index_nhwc` |
 
 ### Ops (`ops.hpp`)
@@ -286,6 +290,8 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_mlp_init_layer` | `MLPNetwork::InitLayer` |
 | `nk_mlp_init_activation_buffers` | `MLPNetwork::InitActivationBuffers` |
 | `nk_mlp_has_activation_buffers` | `MLPNetwork::HasActivationBuffers` |
+| `nk_mlp_set_omit_final_softmax` | `MLPNetwork::SetOmitFinalSoftmax` |
+| `nk_mlp_omit_final_softmax` | `MLPNetwork::OmitFinalSoftmax` |
 | `nk_mlp_forward` | `MLPNetwork::forward` |
 
 #### MLP manual construction (call order)
@@ -469,7 +475,10 @@ uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
 nk_network_kind_t nk_model_kind(const nk_model_t* model);
 bool nk_model_is_quantized(const nk_model_t* model);
-nk_status_t nk_model_run(...);
+void nk_model_set_omit_final_softmax(nk_model_t* model, bool omit);
+bool nk_model_omit_final_softmax(const nk_model_t* model);
+nk_status_t nk_model_run(...);       /* float32 models only */
+nk_status_t nk_model_run_int8(...);  /* int8 models only */
 nk_status_t nk_inspect_model(...);
 nk_status_t nk_inspect_model_memory(const uint8_t* data, size_t size, nk_arena_t* arena, nk_inspect_info_t* info);
 ```
@@ -501,6 +510,14 @@ nk_status_t nk_model_run(const nk_model_t* model,
                          float* output,
                          uint32_t output_capacity,
                          uint32_t* output_count);
+
+nk_status_t nk_model_run_int8(const nk_model_t* model,
+                              nk_arena_t* arena,
+                              const int8_t* input,
+                              uint32_t input_count,
+                              int8_t* output,
+                              uint32_t output_capacity,
+                              uint32_t* output_count);
 ```
 
 These mirror querying a loaded C++ network after `NkLoader::Load` — input/output counts come from the `.nk` header and layer descriptors.
@@ -509,13 +526,27 @@ These mirror querying a loaded C++ network after `NkLoader::Load` — input/outp
 
 Loads architecture and weights from `nk_path`. Allocates network state from `arena`.
 
-### `nk_model_run`
+### Quantized (int8) inference
+
+Float32 and int8 are separate I/O paths — there is no runtime float↔int8 conversion in C/C++ ([DATATYPES.md](DATATYPES.md)).
+
+| Check / call | Role |
+|--------------|------|
+| `nk_model_is_quantized` | `true` after loading an int8 `.nk` |
+| `nk_model_run` | float32 models only; returns `NK_ERR_INVALID_ARGUMENT` on int8 models |
+| `nk_model_run_int8` | int8 models only; prequantized `int8_t` in → `int8_t` out |
+| `nk_model_set_omit_final_softmax` | Skip final Dense Softmax and write logits (MLP + quantized CNN) |
+
+Prequantize inputs in Python at export / fixture time. Host backends: XNNPACK qs8 when `NETKIT_XNNPACK=1`, else integer reference; MCU uses CMSIS-NN.
+
+### `nk_model_run` / `nk_model_run_int8`
 
 Runs one forward pass.
 
 - `input_count` must equal `nk_model_input_count(model)`
 - `output_capacity` must be ≥ `nk_model_output_count(model)`
-- On success, `*output_count` is set to the number of floats written
+- On success, `*output_count` is set to the number of elements written
+- Use `nk_model_run` for float32 and `nk_model_run_int8` for int8 — do not mix
 
 **Input layout**
 

@@ -360,7 +360,7 @@ Runtime forward pass **does not read** this section. Desktop regression uses `Nk
 | `kMaxTestCases` | 16 |
 | `kMaxCaseFloats` | 16384 |
 | `kMaxCaseNameLen` | 127 |
-| Supported `dtype` | float32 only (`1`) |
+| Supported `dtype` | float32 (`1`) and int8 (`2`) for quantized models; see [DATATYPES.md](DATATYPES.md) |
 
 ---
 
