@@ -26,8 +26,8 @@ enum class LayerKind : uint8_t
 
 struct Conv2DPlan
 {
-    int32_t input_offset = 0;
-    int32_t output_offset = 0;
+    int32_t input_offset = 0;   // -input_zero_point (CMSIS-NN / TFLM)
+    int32_t output_offset = 0;  // +output_zero_point (added after requant; TFLM convention)
     int32_t stride = 1;
     int32_t pad_h = 0;
     int32_t pad_w = 0;
@@ -66,8 +66,8 @@ struct Conv2DPlan
 
 struct DepthwiseConv2DPlan
 {
-    int32_t input_offset = 0;
-    int32_t output_offset = 0;
+    int32_t input_offset = 0;   // -input_zero_point
+    int32_t output_offset = 0;  // +output_zero_point (TFLM / CMSIS-NN)
     int32_t stride = 1;
     int32_t pad_h = 0;
     int32_t pad_w = 0;
@@ -182,9 +182,9 @@ struct MobilenetV4UibPlan
 
 struct FcPlan
 {
-    int32_t input_offset = 0;
-    int32_t filter_offset = 0;
-    int32_t output_offset = 0;
+    int32_t input_offset = 0;   // -input_zero_point
+    int32_t filter_offset = 0;  // -weight_zero_point
+    int32_t output_offset = 0;  // +output_zero_point (TFLM / CMSIS-NN)
     QuantInteger::QuantClamp clamp = QuantInteger::QuantClamp::None;
     float input_scale = 1.0f;
     float weight_scale = 1.0f;

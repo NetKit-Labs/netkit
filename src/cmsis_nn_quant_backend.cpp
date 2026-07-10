@@ -149,7 +149,7 @@ void FinalizeConv2DPlan(CmsisQuantPlan::Conv2DPlan& plan)
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_offset),
     };
     plan.cmsis.quant = {
         .multiplier = plan.multipliers,
@@ -180,7 +180,7 @@ void FinalizeDepthwiseConv2DPlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan)
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_offset),
     };
     plan.cmsis.quant = {
         .multiplier = plan.multipliers,
@@ -229,7 +229,7 @@ bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
         .input_offset = plan.input_offset,
         .filter_offset = plan.filter_offset,
         .output_offset = plan.output_offset,
-        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_offset),
     };
     const bool per_channel =
         plan.weight_channel_scales != nullptr &&
@@ -330,7 +330,7 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_offset),
     };
 
     const cmsis_nn_per_channel_quant_params quant_params = {
@@ -421,7 +421,7 @@ bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& 
         .stride = {.w = plan.stride, .h = plan.stride},
         .padding = {.w = plan.pad_w, .h = plan.pad_h},
         .dilation = {.w = 1, .h = 1},
-        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_offset),
     };
 
     const cmsis_nn_per_channel_quant_params quant_params = {
@@ -593,7 +593,7 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
         .input_offset = plan.input_offset,
         .filter_offset = plan.filter_offset,
         .output_offset = plan.output_offset,
-        .activation = activation_clamp(plan.clamp, plan.output_scale, -plan.output_offset),
+        .activation = activation_clamp(plan.clamp, plan.output_scale, plan.output_offset),
     };
 
     const cmsis_nn_dims input_dims = {.n = 1, .h = 1, .w = 1, .c = plan.in_features};
@@ -692,7 +692,7 @@ bool TryConv2dNhwcQuant(const int8_t* input,
 
     const cmsis_nn_conv_params conv_params = {
         .input_offset = -quant.input_zero_point,
-        .output_offset = -quant.output_zero_point,
+        .output_offset = quant.output_zero_point,
         .stride = {.w = stride, .h = stride},
         .padding = {.w = pad_w, .h = pad_h},
         .dilation = {.w = 1, .h = 1},
@@ -845,7 +845,7 @@ bool TryDepthwiseConv2dNhwcQuant(const int8_t* input,
 
     const cmsis_nn_dw_conv_params dw_conv_params = {
         .input_offset = -quant.input_zero_point,
-        .output_offset = -quant.output_zero_point,
+        .output_offset = quant.output_zero_point,
         .ch_mult = 1,
         .stride = {.w = stride, .h = stride},
         .padding = {.w = pad_w, .h = pad_h},
@@ -1009,7 +1009,7 @@ bool TryFullyConnectedQuant(const int8_t* input,
     const cmsis_nn_fc_params fc_params = {
         .input_offset = -quant.input_zero_point,
         .filter_offset = -quant.weight_zero_point,
-        .output_offset = -quant.output_zero_point,
+        .output_offset = quant.output_zero_point,
         .activation = activation_relu(apply_relu),
     };
 

@@ -301,12 +301,12 @@ namespace
             const int32_t in_y_origin = static_cast<int32_t>(oh) * stride - pad_h;
             const int32_t in_x_origin = static_cast<int32_t>(ow) * stride - pad_w;
             const uint32_t out_spatial_base = (oh * out_w + ow) * oc_count;
-            const int kh_lo = std::max(0, -in_y_origin);
-            const int kh_hi =
-                std::min(kernel_size, static_cast<int32_t>(in_h) - in_y_origin);
-            const int kw_lo = std::max(0, -in_x_origin);
-            const int kw_hi =
-                std::min(kernel_size, static_cast<int32_t>(in_w) - in_x_origin);
+            const int32_t kh_lo = std::max(int32_t{0}, -in_y_origin);
+            const int32_t kh_hi =
+                std::min(static_cast<int32_t>(kernel_size), static_cast<int32_t>(in_h) - in_y_origin);
+            const int32_t kw_lo = std::max(int32_t{0}, -in_x_origin);
+            const int32_t kw_hi =
+                std::min(static_cast<int32_t>(kernel_size), static_cast<int32_t>(in_w) - in_x_origin);
             for (int oc = 0; oc < out_channels; ++oc)
             {
                 int32_t acc = bias_use[oc];
@@ -610,12 +610,12 @@ namespace
             const int32_t in_y_origin = static_cast<int32_t>(oh) * stride - pad_h;
             const int32_t in_x_origin = static_cast<int32_t>(ow) * stride - pad_w;
             const uint32_t out_spatial_base = (oh * out_w + ow) * channels;
-            const int kh_lo = std::max(0, -in_y_origin);
-            const int kh_hi =
-                std::min(kernel_h, static_cast<int32_t>(in_h) - in_y_origin);
-            const int kw_lo = std::max(0, -in_x_origin);
-            const int kw_hi =
-                std::min(kernel_w, static_cast<int32_t>(in_w) - in_x_origin);
+            const int32_t kh_lo = std::max(int32_t{0}, -in_y_origin);
+            const int32_t kh_hi =
+                std::min(static_cast<int32_t>(kernel_h), static_cast<int32_t>(in_h) - in_y_origin);
+            const int32_t kw_lo = std::max(int32_t{0}, -in_x_origin);
+            const int32_t kw_hi =
+                std::min(static_cast<int32_t>(kernel_w), static_cast<int32_t>(in_w) - in_x_origin);
             for (uint32_t c = 0; c < channels; ++c)
             {
                 int32_t acc = bias_use[c];

@@ -25,8 +25,9 @@ GMAKE ?= $(shell command -v gmake 2>/dev/null || command -v make 2>/dev/null)
 
 TFLM_TARGET := cortex_m_generic
 TFLM_ARCH := cortex-m4+fp
-TFLM_OPT_KERNEL := cmsis_nn
-TFLM_GENDIR := $(TFLM_ROOT)/gen/$(TFLM_TARGET)_$(TFLM_ARCH)_default_$(TFLM_OPT_KERNEL)_gcc
+# Default CMSIS-NN. Pure reference peer: make TFLM_OPT_KERNEL=
+TFLM_OPT_KERNEL ?= cmsis_nn
+TFLM_GENDIR := $(TFLM_ROOT)/gen/$(TFLM_TARGET)_$(TFLM_ARCH)_default$(if $(TFLM_OPT_KERNEL),_$(TFLM_OPT_KERNEL),)_gcc
 TFLM_LIB := $(TFLM_GENDIR)/lib/libtensorflow-microlite.a
 
 BUILD_DIR := build
@@ -97,7 +98,7 @@ setup-deps:
 microlite: setup-deps
 	@$(GMAKE) -C $(TFLM_ROOT) -f $(TFLM_MAKE) \
 		TARGET=$(TFLM_TARGET) TARGET_ARCH=$(TFLM_ARCH) \
-		OPTIMIZED_KERNEL_DIR=$(TFLM_OPT_KERNEL) \
+		$(if $(TFLM_OPT_KERNEL),OPTIMIZED_KERNEL_DIR=$(TFLM_OPT_KERNEL),) \
 		TARGET_TOOLCHAIN_ROOT=$(TOOLCHAIN_BIN)/ \
 		EXTERNAL_DIR=../.. \
 		microlite

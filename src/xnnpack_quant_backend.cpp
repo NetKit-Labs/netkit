@@ -323,7 +323,7 @@ namespace
     {
         float out_min = 0.0f;
         float out_max = 0.0f;
-        ActivationClampFloat(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+        ActivationClampFloat(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
         return xnn_define_depthwise_convolution_2d(
                    subgraph,
                    static_cast<uint32_t>(plan.pad_h),
@@ -356,7 +356,7 @@ namespace
     {
         float out_min = 0.0f;
         float out_max = 0.0f;
-        ActivationClampFloat(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+        ActivationClampFloat(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
         return xnn_define_convolution_2d(subgraph,
                                          static_cast<uint32_t>(plan.pad_h),
                                          static_cast<uint32_t>(plan.pad_w),
@@ -555,7 +555,7 @@ namespace
                                        &bias_id))
                 return false;
             if (!DefineActQint8(subgraph,
-                                -plan.start_dw.output_offset,
+                                plan.start_dw.output_offset,
                                 plan.start_dw.output_scale,
                                 static_cast<size_t>(plan.start_dw.out_h),
                                 static_cast<size_t>(plan.start_dw.out_w),
@@ -582,7 +582,7 @@ namespace
                                          &bias_id))
                 return false;
             if (!DefineActQint8(subgraph,
-                                -plan.expand.output_offset,
+                                plan.expand.output_offset,
                                 plan.expand.output_scale,
                                 static_cast<size_t>(plan.expand.out_h),
                                 static_cast<size_t>(plan.expand.out_w),
@@ -612,7 +612,7 @@ namespace
                                        &bias_id))
                 return false;
             if (!DefineActQint8(subgraph,
-                                -plan.middle_dw.output_offset,
+                                plan.middle_dw.output_offset,
                                 plan.middle_dw.output_scale,
                                 static_cast<size_t>(plan.middle_dw.out_h),
                                 static_cast<size_t>(plan.middle_dw.out_w),
@@ -643,7 +643,7 @@ namespace
             {
                 // Proj writes an internal tensor; residual add produces the block output.
                 if (!DefineActQint8(subgraph,
-                                    -plan.proj.output_offset,
+                                    plan.proj.output_offset,
                                     plan.proj.output_scale,
                                     static_cast<size_t>(plan.out_h),
                                     static_cast<size_t>(plan.out_w),
@@ -660,7 +660,7 @@ namespace
                     (external_output_id != XNN_INVALID_VALUE_ID) ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT
                                                                 : 0;
                 if (!DefineActQint8(subgraph,
-                                    -plan.proj.output_offset,
+                                    plan.proj.output_offset,
                                     plan.proj.output_scale,
                                     static_cast<size_t>(plan.out_h),
                                     static_cast<size_t>(plan.out_w),
@@ -686,7 +686,7 @@ namespace
                     (external_output_id != XNN_INVALID_VALUE_ID) ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT
                                                                 : 0;
                 if (!DefineActQint8(subgraph,
-                                    -plan.proj.output_offset,
+                                    plan.proj.output_offset,
                                     plan.proj.output_scale,
                                     static_cast<size_t>(plan.out_h),
                                     static_cast<size_t>(plan.out_w),
@@ -1116,7 +1116,7 @@ bool CreateConv2dNhwcQuantPlan(CmsisQuantPlan::Conv2DPlan& plan,
 
     int8_t out_min = -128;
     int8_t out_max = 127;
-    ActivationClampS8(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+    ActivationClampS8(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
 
     return CreateQs8Conv(plan.xnn,
                          static_cast<uint32_t>(plan.pad_h),
@@ -1136,7 +1136,7 @@ bool CreateConv2dNhwcQuantPlan(CmsisQuantPlan::Conv2DPlan& plan,
                          plan.num_weight_channel_scales,
                          weights,
                          bias,
-                         static_cast<int8_t>(-plan.output_offset),
+                         static_cast<int8_t>(plan.output_offset),
                          plan.output_scale,
                          out_min,
                          out_max,
@@ -1165,7 +1165,7 @@ bool CreateDepthwiseConv2dNhwcQuantPlan(CmsisQuantPlan::DepthwiseConv2DPlan& pla
 
     int8_t out_min = -128;
     int8_t out_max = 127;
-    ActivationClampS8(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+    ActivationClampS8(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
 
     const size_t channels = static_cast<size_t>(plan.channels);
     return CreateQs8Conv(plan.xnn,
@@ -1186,7 +1186,7 @@ bool CreateDepthwiseConv2dNhwcQuantPlan(CmsisQuantPlan::DepthwiseConv2DPlan& pla
                          plan.num_weight_channel_scales,
                          kernel,
                          bias,
-                         static_cast<int8_t>(-plan.output_offset),
+                         static_cast<int8_t>(plan.output_offset),
                          plan.output_scale,
                          out_min,
                          out_max,
@@ -1274,7 +1274,7 @@ bool CreateFullyConnectedQuantPlan(CmsisQuantPlan::FcPlan& plan,
 
     int8_t out_min = -128;
     int8_t out_max = 127;
-    ActivationClampS8(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+    ActivationClampS8(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
 
     const size_t in_channels = static_cast<size_t>(plan.in_features);
     const size_t out_channels = static_cast<size_t>(plan.out_features);
@@ -1296,7 +1296,7 @@ bool CreateFullyConnectedQuantPlan(CmsisQuantPlan::FcPlan& plan,
                 plan.weight_channel_scales,
                 weights,
                 bias,
-                /*output_zero_point=*/static_cast<int8_t>(-plan.output_offset),
+                /*output_zero_point=*/static_cast<int8_t>(plan.output_offset),
                 plan.output_scale,
                 out_min,
                 out_max,
@@ -1319,7 +1319,7 @@ bool CreateFullyConnectedQuantPlan(CmsisQuantPlan::FcPlan& plan,
                 plan.weight_scale,
                 weights,
                 bias,
-                /*output_zero_point=*/static_cast<int8_t>(-plan.output_offset),
+                /*output_zero_point=*/static_cast<int8_t>(plan.output_offset),
                 plan.output_scale,
                 out_min,
                 out_max,
@@ -1637,7 +1637,7 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     is_last ? runtime.xnn_net_ext_out : XNN_INVALID_VALUE_ID;
                 const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
                 if (!DefineActQint8(subgraph,
-                                    -lp.conv.output_offset,
+                                    lp.conv.output_offset,
                                     lp.conv.output_scale,
                                     static_cast<size_t>(lp.conv.out_h),
                                     static_cast<size_t>(lp.conv.out_w),
@@ -1688,7 +1688,7 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     is_last ? runtime.xnn_net_ext_out : XNN_INVALID_VALUE_ID;
                 const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
                 if (!DefineActQint8(subgraph,
-                                    -lp.depthwise.output_offset,
+                                    lp.depthwise.output_offset,
                                     lp.depthwise.output_scale,
                                     static_cast<size_t>(lp.depthwise.out_h),
                                     static_cast<size_t>(lp.depthwise.out_w),
@@ -1858,7 +1858,7 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                 float out_min = 0.0f;
                 float out_max = 0.0f;
                 ActivationClampFloat(
-                    lp.fc.clamp, lp.fc.output_scale, -lp.fc.output_offset, out_min, out_max);
+                    lp.fc.clamp, lp.fc.output_scale, lp.fc.output_offset, out_min, out_max);
 
                 // Flatten is a no-op. Input is NHWC 1×1×C from the head conv; FC allows
                 // N-D when the last dim matches in_features. Match output rank to input
@@ -1871,7 +1871,7 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     1, 1, 1, static_cast<size_t>(lp.fc.out_features)};
                 if (xnn_define_quantized_tensor_value(subgraph,
                                                      xnn_datatype_qint8,
-                                                     -lp.fc.output_offset,
+                                                     lp.fc.output_offset,
                                                      lp.fc.output_scale,
                                                      /*num_dims=*/4,
                                                      out_dims,
@@ -2025,7 +2025,7 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
 
     int8_t out_min = -128;
     int8_t out_max = 127;
-    ActivationClampS8(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+    ActivationClampS8(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
 
     return RunQs8Conv(/*pad_h=*/static_cast<uint32_t>(plan.pad_h),
                       /*pad_w=*/static_cast<uint32_t>(plan.pad_w),
@@ -2044,7 +2044,7 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
                       plan.num_weight_channel_scales,
                       weights,
                       bias,
-                      /*output_zp=*/static_cast<int8_t>(-plan.output_offset),
+                      /*output_zp=*/static_cast<int8_t>(plan.output_offset),
                       plan.output_scale,
                       out_min,
                       out_max,
@@ -2078,7 +2078,7 @@ bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& 
 
     int8_t out_min = -128;
     int8_t out_max = 127;
-    ActivationClampS8(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+    ActivationClampS8(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
 
     const size_t channels = static_cast<size_t>(plan.channels);
     return RunQs8Conv(/*pad_h=*/static_cast<uint32_t>(plan.pad_h),
@@ -2098,7 +2098,7 @@ bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& 
                       plan.num_weight_channel_scales,
                       kernel,
                       bias,
-                      /*output_zp=*/static_cast<int8_t>(-plan.output_offset),
+                      /*output_zp=*/static_cast<int8_t>(plan.output_offset),
                       plan.output_scale,
                       out_min,
                       out_max,
@@ -2207,7 +2207,7 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
 
     int8_t out_min = -128;
     int8_t out_max = 127;
-    ActivationClampS8(plan.clamp, plan.output_scale, -plan.output_offset, out_min, out_max);
+    ActivationClampS8(plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
 
     const size_t in_channels = static_cast<size_t>(plan.in_features);
     const size_t out_channels = static_cast<size_t>(plan.out_features);
@@ -2228,7 +2228,7 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
                 plan.weight_channel_scales,
                 weights,
                 bias,
-                /*output_zero_point=*/static_cast<int8_t>(-plan.output_offset),
+                /*output_zero_point=*/static_cast<int8_t>(plan.output_offset),
                 plan.output_scale,
                 out_min,
                 out_max,
@@ -2257,7 +2257,7 @@ bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
             plan.weight_scale,
             weights,
             bias,
-            /*output_zero_point=*/static_cast<int8_t>(-plan.output_offset),
+            /*output_zero_point=*/static_cast<int8_t>(plan.output_offset),
             plan.output_scale,
             out_min,
             out_max,

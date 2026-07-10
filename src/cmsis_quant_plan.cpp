@@ -254,7 +254,9 @@ namespace
             in_w, conv.kernel_size, conv.stride, conv.pad_w, conv.pad_w_end);
 
         plan.input_offset = -quant.input_zero_point;
-        plan.output_offset = -quant.output_zero_point;
+        // CMSIS-NN / TFLM: output_offset is the output zero-point (added after requant).
+        // input_offset is -input_zp. Do not negate output_zp (CMSIS header wording is misleading).
+        plan.output_offset = quant.output_zero_point;
         plan.stride = conv.stride;
         plan.pad_h = conv.pad_h;
         plan.pad_w = conv.pad_w;
@@ -396,7 +398,7 @@ namespace
             in_w, dw.kernel_w, dw.stride, dw.pad_w, dw.pad_w_end);
 
         plan.input_offset = -quant.input_zero_point;
-        plan.output_offset = -quant.output_zero_point;
+        plan.output_offset = quant.output_zero_point;
         plan.stride = dw.stride;
         plan.pad_h = dw.pad_h;
         plan.pad_w = dw.pad_w;
@@ -572,7 +574,7 @@ namespace
 
         plan.input_offset = -quant.input_zero_point;
         plan.filter_offset = -quant.weight_zero_point;
-        plan.output_offset = -quant.output_zero_point;
+        plan.output_offset = quant.output_zero_point;
         plan.clamp = clamp;
         plan.input_scale = quant.input_scale;
         plan.weight_scale = quant.weight_scale;

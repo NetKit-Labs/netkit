@@ -90,9 +90,15 @@ extern "C" int main(void)
     dwt_time_init();
 
     uart_write("\r\nnetkit NUCLEO-F446RE MNIST CNN int8 benchmark\r\n");
+#if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
     uart_printf("  backend:     %s int8 + cmsis-dsp utils (MCU CM4%s)\r\n",
                 NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn",
                 aot::kQuantLowered ? ", quant lowered AOT" : ", .nk loader");
+#else
+    uart_printf("  backend:     %s int8 (MCU CM4%s)\r\n",
+                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn",
+                aot::kQuantLowered ? ", quant lowered AOT" : ", .nk loader");
+#endif
     uart_printf("  weights:     %s\r\n",
                 aot::kQuantLowered ? "flash (static .rodata)"
                                    : "flash (embedded .nk blob)");

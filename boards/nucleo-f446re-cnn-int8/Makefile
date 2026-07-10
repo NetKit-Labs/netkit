@@ -57,13 +57,16 @@ NETKIT_IM2COL ?= 0
 # 1 = netkit reference int8 quant loops (QuantOps) instead of CMSIS-NN kernels.
 NETKIT_REFERENCE_QUANT_LOOPS ?= 0
 
-# Board firmware: CMSIS-DSP always on. CMSIS-NN on unless reference quant loops requested.
-# Do not inherit CI/host NETKIT_CMSIS_*=0 from env.
-override NETKIT_CMSIS_DSP := 1
+# Board firmware: CMSIS-NN on by default. Reference quant loops force NN off.
+# CMSIS-DSP defaults on with NN; for pure reference peer use:
+#   make NETKIT_REFERENCE_QUANT_LOOPS=1 NETKIT_CMSIS_DSP=0
+# Do not inherit CI/host NETKIT_CMSIS_NN=0 when building the CMSIS-NN firmware.
 ifeq ($(NETKIT_REFERENCE_QUANT_LOOPS),1)
-override NETKIT_CMSIS_NN := 0
+  override NETKIT_CMSIS_NN := 0
+  NETKIT_CMSIS_DSP ?= 0
 else
-override NETKIT_CMSIS_NN := 1
+  override NETKIT_CMSIS_NN := 1
+  override NETKIT_CMSIS_DSP := 1
 endif
 
 ifeq ($(NETKIT_QUANT_TRACE),1)
@@ -74,6 +77,7 @@ endif
 
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU_ARM=1 \
+	-DNETKIT_USE_MMAP=0 \
 	-DNETKIT_MCU_QUANT_ONLY=$(NETKIT_MCU_QUANT_ONLY) \
 	-DNETKIT_KERNELS_OPTIMIZED_FOR_SPEED=1 \
 	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \
@@ -90,6 +94,7 @@ NETKIT_CPPFLAGS := \
 ifeq ($(NETKIT_MCU_QUANT_ONLY),1)
 NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/arena.cpp \
+	$(NETKIT_ROOT)/src/nk_mmap.cpp \
 	$(NETKIT_ROOT)/src/tensor_factory.cpp \
 	$(NETKIT_ROOT)/src/tensor_access.cpp \
 	$(NETKIT_ROOT)/src/kernel_workspace.cpp \

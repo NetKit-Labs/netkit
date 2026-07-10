@@ -549,7 +549,7 @@ def _emit_plan_structs(bundle: QuantNkBundle, *, omit_final_softmax: bool = Fals
             lines.append(
                 f"""static CmsisQuantPlan::Conv2DPlan kConv{weight_idx}Plan = {{
     .input_offset = {-quant.input_zero_point},
-    .output_offset = {-quant.output_zero_point},
+    .output_offset = {quant.output_zero_point},
     .stride = {layer.get("stride", 1)},
     .pad_h = {layer.get("pad_h", 0)},
     .pad_w = {layer.get("pad_w", 0)},
@@ -616,7 +616,7 @@ def _emit_plan_structs(bundle: QuantNkBundle, *, omit_final_softmax: bool = Fals
                 f"""static CmsisQuantPlan::FcPlan kFc{weight_idx}Plan = {{
     .input_offset = {-quant.input_zero_point},
     .filter_offset = {-quant.weight_zero_point},
-    .output_offset = {-quant.output_zero_point},
+    .output_offset = {quant.output_zero_point},
     .clamp = {clamp},
     .output_scale = {quant.output_scale:.8f}f,
     .in_features = {in_features},

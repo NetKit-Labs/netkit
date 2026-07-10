@@ -135,6 +135,9 @@ rm -f generated/.embed_stamp && make NETKIT_LOWERED=1   # lowered
 
 ## Example UART output (interpreter embed)
 
+Default CMSIS-NN + CMSIS-DSP build. With `NETKIT_CMSIS_DSP=0` the backend line
+omits `+ cmsis-dsp utils`.
+
 ```
 netkit NUCLEO-F446RE MNIST CNN int8 benchmark
   backend:     cmsis-nn int8 + cmsis-dsp utils (MCU CM4, .nk loader)
