@@ -49,3 +49,36 @@ class TutorialCnn28(nn.Module):
         x = torch.flatten(x, 1)
         x = F.relu(self.fc1(x))
         return self.fc2(x)
+
+
+class TutorialCnn28Depthwise(nn.Module):
+    """Depthwise-separable MNIST CNN (same spatial path as TutorialCnn28).
+
+    Conv1x1 32 -> DW3x3 32 -> Pool -> Conv1x1 64 -> DW3x3 64 -> Pool
+    -> Flatten -> Dense128 ReLU -> Dense10.
+    """
+
+    def __init__(self, num_classes: int = 10) -> None:
+        super().__init__()
+        self.pw1 = nn.Conv2d(1, 32, kernel_size=1, stride=1, padding=0)
+        self.dw1 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=0, groups=32)
+        self.pw2 = nn.Conv2d(32, 64, kernel_size=1, stride=1, padding=0)
+        self.dw2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0, groups=64)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.fc1 = nn.Linear(64 * 5 * 5, 128)
+        self.fc2 = nn.Linear(128, num_classes)
+        for layer in (self.pw1, self.dw1, self.pw2, self.dw2):
+            nn.init.kaiming_normal_(layer.weight, nonlinearity="relu")
+            nn.init.zeros_(layer.bias)
+        nn.init.kaiming_normal_(self.fc1.weight, nonlinearity="relu")
+        nn.init.zeros_(self.fc1.bias)
+        nn.init.kaiming_normal_(self.fc2.weight, nonlinearity="relu")
+        nn.init.zeros_(self.fc2.bias)
+
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.pool(F.relu(self.dw1(F.relu(self.pw1(x)))))
+        x = self.pool(F.relu(self.dw2(F.relu(self.pw2(x)))))
+        x = x.permute(0, 2, 3, 1).contiguous()
+        x = torch.flatten(x, 1)
+        x = F.relu(self.fc1(x))
+        return self.fc2(x)

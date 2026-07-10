@@ -52,18 +52,25 @@ INCLUDES := \
 
 NETKIT_QUANT_TRACE ?= 0
 NETKIT_MCU_QUANT_ONLY ?= 1
-# float Conv2D strategy (int8 path uses CMSIS-NN/QuantOps; kept for the float fallback): 0 = direct loops.
+# float + int8 QuantOps Conv2D strategy: 0 = direct loops, 1 = partial im2col, 2 = full.
 NETKIT_IM2COL ?= 0
 # 1 = netkit reference int8 quant loops (QuantOps) instead of CMSIS-NN kernels.
 NETKIT_REFERENCE_QUANT_LOOPS ?= 0
+# 1 = accumulate per-layer stage timing (DWT on MCU); dump once after the bench.
+# Debug/investigation only — leave 0 for production (default). Never enable in release firmware.
+NETKIT_STAGE_TIMING ?= 0
+# Arena size in KiB. Empty = use NK_ARENA_DEFAULT_CAPACITY (MCU default 64 KiB).
+# TFLM peer uses ~116 — A/B with NETKIT_ARENA_KB=116.
+NETKIT_ARENA_KB ?=
+# Optional alternate .nk for scale A/B (default models/mnist_cnn_int8.nk).
+NETKIT_CNN_INT8_NK ?= $(NETKIT_ROOT)/models/mnist_cnn_int8.nk
 
 # Board firmware: CMSIS-NN on by default. Reference quant loops force NN off.
-# CMSIS-DSP defaults on with NN; for pure reference peer use:
-#   make NETKIT_REFERENCE_QUANT_LOOPS=1 NETKIT_CMSIS_DSP=0
+# CMSIS-DSP stays on for both peers (utils); override with NETKIT_CMSIS_DSP=0 if needed.
 # Do not inherit CI/host NETKIT_CMSIS_NN=0 when building the CMSIS-NN firmware.
 ifeq ($(NETKIT_REFERENCE_QUANT_LOOPS),1)
   override NETKIT_CMSIS_NN := 0
-  NETKIT_CMSIS_DSP ?= 0
+  NETKIT_CMSIS_DSP ?= 1
 else
   override NETKIT_CMSIS_NN := 1
   override NETKIT_CMSIS_DSP := 1
@@ -84,6 +91,9 @@ NETKIT_CPPFLAGS := \
 	$(if $(filter 1,$(NETKIT_CMSIS_NN)),-DNETKIT_USE_CMSIS_NN=1,) \
 	-DNETKIT_QUANT_TRACE=$(NETKIT_QUANT_TRACE) \
 	$(if $(filter 0,$(NETKIT_QUANT_TRACE)),,-DNETKIT_QUANT_TRACE_UART=1) \
+	-DNETKIT_STAGE_TIMING=$(NETKIT_STAGE_TIMING) \
+	$(if $(filter 1,$(NETKIT_STAGE_TIMING)),-DNETKIT_STAGE_TIMING_UART=1,) \
+	$(if $(NETKIT_ARENA_KB),-DNETKIT_ARENA_KB=$(NETKIT_ARENA_KB),) \
 	-DNETKIT_LOOP_UNROLL=0 \
 	-DNETKIT_IM2COL=$(NETKIT_IM2COL) \
 	-DNETKIT_REFERENCE_QUANT_LOOPS=$(NETKIT_REFERENCE_QUANT_LOOPS) \
@@ -99,6 +109,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/tensor_access.cpp \
 	$(NETKIT_ROOT)/src/kernel_workspace.cpp \
 	$(NETKIT_ROOT)/src/cmsis_buffer_size.cpp \
+	$(NETKIT_ROOT)/src/im2col_quant.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp \
 	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
 	$(NETKIT_ROOT)/src/cmsis_dsp_util.cpp \
@@ -133,6 +144,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/conv_direct_kernel.cpp \
 	$(NETKIT_ROOT)/src/im2col_partial.cpp \
 	$(NETKIT_ROOT)/src/im2col_full.cpp \
+	$(NETKIT_ROOT)/src/im2col_quant.cpp \
 	$(NETKIT_ROOT)/src/convnextv2_block.cpp \
 	$(NETKIT_ROOT)/src/mobilenetv4_uib.cpp \
 	$(NETKIT_ROOT)/src/yolox_decoupled_head.cpp \
@@ -172,6 +184,7 @@ NETKIT_KERNEL_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/cmsis_quant_plan.cpp \
 	$(NETKIT_ROOT)/src/cnn_quant.cpp \
 	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
+	$(NETKIT_ROOT)/src/im2col_quant.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp
 
 NETKIT_CORE_RUNTIME_SOURCES := $(filter-out $(NETKIT_KERNEL_RUNTIME_SOURCES),$(NETKIT_RUNTIME_SOURCES))
@@ -240,7 +253,9 @@ LIBNETKIT := $(LIB_DIR)/libnetkit_cnn_int8.a
 
 .PHONY: all clean flash monitor run export-embed check-deps size
 
-all: check-deps export-embed $(ELF) size
+# ELF pulls in generated AOT via $(GEN_SOURCES); do not list export-embed beside
+# $(ELF) under -j (race: compile stale aot.cpp while embed regenerates it).
+all: check-deps $(ELF) size
 
 check-deps:
 	$(MCU_ASSERT_GCC_TOOLCHAIN)
@@ -248,16 +263,19 @@ check-deps:
 		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h || \
 		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
-	@test -f $(NETKIT_ROOT)/models/mnist_cnn_int8.nk || \
-		(echo "Missing models/mnist_cnn_int8.nk — run: make -C $(NETKIT_ROOT) export-mnist-cnn-int8" >&2; exit 1)
+	@test -f $(NETKIT_CNN_INT8_NK) || \
+		(echo "Missing $(NETKIT_CNN_INT8_NK) — run: make -C $(NETKIT_ROOT) export-mnist-cnn-int8" >&2; exit 1)
 	@test -f $(NETKIT_ROOT)/benchmark/tflm/generated/mnist_cnn_int8_test_images.cc || \
 		(echo "Missing int8 test images — run: python3 benchmark/tflm/tools/export_int8_test_images.py" >&2; exit 1)
 
-export-embed: $(GEN_DIR)/.embed_stamp
+export-embed: $(GEN_DIR)/mnist_cnn_int8_aot.cpp
 
-$(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_cnn_int8.nk
+# Primary AOT outputs (fixed names/namespace regardless of NETKIT_CNN_INT8_NK path).
+$(GEN_DIR)/mnist_cnn_int8_aot.cpp $(GEN_DIR)/mnist_cnn_int8_aot.hpp: $(NETKIT_CNN_INT8_NK)
 	@mkdir -p $(GEN_DIR)
-	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot models/mnist_cnn_int8.nk \
+	@cp -f $(NETKIT_CNN_INT8_NK) $(GEN_DIR)/mnist_cnn_int8.nk
+	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python python3 -m netkit aot \
+		$(abspath $(GEN_DIR))/mnist_cnn_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
 		$(if $(filter 1,$(NETKIT_LOWERED)),,--no-lower) --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
@@ -316,7 +334,7 @@ $(BUILD_DIR)/syscalls.o: $(BOARD_COMMON)/src/syscalls.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -fno-lto -c $< -o $@
 
-$(BUILD_DIR)/main.o: src/main.cpp
+$(BUILD_DIR)/main.o: src/main.cpp $(GEN_DIR)/mnist_cnn_int8_aot.hpp
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -324,7 +342,7 @@ $(BUILD_DIR)/mnist_cnn_int8_test_images.o: $(NETKIT_ROOT)/benchmark/tflm/generat
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/mnist_cnn_int8_aot.o: $(GEN_DIR)/mnist_cnn_int8_aot.cpp
+$(BUILD_DIR)/mnist_cnn_int8_aot.o: $(GEN_DIR)/mnist_cnn_int8_aot.cpp $(GEN_DIR)/mnist_cnn_int8_aot.hpp
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -338,7 +356,9 @@ size: $(ELF)
 
 clean:
 	rm -rf $(BUILD_DIR)
-	rm -f $(GEN_DIR)/.embed_stamp $(GEN_DIR)/.aot_stamp
+	rm -f $(GEN_DIR)/.embed_stamp $(GEN_DIR)/.aot_stamp \
+		$(GEN_DIR)/mnist_cnn_int8.nk \
+		$(GEN_DIR)/mnist_cnn_int8_aot.cpp $(GEN_DIR)/mnist_cnn_int8_aot.hpp
 
 flash: $(ELF)
 	./scripts/flash.sh $(ELF)

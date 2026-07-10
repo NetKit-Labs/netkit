@@ -5,6 +5,7 @@
 
 #include "dwt_time.h"
 #include "cmsis_dsp_util.hpp"
+#include "cmsis_quant_plan.hpp"
 #include "mnist_cnn_int8_aot.hpp"
 #include "mnist_cnn_int8_test_images.h"
 #include "netkit_config.h"
@@ -28,10 +29,15 @@ constexpr int kRuns = 10;
 constexpr int kImageCount = kMnistCnnInt8BenchmarkImageCount;
 constexpr int kInputSize = kMnistCnnInt8BenchmarkInputSize;
 constexpr int kOutputClasses = 10;
-// STM32F446RE has 128 KiB SRAM — keep interpreter arena at 64 KiB (verified on-device
-// 10/10). Embed may emit a larger kArenaBytesRecommended (probe + headroom); firmware
-// sizes the buffer here, not from that constant.
-constexpr std::size_t kArenaCapacity = 64u * 1024u;
+// STM32F446RE has 128 KiB SRAM — default interpreter arena is MCU
+// NK_ARENA_DEFAULT_CAPACITY (64 KiB; verified 10/10). Override:
+//   make NETKIT_ARENA_KB=116
+//   or -DNK_ARENA_DEFAULT_CAPACITY=<bytes>
+#ifdef NETKIT_ARENA_KB
+constexpr std::size_t kArenaCapacity = static_cast<std::size_t>(NETKIT_ARENA_KB) * 1024u;
+#else
+constexpr std::size_t kArenaCapacity = NK_ARENA_DEFAULT_CAPACITY;
+#endif
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[kArenaCapacity];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
@@ -141,6 +147,9 @@ extern "C" int main(void)
         PrintOutI8Uart(g_output_i8);
         uart_write("\r\n");
     }
+#if defined(NETKIT_STAGE_TIMING) && NETKIT_STAGE_TIMING
+    CmsisQuantPlan::ResetStageTiming();
+#endif
 
     std::array<double, kRuns> run_averages_us{};
     std::array<int, kImageCount> final_predictions{};
@@ -230,6 +239,9 @@ extern "C" int main(void)
         " mean_us=%.3f runs=%d\r\n",
         mean_us,
         kRuns);
+#if defined(NETKIT_STAGE_TIMING) && NETKIT_STAGE_TIMING
+    CmsisQuantPlan::PrintStageTimingSummary();
+#endif
     uart_write("\r\nDONE\r\n");
 
     for (;;)

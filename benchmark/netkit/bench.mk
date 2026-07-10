@@ -51,6 +51,7 @@ BENCH_RUNTIME_SOURCES := \
   src/conv_direct_kernel.cpp \
   src/im2col_partial.cpp \
   src/im2col_full.cpp \
+  src/im2col_quant.cpp \
   src/depthwise_conv2d.cpp \
   src/convnextv2_block.cpp \
   src/mobilenetv4_uib.cpp \
@@ -123,24 +124,8 @@ endif
 CMSIS_NN_OBJS :=
 CMSIS_NN_INCLUDES :=
 ifeq ($(CMSIS_NN),1)
-  ifeq ($(wildcard $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h),)
-    $(error CMSIS-NN not found at $(CMSIS_NN_DIR) — run ./tools/fetch_cmsis_nn.sh)
-  endif
-  # Host ImageNet int8 peer: portable CMSIS-NN C (force ALLOWED; DSP off for this variant).
-  # Also link float CMSIS-NN + cmsis_nn_backend — ActiveKernel becomes CmsisNnKernel.
-  BENCH_RUNTIME_SOURCES += src/cmsis_nn_backend.cpp
-  NETKIT_BENCH_VARIANT_CPPFLAGS += \
-    -DNETKIT_USE_CMSIS_NN=1 \
-    -DNETKIT_CMSIS_NN_ALLOWED=1 \
-    -DARM_NN_ENABLE_F32=1 \
-    -DARM_MATH_CM4 \
-    -D__GNUC_PYTHON__
-  CMSIS_NN_INCLUDES := -I$(CMSIS_NN_DIR)/Include
-  include $(ROOT)/third_party/cmsis_nn.mk
-  CMSIS_NN_OBJS := $(patsubst $(CMSIS_NN_DIR)/%.c,$(BENCH_OBJDIR)/cmsis_nn/%.o,$(CMSIS_NN_SOURCES))
-  CMSIS_NN_CFLAGS := -std=c11 $(TFLM_KERNEL_OPT) \
-    -I$(CMSIS_NN_DIR)/Include \
-    -DARM_NN_ENABLE_F32=1 -DARM_MATH_CM4 -D__GNUC_PYTHON__
+  $(error CMSIS-NN is MCU-only (NETKIT_TARGET=mcu_arm + Cortex-M). \
+Host/CPU/MPU benches must use reference or XNNPACK — use boards/nucleo-f446re-*-int8 for CMSIS-NN)
 endif
 
 XNNPACK_LDFLAGS :=
@@ -182,7 +167,9 @@ endif
 
 BENCH_KERNEL_CPPFLAGS := $(NETKIT_BENCH_CPPFLAGS) $(NETKIT_BENCH_VARIANT_CPPFLAGS)
 BENCH_KERNEL_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_KERNEL_OPT) $(BENCH_KERNEL_CPPFLAGS) $(CMSIS_DSP_INCLUDES) $(CMSIS_NN_INCLUDES) -I$(ROOT)/include
-BENCH_CORE_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_CORE_OPT) $(BENCH_KERNEL_CPPFLAGS) $(TFLM_BENCH_INCLUDES)
+# Optional: prepend include dirs (e.g. depthwise MNIST image headers under generated/cnn_dw/).
+EXTRA_BENCH_INCLUDES ?=
+BENCH_CORE_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_CORE_OPT) $(BENCH_KERNEL_CPPFLAGS) $(EXTRA_BENCH_INCLUDES) $(TFLM_BENCH_INCLUDES)
 BENCH_MAIN_CPPFLAGS := -DNETKIT_BENCH_BACKEND=\"$(BACKEND)\"
 
 MLP_SRC := src/main.cc
@@ -190,15 +177,21 @@ CNN_SRC := src/mnist_cnn_main.cc
 MNV4_SRC := src/mobilenetv4_main.cc
 MNV4_IMAGENET_SRC := src/mobilenetv4_imagenet_main.cc
 MNV4_IMAGENET_INT8_SRC := src/mobilenetv4_imagenet_int8_main.cc
+CNN_INT8_SRC := src/mnist_cnn_int8_main.cc
+MLP_INT8_SRC := src/mnist_mlp_int8_main.cc
 MLP_PROFILE_SRC := src/mnist_mlp_profile_main.cc
 CNN_PROFILE_SRC := src/mnist_cnn_profile_main.cc
 MLP_IMAGES_CC := $(SHARED_GEN)/mnist_test_images.cc
 CNN_IMAGES_CC := $(SHARED_GEN)/mnist_cnn_test_images.cc
+CNN_INT8_IMAGES_CC := $(SHARED_GEN)/mnist_cnn_int8_test_images.cc
+MLP_INT8_IMAGES_CC := $(SHARED_GEN)/mnist_mlp_int8_test_images.cc
 MNV4_INT8_IMAGES_CC := $(SHARED_GEN)/mobilenetv4_netkit_int8_test_images.cc
 IMAGENET_IMAGES_CC := $(SHARED_GEN)/imagenet_mnv4_test_images.cc
 IMAGENET_INT8_IMAGES_CC := $(SHARED_GEN)/imagenet_mnv4_netkit_int8_test_images.cc
 MLP_IMAGES_OBJ := $(SHARED_GEN)/mnist_test_images.o
 CNN_IMAGES_OBJ := $(SHARED_GEN)/mnist_cnn_test_images.o
+CNN_INT8_IMAGES_OBJ := $(SHARED_GEN)/mnist_cnn_int8_test_images.o
+MLP_INT8_IMAGES_OBJ := $(SHARED_GEN)/mnist_mlp_int8_test_images.o
 MNV4_INT8_IMAGES_OBJ := $(SHARED_GEN)/mobilenetv4_netkit_int8_test_images.o
 IMAGENET_IMAGES_OBJ := $(SHARED_GEN)/imagenet_mnv4_test_images.o
 IMAGENET_INT8_IMAGES_OBJ := $(SHARED_GEN)/imagenet_mnv4_netkit_int8_test_images.o
@@ -213,12 +206,16 @@ MNV4_IMAGENET_BENCH ?= mobilenetv4_imagenet_bench
 MNV4_IMAGENET_MAIN_OBJ ?= src/mobilenetv4_imagenet_main.o
 MNV4_IMAGENET_INT8_BENCH ?= mobilenetv4_imagenet_int8_bench
 MNV4_IMAGENET_INT8_MAIN_OBJ ?= src/mobilenetv4_imagenet_int8_main.o
+CNN_INT8_BENCH ?= mnist_cnn_int8_bench
+CNN_INT8_MAIN_OBJ ?= src/mnist_cnn_int8_main.o
+MLP_INT8_BENCH ?= mnist_mlp_int8_bench
+MLP_INT8_MAIN_OBJ ?= src/mnist_mlp_int8_main.o
 
 BENCH_LIB_OBJS := $(addprefix $(BENCH_OBJDIR)/,$(BENCH_RUNTIME_SOURCES:.cpp=.o))
 
 .PHONY: build-mlp build-cnn build-cnn-profile build-mlp-profile build-lib build-mobilenetv4 \
-  build-mobilenetv4-imagenet build-mobilenetv4-imagenet-int8 \
-  run-mobilenetv4 run-mobilenetv4-imagenet run-mobilenetv4-imagenet-int8
+  build-mobilenetv4-imagenet build-mobilenetv4-imagenet-int8 build-cnn-int8 build-mlp-int8 \
+  run-mobilenetv4 run-mobilenetv4-imagenet run-mobilenetv4-imagenet-int8 run-cnn-int8 run-mlp-int8
 
 build-lib: $(BENCH_LIB)
 build-mlp: $(MLP_BENCH)
@@ -228,9 +225,23 @@ build-mlp-profile: $(MLP_PROFILE_BENCH)
 build-mobilenetv4: $(MNV4_BENCH)
 build-mobilenetv4-imagenet: $(MNV4_IMAGENET_BENCH)
 build-mobilenetv4-imagenet-int8: $(MNV4_IMAGENET_INT8_BENCH)
+build-cnn-int8: $(CNN_INT8_BENCH)
+build-mlp-int8: $(MLP_INT8_BENCH)
 
 $(MLP_IMAGES_CC) $(CNN_IMAGES_CC):
 	$(MAKE) -C ../tflm export-assets
+
+$(CNN_INT8_IMAGES_CC):
+	@test -f $(ROOT)/models/mnist_cnn_int8.nk || \
+	  (cd $(ROOT) && $(MAKE) export-mnist-cnn-int8)
+	@test -f $(SHARED_GEN)/mnist_cnn_int8.tflite || $(MAKE) -C ../tflm export-cnn-int8
+	@cd ../tflm && python3 tools/export_int8_test_images.py --variant cnn
+
+$(MLP_INT8_IMAGES_CC):
+	@test -f $(ROOT)/models/mnist_mlp_int8.nk || \
+	  (cd $(ROOT) && $(MAKE) export-mnist-mlp-int8)
+	@test -f $(SHARED_GEN)/mnist_mlp_int8.tflite || $(MAKE) -C ../tflm export-mlp-int8
+	@cd ../tflm && python3 tools/export_int8_test_images.py --variant mlp
 
 $(IMAGENET_IMAGES_CC):
 	$(MAKE) -C ../tflm export-imagenet-mnv4-images
@@ -262,7 +273,7 @@ $(BENCH_LIB): $(BENCH_LIB_OBJS) $(CMSIS_DSP_OBJS) $(CMSIS_NN_OBJS)
 	$(TFLM_HOST_AR) rcs $@ $^
 
 # Link with the same opt tier as compile (LTO-free; keeps profile consistent).
-BENCH_LINK_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_KERNEL_OPT) $(BENCH_KERNEL_CPPFLAGS) $(TFLM_BENCH_INCLUDES)
+BENCH_LINK_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_KERNEL_OPT) $(BENCH_KERNEL_CPPFLAGS) $(EXTRA_BENCH_INCLUDES) $(TFLM_BENCH_INCLUDES)
 
 $(MLP_BENCH): $(BENCH_LIB) $(MLP_MAIN_OBJ) $(MLP_IMAGES_OBJ)
 	$(TFLM_HOST_CXX) $(BENCH_LINK_CXXFLAGS) \
@@ -271,6 +282,14 @@ $(MLP_BENCH): $(BENCH_LIB) $(MLP_MAIN_OBJ) $(MLP_IMAGES_OBJ)
 $(CNN_BENCH): $(BENCH_LIB) $(CNN_MAIN_OBJ) $(CNN_IMAGES_OBJ)
 	$(TFLM_HOST_CXX) $(BENCH_LINK_CXXFLAGS) \
 	  -o $@ $(CNN_MAIN_OBJ) $(CNN_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS) $(XNNPACK_LDFLAGS)
+
+$(CNN_INT8_BENCH): $(BENCH_LIB) $(CNN_INT8_MAIN_OBJ) $(CNN_INT8_IMAGES_OBJ)
+	$(TFLM_HOST_CXX) $(BENCH_LINK_CXXFLAGS) \
+	  -o $@ $(CNN_INT8_MAIN_OBJ) $(CNN_INT8_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS) $(XNNPACK_LDFLAGS)
+
+$(MLP_INT8_BENCH): $(BENCH_LIB) $(MLP_INT8_MAIN_OBJ) $(MLP_INT8_IMAGES_OBJ)
+	$(TFLM_HOST_CXX) $(BENCH_LINK_CXXFLAGS) \
+	  -o $@ $(MLP_INT8_MAIN_OBJ) $(MLP_INT8_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS) $(XNNPACK_LDFLAGS)
 
 # MobileNetV4-small: float uses MNIST CNN images; int8 also links netkit-scaled int8 fixtures.
 $(MNV4_BENCH): $(BENCH_LIB) $(MNV4_MAIN_OBJ) $(CNN_IMAGES_OBJ) $(MNV4_INT8_IMAGES_OBJ)
@@ -297,6 +316,18 @@ $(MLP_PROFILE_BENCH): $(BENCH_LIB) $(MLP_PROFILE_MAIN_OBJ) $(MLP_IMAGES_OBJ)
 
 $(MLP_MAIN_OBJ): $(MLP_SRC) $(MLP_IMAGES_CC)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
+
+$(CNN_INT8_MAIN_OBJ): $(CNN_INT8_SRC) $(CNN_INT8_IMAGES_CC)
+	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
+
+$(MLP_INT8_MAIN_OBJ): $(MLP_INT8_SRC) $(MLP_INT8_IMAGES_CC)
+	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
+
+$(CNN_INT8_IMAGES_OBJ): $(CNN_INT8_IMAGES_CC)
+	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) -c $< -o $@
+
+$(MLP_INT8_IMAGES_OBJ): $(MLP_INT8_IMAGES_CC)
+	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) -c $< -o $@
 
 $(CNN_MAIN_OBJ): $(CNN_SRC) $(CNN_IMAGES_CC)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
@@ -334,8 +365,21 @@ $(IMAGENET_INT8_IMAGES_OBJ): $(IMAGENET_INT8_IMAGES_CC)
 run-mlp: $(MLP_BENCH)
 	@cd $(ROOT) && ./benchmark/netkit/$(MLP_BENCH) models/mnist_mlp.nk
 
+CNN_MODEL ?= models/mnist_cnn.nk
+CNN_INT8_MODEL ?= models/mnist_cnn_int8.nk
+
 run-cnn: $(CNN_BENCH)
-	@cd $(ROOT) && ./benchmark/netkit/$(CNN_BENCH) models/mnist_cnn.nk
+	@cd $(ROOT) && ./benchmark/netkit/$(CNN_BENCH) $(CNN_MODEL)
+
+run-cnn-int8: $(CNN_INT8_BENCH)
+	@test -f $(ROOT)/$(CNN_INT8_MODEL) || \
+	  (cd $(ROOT) && $(MAKE) export-mnist-cnn-int8)
+	@cd $(ROOT) && ./benchmark/netkit/$(CNN_INT8_BENCH) $(CNN_INT8_MODEL)
+
+run-mlp-int8: $(MLP_INT8_BENCH)
+	@test -f $(ROOT)/models/mnist_mlp_int8.nk || \
+	  (cd $(ROOT) && $(MAKE) export-mnist-mlp-int8)
+	@cd $(ROOT) && ./benchmark/netkit/$(MLP_INT8_BENCH) models/mnist_mlp_int8.nk
 
 run-mobilenetv4: $(MNV4_BENCH)
 	@cd $(ROOT) && ./benchmark/netkit/$(MNV4_BENCH) models/mobilenetv4_small.nk

@@ -24,23 +24,29 @@ def _tensor_scale_zp(detail: dict) -> tuple[float, int]:
 
 def _import_tflite_interpreter():
     try:
-        import tensorflow as tf
+        from ai_edge_litert.interpreter import Interpreter
 
-        return tf.lite.Interpreter
+        return Interpreter
     except ImportError:
         pass
     try:
         from tflite_runtime.interpreter import Interpreter
 
         return Interpreter
+    except ImportError:
+        pass
+    try:
+        import tensorflow as tf
+
+        return tf.lite.Interpreter
     except ImportError as exc:
         raise SystemExit(
-            "tensorflow or tflite_runtime required for TFLite quant alignment"
+            "ai_edge_litert, tflite_runtime, or tensorflow required for TFLite quant alignment"
         ) from exc
 
 
 def extract_tflite_cnn_quant_specs(tflite_path: str | Path) -> list[QuantLayerParams]:
-    """Return per-layer quant params for CONV_2D and FULLY_CONNECTED ops in graph order."""
+    """Return per-layer quant params for conv / depthwise / FC ops in graph order."""
     Interpreter = _import_tflite_interpreter()
     interp = Interpreter(model_path=str(tflite_path))
     interp.allocate_tensors()
@@ -49,7 +55,7 @@ def extract_tflite_cnn_quant_specs(tflite_path: str | Path) -> list[QuantLayerPa
 
     for op in interp._get_ops_details():
         name = op.get("op_name", "")
-        if name not in ("CONV_2D", "FULLY_CONNECTED"):
+        if name not in ("CONV_2D", "DEPTHWISE_CONV_2D", "FULLY_CONNECTED"):
             continue
         inputs = op.get("inputs")
         outputs = op.get("outputs")
@@ -123,7 +129,11 @@ def load_tflite_quant_json(path: Path) -> list[QuantLayerParams]:
 
 
 def count_quantizable_layers(arch: dict[str, Any]) -> int:
-    return sum(1 for layer in arch["layers"] if layer["type"] in ("conv2d", "dense"))
+    return sum(
+        1
+        for layer in arch["layers"]
+        if layer["type"] in ("conv2d", "depthwise_conv2d", "dense")
+    )
 
 
 def validate_specs_for_arch(arch: dict[str, Any], specs: list[QuantLayerParams]) -> None:

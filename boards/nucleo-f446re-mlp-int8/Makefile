@@ -70,6 +70,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/ops.cpp \
 	$(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp \
 	$(NETKIT_ROOT)/src/cmsis_nn_backend.cpp \
+	$(NETKIT_ROOT)/src/im2col_quant.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp \
 	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
 	$(NETKIT_ROOT)/src/cmsis_dsp_util.cpp \
@@ -81,6 +82,7 @@ NETKIT_RUNTIME_SOURCES := \
 NETKIT_KERNEL_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/cmsis_nn_quant_backend.cpp \
 	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
+	$(NETKIT_ROOT)/src/im2col_quant.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp \
 	$(NETKIT_ROOT)/src/mlp.cpp
 

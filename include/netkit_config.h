@@ -24,6 +24,9 @@
  *
  * Arena static defaults (NK_ARENA_DEFAULT_CAPACITY / Arena::kDefaultCapacity):
  *   CLASS_MCU — 64 KiB   CPU and CLASS_MPU — 64 MiB
+ *   Override on the compiler command line, e.g.
+ *     -DNK_ARENA_DEFAULT_CAPACITY=131072
+ *   or via Make/CMake: NETKIT_ARENA_CAPACITY=<bytes> / NETKIT_ARENA_KB=<KiB>.
  *
  * Arena backing (override via Makefile):
  *   CPU default  — one heap malloc per session; free when session ends.
@@ -93,17 +96,24 @@
 #endif
 #endif
 
-/* Static arena default for examples and NK_ARENA_DEFAULT_CAPACITY. */
+/* Static arena default for examples and NK_ARENA_DEFAULT_CAPACITY.
+ * Override: -DNK_ARENA_DEFAULT_CAPACITY=<bytes> (or Make/CMake NETKIT_ARENA_*). */
+#ifndef NK_ARENA_DEFAULT_CAPACITY
 #if defined(NETKIT_CLASS_MCU)
-#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U)
+#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U) /* 64 KiB */
 #else
-#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U * 1024U) /* CPU and MPU class */
+#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U * 1024U) /* 64 MiB — CPU and MPU */
+#endif
+#endif
+
+#if NK_ARENA_DEFAULT_CAPACITY == 0
+#error "NK_ARENA_DEFAULT_CAPACITY must be > 0"
 #endif
 
 /*
- * float Conv2D execution strategy (single tri-state knob):
+ * Conv2D im2col strategy for float reference and int8 QuantOps (single tri-state):
  *   0 = direct loops only, 1 = partial im2col, 2 = full im2col + GEMM.
- * Default 0 (direct) on all targets.
+ * Default 0 (direct) on all targets. CMSIS-NN / XNNPACK ignore this knob.
  */
 #ifndef NETKIT_IM2COL
 #define NETKIT_IM2COL 0
@@ -138,8 +148,7 @@
 #error "NETKIT_CMSIS_DSP_DOT must be 0 or 1"
 #endif
 
-/* CMSIS-NN: Arm MCU (Cortex-M) only. */
-#ifndef NETKIT_CMSIS_NN_ALLOWED
+/* CMSIS-NN: Arm MCU (Cortex-M) only — never cpu / mpu (override not allowed). */
 #if defined(NETKIT_TARGET_MCU_ARM) &&                                                              \
     (defined(ARM_MATH_CM0) || defined(ARM_MATH_CM0PLUS) || defined(ARM_MATH_CM3) ||               \
      defined(ARM_MATH_CM4) || defined(ARM_MATH_CM7) || defined(ARM_MATH_ARMV8MBL) ||               \
@@ -148,15 +157,23 @@
 #else
 #define NETKIT_CMSIS_NN_ALLOWED 0
 #endif
+
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && !NETKIT_CMSIS_NN_ALLOWED
+#error "NETKIT_USE_CMSIS_NN requires NETKIT_TARGET_MCU_ARM with a Cortex-M NETKIT_ARCH "         \
+       "(CM4/M33/...); CMSIS-NN is not available on cpu or mpu targets"
 #endif
 
 /*
- * XNNPACK LayerFast: desktop CPU and Arm MPU only (not MCU class, not RISC yet).
+ * XNNPACK LayerFast: desktop CPU and Arm MPU only — never MCU (override not allowed).
  */
 #if defined(NETKIT_TARGET_CPU) || defined(NETKIT_TARGET_MPU_ARM)
 #define NETKIT_XNNPACK_ALLOWED 1
 #else
 #define NETKIT_XNNPACK_ALLOWED 0
+#endif
+
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && !NETKIT_XNNPACK_ALLOWED
+#error "NETKIT_USE_XNNPACK is not available on MCU targets (cpu/mpu_arm only)"
 #endif
 
 /*

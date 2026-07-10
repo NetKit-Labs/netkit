@@ -42,6 +42,18 @@ function(netkit_add_cmsis_nn target)
             "NETKIT_CMSIS_NN=ON ignored — requires NETKIT_TARGET=mcu_arm and Cortex-M NETKIT_ARCH; using reference kernels")
         return()
     endif()
+    # Mirror Make: CMSIS-NN needs a Cortex-M ARM_MATH_* define from NETKIT_ARCH.
+    set(_netkit_cmsis_nn_cortex_m FALSE)
+    foreach(_def ${NETKIT_ENV_ARM_MATH_DEFINES})
+        if(_def MATCHES "^ARM_MATH_(CM0|CM0PLUS|CM3|CM4|CM7|ARMV8MBL|ARMV8MML|M55|M85)$")
+            set(_netkit_cmsis_nn_cortex_m TRUE)
+        endif()
+    endforeach()
+    if(NOT _netkit_cmsis_nn_cortex_m)
+        message(WARNING
+            "NETKIT_CMSIS_NN=ON ignored — set NETKIT_ARCH=CM4|M33|... (Cortex-M); using reference kernels")
+        return()
+    endif()
 
     set(CMSIS_NN_DIR "${CMAKE_SOURCE_DIR}/third_party/CMSIS-NN")
     if(NOT EXISTS "${CMSIS_NN_DIR}/Include/arm_nnfunctions.h")

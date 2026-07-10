@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 
 from .reference_forward import forward_cnn, forward_mlp
-from .torch_models import TutorialCnn28, TutorialMlp784
+from .torch_models import TutorialCnn28, TutorialCnn28Depthwise, TutorialMlp784
 
 
 def netkit_softmax(logits: np.ndarray) -> np.ndarray:
@@ -69,6 +69,26 @@ def pack_tutorial_cnn(model: TutorialCnn28) -> np.ndarray:
     return np.concatenate(parts).astype(np.float32)
 
 
+def pack_tutorial_cnn_depthwise(model: TutorialCnn28Depthwise) -> np.ndarray:
+    parts: list[np.ndarray] = []
+    for layer in (model.pw1,):
+        w, b = pack_conv2d(layer)
+        parts.extend([w.reshape(-1), b])
+    for layer in (model.dw1,):
+        w, b = pack_depthwise_conv2d(layer)
+        parts.extend([w.reshape(-1), b])
+    for layer in (model.pw2,):
+        w, b = pack_conv2d(layer)
+        parts.extend([w.reshape(-1), b])
+    for layer in (model.dw2,):
+        w, b = pack_depthwise_conv2d(layer)
+        parts.extend([w.reshape(-1), b])
+    for layer in (model.fc1, model.fc2):
+        w, b = pack_dense(layer)
+        parts.extend([w.reshape(-1), b])
+    return np.concatenate(parts).astype(np.float32)
+
+
 @torch.no_grad()
 def forward_mlp_netkit(model: TutorialMlp784, x_flat: np.ndarray) -> np.ndarray:
     x = torch.from_numpy(np.asarray(x_flat, dtype=np.float32))
@@ -79,7 +99,7 @@ def forward_mlp_netkit(model: TutorialMlp784, x_flat: np.ndarray) -> np.ndarray:
 
 
 @torch.no_grad()
-def forward_cnn_netkit(model: TutorialCnn28, x_flat: np.ndarray, *, img_h: int = 28, img_w: int = 28) -> np.ndarray:
+def forward_cnn_netkit(model: TutorialCnn28 | TutorialCnn28Depthwise, x_flat: np.ndarray, *, img_h: int = 28, img_w: int = 28) -> np.ndarray:
     x = np.asarray(x_flat, dtype=np.float32)
     if x.ndim == 1:
         x = x.reshape(1, -1)

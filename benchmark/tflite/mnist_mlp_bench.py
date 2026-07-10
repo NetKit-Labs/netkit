@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Host TensorFlow Lite (LiteRT) float32 MNIST MLP bench.
+
+Pairs with benchmark/netkit/src/main.cc:
+  - same mnist_mlp.tflite / same float digit vectors from the .nk TCAS
+  - same methodology (10 runs x 10 images, discard first invoke each run)
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[2]
+TOOLS = ROOT / "benchmark" / "tflm" / "tools"
+DEFAULT_MODEL = ROOT / "benchmark" / "tflm" / "generated" / "mnist_mlp.tflite"
+FLOAT_NK = ROOT / "models" / "mnist_mlp.nk"
+
+sys.path.insert(0, str(TOOLS))
+from export_int8_test_images import (  # noqa: E402
+    INPUT_SIZE,
+    NUM_IMAGES,
+    _one_per_digit_cases,
+)
+
+
+def _load_interpreter(model_path: Path, *, num_threads: int, use_xnnpack: bool):
+    from ai_edge_litert.interpreter import Interpreter, OpResolverType
+
+    kwargs = {
+        "model_path": str(model_path),
+        "num_threads": num_threads,
+    }
+    if not use_xnnpack:
+        kwargs["experimental_op_resolver_type"] = OpResolverType.BUILTIN_REF
+    return Interpreter(**kwargs)
+
+
+def _load_float_images() -> list[tuple[str, int, np.ndarray]]:
+    sys.path.insert(0, str(ROOT / "python"))
+    from netkit.reader import read_test_suite
+
+    if not FLOAT_NK.is_file():
+        raise SystemExit(f"missing {FLOAT_NK}")
+    suite = read_test_suite(FLOAT_NK)
+    if suite is None:
+        raise SystemExit(f"missing TCAS section in {FLOAT_NK}")
+    cases = _one_per_digit_cases(suite.cases, num=NUM_IMAGES)
+    out: list[tuple[str, int, np.ndarray]] = []
+    for case in cases:
+        pixels = np.asarray(case.input, dtype=np.float32).reshape(-1)
+        if pixels.size != INPUT_SIZE:
+            raise SystemExit(f"case {case.name} has {pixels.size} inputs")
+        out.append((case.name, int(case.label), pixels))
+    return out
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
+    parser.add_argument("--runs", type=int, default=10)
+    parser.add_argument("--num-threads", type=int, default=1)
+    parser.add_argument(
+        "--no-xnnpack",
+        action="store_true",
+        help="Disable XNNPACK (builtin reference kernels only)",
+    )
+    args = parser.parse_args()
+
+    if not args.model.is_file():
+        raise SystemExit(
+            f"missing {args.model} — run: make -C benchmark/tflm export-assets"
+        )
+
+    use_xnnpack = not args.no_xnnpack
+    backend = "xnnpack" if use_xnnpack else "builtin-ref"
+
+    interp = _load_interpreter(
+        args.model, num_threads=args.num_threads, use_xnnpack=use_xnnpack
+    )
+    interp.allocate_tensors()
+    inp = interp.get_input_details()[0]
+    out = interp.get_output_details()[0]
+    if tuple(inp["shape"]) not in ((1, 784), (1, 28, 28)):
+        raise SystemExit(f"unexpected input shape {inp['shape']}")
+    if inp["dtype"] != np.float32 or out["dtype"] != np.float32:
+        raise SystemExit(f"expected float32 I/O, got {inp['dtype']} / {out['dtype']}")
+
+    images = _load_float_images()
+    num_images = len(images)
+    in_shape = tuple(int(x) for x in inp["shape"])
+
+    print("TF Lite MNIST MLP float32 benchmark")
+    print("  runtime:     TensorFlow Lite / LiteRT (host interpreter)")
+    print(f"  backend:     {backend}")
+    print(f"  threads:     {args.num_threads}")
+    print("  dtype:       float32")
+    print(f"  model:       {args.model}")
+    print(f"  model bytes: {args.model.stat().st_size}")
+    print(f"  images:      {num_images} per run")
+    print(f"  runs:        {args.runs} (discard first invoke each run)")
+
+    run_averages: list[float] = []
+    correct = 0
+    for run in range(args.runs):
+        run_total = 0.0
+        counted = 0
+        for i, (name, label, pixels) in enumerate(images):
+            batch = pixels.reshape(in_shape)
+            interp.set_tensor(inp["index"], batch)
+            t0 = time.perf_counter()
+            interp.invoke()
+            t1 = time.perf_counter()
+            elapsed_us = (t1 - t0) * 1e6
+            if i > 0:
+                run_total += elapsed_us
+                counted += 1
+            if run == args.runs - 1:
+                logits = interp.get_tensor(out["index"]).reshape(-1)
+                pred = int(logits.argmax())
+                ok = pred == label
+                correct += int(ok)
+                print(f"  image {i} label={label} pred={pred} {'OK' if ok else 'MISS'} ({name})")
+        run_averages.append(run_total / counted)
+
+    mean_us = float(np.mean(run_averages))
+    print()
+    print(f"TF Lite MNIST mlp_f32 benchmark summary ({backend})")
+    print(f"  method:      {args.runs} runs x 10 images, discard first invoke each run")
+    print("  per-run avg: avg of images 1-9 (us)")
+    print()
+    print(f"  mean:   {mean_us:8.3f} us ({mean_us / 1000.0:6.3f} ms)")
+    print(f"  accuracy:    {correct}/{num_images} on final run")
+    print(
+        f"BENCHMARK_SUMMARY runtime=tflite model=mlp_f32 backend={backend} "
+        f"mean_us={mean_us:.3f} runs={args.runs} top1_correct={correct} top1_total={num_images}"
+    )
+    return 0 if correct == num_images else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

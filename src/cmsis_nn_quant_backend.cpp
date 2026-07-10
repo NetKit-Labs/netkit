@@ -4,6 +4,7 @@
 #include "cmsis_nn_quant.hpp"
 #include "arena.hpp"
 #include "cmsis_buffer_size.hpp"
+#include "cmsis_quant_plan.hpp"
 #include "kernel_workspace.hpp"
 #include "nk_op_detail.hpp"
 #include "netkit_config.h"
@@ -17,6 +18,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+
+#if defined(NETKIT_STAGE_TIMING) && NETKIT_STAGE_TIMING
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+#include "dwt_time.h"
+#else
+#include <chrono>
+#endif
+#endif
 
 namespace
 {
@@ -312,7 +321,14 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
     }
 
 #if NETKIT_CMSIS_PLAN_HOIST
-    if (!cmsis_status_ok(arm_convolve_wrapper_s8(&ctx,
+#if defined(NETKIT_STAGE_TIMING) && NETKIT_STAGE_TIMING
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+    const uint32_t k0 = dwt_cycles();
+#else
+    const auto k0 = std::chrono::steady_clock::now();
+#endif
+#endif
+    const bool cmsis_ok = cmsis_status_ok(arm_convolve_wrapper_s8(&ctx,
                                                  &plan.cmsis.conv,
                                                  &plan.cmsis.quant,
                                                  &plan.cmsis.input,
@@ -322,7 +338,16 @@ bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
                                                  &plan.cmsis.bias,
                                                  bias,
                                                  &plan.cmsis.output,
-                                                 output)))
+                                                 output));
+#if defined(NETKIT_STAGE_TIMING) && NETKIT_STAGE_TIMING
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+    CmsisQuantPlan::RecordCmsisConvKernelUs(dwt_cycles_to_us(dwt_cycles() - k0));
+#else
+    CmsisQuantPlan::RecordCmsisConvKernelUs(
+        std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - k0).count());
+#endif
+#endif
+    if (!cmsis_ok)
 #else
     const cmsis_nn_conv_params conv_params = {
         .input_offset = plan.input_offset,

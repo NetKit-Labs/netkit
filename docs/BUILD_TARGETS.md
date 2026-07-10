@@ -80,7 +80,7 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
 | `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP vector helpers enabled (see CMSIS section) |
 | `NETKIT_CMSIS_DSP_DOT` | `1` — route hot float dots through `arm_dot_prod_f32` (default **0**, helpers-only) |
-| `NETKIT_IM2COL` | float Conv2D strategy (single tri-state knob): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets**. Int8 quantized inference uses CMSIS-NN, not float im2col. |
+| `NETKIT_IM2COL` | Conv2D strategy for **float reference** and **int8 QuantOps** (single tri-state): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets**. CMSIS-NN / XNNPACK ignore this knob (they use their own scratch). |
 | `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
 | `NETKIT_DW_ROW_ACCUM` | Depthwise conv cross-row accumulator strategy (default **1**). See `src/conv_depthwise_kernel.cpp`. |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
@@ -88,10 +88,16 @@ Compile-time macros (from `include/netkit_config.h`):
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
 
-| Target | Default |
-|--------|---------|
-| **MCU** | **64 KiB** |
-| **CPU / MPU** | **64 MiB** |
+| Target | Default | Override |
+|--------|---------|----------|
+| **MCU** | **64 KiB** | `-DNK_ARENA_DEFAULT_CAPACITY=<bytes>`, or Make/CMake `NETKIT_ARENA_CAPACITY=<bytes>` / `NETKIT_ARENA_KB=<KiB>` |
+| **CPU / MPU** | **64 MiB** | same |
+
+```bash
+make NETKIT_TARGET=mcu_arm NETKIT_ARENA_KB=116 lib
+make NETKIT_ARENA_CAPACITY=134217728 lib   # 128 MiB on CPU
+c++ ... -DNK_ARENA_DEFAULT_CAPACITY=131072 ...
+```
 
 Weights always stay in the `.nk` blob. **Preferred on MCU and RTOS/bare-metal MPU:** flash/XIP or `Load*FromBuffer`. **Optional POSIX mmap** (`NETKIT_MMAP` / `NETKIT_USE_MMAP`): default **on** for CPU (macOS/Linux), **off** for MCU and MPU — opt in on embedded Linux with `NETKIT_MMAP=1`. When mmap is off, file load uses `fread` into the arena. The bump arena holds activations and structs. CLI override: `./netkit --arena <size> run|inspect …`.
 

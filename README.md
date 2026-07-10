@@ -252,7 +252,7 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 - **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload
 - **Phase 3 (planned)** — Kalman estimation and tracking alongside neural inference
 - **Lightweight** — Standard C/C++ only, no external dependencies in the engine
-- **Memory-conscious** — Arena bump allocator; target-specific defaults (CPU 4 MiB / MCU 64 KiB / MPU 128 KiB)
+- **Memory-conscious** — Arena bump allocator; target-specific defaults (CPU/MPU 64 MiB / MCU 64 KiB; overridable)
 - **Single-threaded** — Sequential forward pass
 - **Inference-only** — No training
 

@@ -5,8 +5,13 @@ function(netkit_add_xnnpack target)
         return()
     endif()
 
-    if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc" OR
-       NETKIT_TARGET STREQUAL "mpu_risc")
+    # MCU: always off (never link / define USE_XNNPACK).
+    if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc")
+        message(WARNING "NETKIT_XNNPACK=ON forced off — XNNPACK is never enabled on MCU")
+        set(NETKIT_XNNPACK OFF PARENT_SCOPE)
+        return()
+    endif()
+    if(NETKIT_TARGET STREQUAL "mpu_risc")
         message(WARNING "NETKIT_XNNPACK=ON ignored — XNNPACK is cpu/mpu_arm only")
         return()
     endif()

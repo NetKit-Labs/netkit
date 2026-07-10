@@ -41,6 +41,10 @@ option(NETKIT_CMSIS_DSP_DOT "Route hot float dots through arm_dot_prod_f32 (off 
 
 option(NETKIT_GLOBAL_ARENA "Use static/global arena on CPU builds" OFF)
 option(NETKIT_HEAP_ARENA "Compile heap arena helpers on MCU/MPU class builds" OFF)
+# Optional override of NK_ARENA_DEFAULT_CAPACITY (bytes). 0 = use class default
+# (MCU 64 KiB; CPU/MPU 64 MiB). Alternate: NETKIT_ARENA_KB (KiB).
+set(NETKIT_ARENA_CAPACITY "0" CACHE STRING "Override NK_ARENA_DEFAULT_CAPACITY in bytes (0 = class default)")
+set(NETKIT_ARENA_KB "0" CACHE STRING "Override NK_ARENA_DEFAULT_CAPACITY in KiB (0 = class default; ignored if CAPACITY set)")
 # mmap: default ON for cpu, OFF for firmware class. Opt in on embedded Linux MPU_ARM.
 if(NETKIT_TARGET STREQUAL "cpu")
     set(_netkit_mmap_default ON)
@@ -48,7 +52,7 @@ else()
     set(_netkit_mmap_default OFF)
 endif()
 option(NETKIT_MMAP "POSIX mmap for .nk file loads (macOS/Linux; off by default on MCU/MPU class)" ${_netkit_mmap_default})
-set(NETKIT_IM2COL "0" CACHE STRING "float Conv2D strategy: 0 direct (default), 1 partial, 2 full im2col+GEMM")
+set(NETKIT_IM2COL "0" CACHE STRING "Conv2D strategy (float + int8 QuantOps): 0 direct (default), 1 partial, 2 full im2col+GEMM")
 option(NETKIT_LOOP_UNROLL "EXPERIMENTAL: 4x loop unroll in netkit reference kernels (increases .text)" OFF)
 
 set(CMAKE_CXX_STANDARD 26)
@@ -90,6 +94,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/conv_direct_kernel.cpp
     src/im2col_partial.cpp
     src/im2col_full.cpp
+    src/im2col_quant.cpp
     src/depthwise_conv2d.cpp
     src/convnextv2_block.cpp
     src/mobilenetv4_uib.cpp
@@ -177,6 +182,13 @@ elseif(NETKIT_TARGET STREQUAL "mpu_risc")
 endif()
 
 target_compile_definitions(netkit PUBLIC NETKIT_IM2COL=${NETKIT_IM2COL})
+
+if(NETKIT_ARENA_CAPACITY AND NOT NETKIT_ARENA_CAPACITY STREQUAL "0")
+    target_compile_definitions(netkit PUBLIC NK_ARENA_DEFAULT_CAPACITY=${NETKIT_ARENA_CAPACITY})
+elseif(NETKIT_ARENA_KB AND NOT NETKIT_ARENA_KB STREQUAL "0")
+    math(EXPR _netkit_arena_bytes "${NETKIT_ARENA_KB} * 1024")
+    target_compile_definitions(netkit PUBLIC NK_ARENA_DEFAULT_CAPACITY=${_netkit_arena_bytes})
+endif
 
 if(NETKIT_CMSIS_DSP_DOT)
     target_compile_definitions(netkit PUBLIC NETKIT_CMSIS_DSP_DOT=1)

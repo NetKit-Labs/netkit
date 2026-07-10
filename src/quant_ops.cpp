@@ -2,6 +2,9 @@
 
 #include "cmsis_nn_quant.hpp"
 #include "cmsis_dsp_util.hpp"
+#include "conv_im2col_policy.hpp"
+#include "im2col_quant.hpp"
+#include "kernel_workspace.hpp"
 #include "netkit_config.h"
 #include "nk_op_detail.hpp"
 #include "quant_integer.hpp"
@@ -274,6 +277,97 @@ namespace
                                   output);
             return;
         }
+
+#if NETKIT_IM2COL >= 1
+        // Same NETKIT_IM2COL policy as float: partial (1) / full (2) when volume warrants.
+        // filter_offset != 0 needs a different lowering — keep direct loops.
+        // If full-matrix scratch does not fit, degrade to partial then direct.
+        if (filter_offset == 0)
+        {
+            const uint32_t kh = static_cast<uint32_t>(kernel_size);
+            const uint32_t kw = static_cast<uint32_t>(kernel_size);
+            const Conv2dExecMode mode =
+                SelectConv2dExecMode(kernel_size, kernel_size, stride, in_c, out_h, out_w);
+            if (mode != Conv2dExecMode::Direct)
+            {
+                KernelWorkspace* workspace = GetActiveKernelWorkspace();
+                const int8_t pad_value =
+                    plain_interior ? static_cast<int8_t>(0)
+                                   : static_cast<int8_t>(-input_offset);
+                const bool try_full = (mode == Conv2dExecMode::FullIm2Col);
+                const bool try_partial =
+                    (mode == Conv2dExecMode::PartialIm2Col) || try_full;
+#if NETKIT_IM2COL >= 2
+                if (try_full && workspace && workspace->data)
+                {
+                    const std::size_t required =
+                        ConvFullIm2ColS8WorkspaceBytes(out_h, out_w, kh, kw, in_c);
+                    if (workspace->size_bytes >= required &&
+                        ConvFullIm2ColS8Forward(input,
+                                                weights,
+                                                bias_interior,
+                                                output,
+                                                reinterpret_cast<int8_t*>(workspace->data),
+                                                in_h,
+                                                in_w,
+                                                in_c,
+                                                out_h,
+                                                out_w,
+                                                out_channels,
+                                                kh,
+                                                kw,
+                                                stride,
+                                                pad_h,
+                                                pad_w,
+                                                pad_value,
+                                                plain_interior,
+                                                input_offset,
+                                                m_ptr,
+                                                s_ptr,
+                                                output_zero_point,
+                                                baked_min,
+                                                baked_max))
+                    {
+                        return;
+                    }
+                }
+#endif
+                if (try_partial && workspace && workspace->data)
+                {
+                    const std::size_t required =
+                        ConvPartialIm2ColS8WorkspaceBytes(kh, kw, in_c);
+                    if (workspace->size_bytes >= required &&
+                        ConvPartialIm2ColS8Forward(input,
+                                                   weights,
+                                                   bias_interior,
+                                                   output,
+                                                   reinterpret_cast<int8_t*>(workspace->data),
+                                                   in_h,
+                                                   in_w,
+                                                   in_c,
+                                                   out_h,
+                                                   out_w,
+                                                   out_channels,
+                                                   kh,
+                                                   kw,
+                                                   stride,
+                                                   pad_h,
+                                                   pad_w,
+                                                   pad_value,
+                                                   plain_interior,
+                                                   input_offset,
+                                                   m_ptr,
+                                                   s_ptr,
+                                                   output_zero_point,
+                                                   baked_min,
+                                                   baked_max))
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+#endif
 
         int32_t oh_lo = 0;
         int32_t oh_hi = static_cast<int32_t>(out_h);

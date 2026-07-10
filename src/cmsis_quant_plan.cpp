@@ -4,6 +4,7 @@
 #include "cnn.hpp"
 #include "cmsis_buffer_size.hpp"
 #include "cmsis_nn_quant.hpp"
+#include "im2col_quant.hpp"
 #include "kernel_workspace.hpp"
 #include "netkit_config.h"
 #include "nk_op_detail.hpp"
@@ -23,10 +24,19 @@
 #include <xnnpack.h>
 #endif
 
-// Temporary stage timing for int8-ref latency investigation. Build with
-// -DNETKIT_STAGE_TIMING=1; leave unset for production. REVERT after investigation.
+// Optional per-layer stage timing for latency investigation.
+// Default OFF (production). Enable only for debug builds:
+//   -DNETKIT_STAGE_TIMING=1
+// On MCU also set -DNETKIT_STAGE_TIMING_UART=1 (board Makefile does this when
+// NETKIT_STAGE_TIMING=1) so summaries go over UART and timers use DWT.
+// Leave unset/0 in production — zero cost when disabled.
 #ifndef NETKIT_STAGE_TIMING
 #define NETKIT_STAGE_TIMING 0
+#endif
+
+#if NETKIT_STAGE_TIMING && defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+#include "dwt_time.h"
+#include "uart.h"
 #endif
 
 namespace
@@ -36,7 +46,13 @@ namespace
 #if NETKIT_STAGE_TIMING
     struct StageTiming
     {
-        double stem_us = 0;
+        // Pre-UIB / MNIST-style Conv2Ds: first two split out; further stem convs in stem_extra.
+        double conv1_us = 0;
+        double conv2_us = 0;
+        double stem_extra_us = 0;
+        // Time inside arm_convolve_wrapper_s8 only (excludes BindContext / plan glue).
+        double cmsis_conv_kernel_us = 0;
+        double maxpool_us = 0;
         double uib_start_dw_us = 0;
         double uib_expand_us = 0;
         double uib_middle_dw_us = 0;
@@ -58,6 +74,14 @@ namespace
     struct ScopedStageTimer
     {
         double* bucket;
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+        uint32_t t0_cycles;
+        explicit ScopedStageTimer(double* b) : bucket(b), t0_cycles(dwt_cycles()) {}
+        ~ScopedStageTimer()
+        {
+            *bucket += dwt_cycles_to_us(dwt_cycles() - t0_cycles);
+        }
+#else
         std::chrono::steady_clock::time_point t0;
         explicit ScopedStageTimer(double* b)
             : bucket(b), t0(std::chrono::steady_clock::now())
@@ -69,42 +93,82 @@ namespace
                            std::chrono::steady_clock::now() - t0)
                            .count();
         }
+#endif
     };
 
-    void PrintStageTimingIfDue()
+    double StageElapsedUs(
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+        uint32_t t0_cycles
+#else
+        std::chrono::steady_clock::time_point t0
+#endif
+    )
     {
-        // Print every invoke for the first few, then every 10th.
-        if (g_stage_timing.invokes > 3 && (g_stage_timing.invokes % 10) != 0)
-            return;
-        const double total = g_stage_timing.stem_us + g_stage_timing.uib_start_dw_us +
-                             g_stage_timing.uib_expand_us + g_stage_timing.uib_middle_dw_us +
-                             g_stage_timing.uib_proj_us + g_stage_timing.uib_residual_memcpy_us +
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+        return dwt_cycles_to_us(dwt_cycles() - t0_cycles);
+#else
+        return std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0)
+            .count();
+#endif
+    }
+
+    void FormatStageTimingLine(char* buf, std::size_t capacity)
+    {
+        const double total = g_stage_timing.conv1_us + g_stage_timing.conv2_us +
+                             g_stage_timing.stem_extra_us + g_stage_timing.maxpool_us +
+                             g_stage_timing.uib_start_dw_us + g_stage_timing.uib_expand_us +
+                             g_stage_timing.uib_middle_dw_us + g_stage_timing.uib_proj_us +
+                             g_stage_timing.uib_residual_memcpy_us +
                              g_stage_timing.uib_residual_add_us + g_stage_timing.uib_fallback_us +
                              g_stage_timing.avgpool_us + g_stage_timing.head_conv_us +
                              g_stage_timing.dense_us + g_stage_timing.other_us;
-        const double n = static_cast<double>(g_stage_timing.invokes);
+        const double n = static_cast<double>(std::max<uint64_t>(g_stage_timing.invokes, 1));
         auto avg = [n](double v) { return v / n; };
-        std::fprintf(stderr,
-                     "STAGE_TIMING invokes=%llu plan_uib=%llu fallback_uib=%llu "
-                     "avg_us: stem=%.1f uib_sdw=%.1f uib_exp=%.1f uib_mdw=%.1f uib_proj=%.1f "
-                     "res_memcpy=%.1f res_add=%.1f uib_fb=%.1f avgpool=%.1f head=%.1f dense=%.1f "
-                     "other=%.1f total=%.1f\n",
-                     static_cast<unsigned long long>(g_stage_timing.invokes),
-                     static_cast<unsigned long long>(g_stage_timing.uib_plan_ok),
-                     static_cast<unsigned long long>(g_stage_timing.uib_fallback),
-                     avg(g_stage_timing.stem_us),
-                     avg(g_stage_timing.uib_start_dw_us),
-                     avg(g_stage_timing.uib_expand_us),
-                     avg(g_stage_timing.uib_middle_dw_us),
-                     avg(g_stage_timing.uib_proj_us),
-                     avg(g_stage_timing.uib_residual_memcpy_us),
-                     avg(g_stage_timing.uib_residual_add_us),
-                     avg(g_stage_timing.uib_fallback_us),
-                     avg(g_stage_timing.avgpool_us),
-                     avg(g_stage_timing.head_conv_us),
-                     avg(g_stage_timing.dense_us),
-                     avg(g_stage_timing.other_us),
-                     avg(total));
+        // Two lines so MCU uart_printf-sized buffers are not required; uart_write is used.
+        std::snprintf(
+            buf,
+            capacity,
+            "STAGE_TIMING invokes=%llu plan_uib=%llu fallback_uib=%llu "
+            "avg_us: conv1=%.1f conv2=%.1f stem_extra=%.1f cmsis_conv=%.1f "
+            "conv_glue=%.1f maxpool=%.1f "
+            "uib_sdw=%.1f uib_exp=%.1f uib_mdw=%.1f uib_proj=%.1f "
+            "res_memcpy=%.1f res_add=%.1f uib_fb=%.1f avgpool=%.1f head=%.1f dense=%.1f "
+            "other=%.1f total=%.1f",
+            static_cast<unsigned long long>(g_stage_timing.invokes),
+            static_cast<unsigned long long>(g_stage_timing.uib_plan_ok),
+            static_cast<unsigned long long>(g_stage_timing.uib_fallback),
+            avg(g_stage_timing.conv1_us),
+            avg(g_stage_timing.conv2_us),
+            avg(g_stage_timing.stem_extra_us),
+            avg(g_stage_timing.cmsis_conv_kernel_us),
+            avg(g_stage_timing.conv1_us + g_stage_timing.conv2_us + g_stage_timing.stem_extra_us +
+                g_stage_timing.head_conv_us - g_stage_timing.cmsis_conv_kernel_us),
+            avg(g_stage_timing.maxpool_us),
+            avg(g_stage_timing.uib_start_dw_us),
+            avg(g_stage_timing.uib_expand_us),
+            avg(g_stage_timing.uib_middle_dw_us),
+            avg(g_stage_timing.uib_proj_us),
+            avg(g_stage_timing.uib_residual_memcpy_us),
+            avg(g_stage_timing.uib_residual_add_us),
+            avg(g_stage_timing.uib_fallback_us),
+            avg(g_stage_timing.avgpool_us),
+            avg(g_stage_timing.head_conv_us),
+            avg(g_stage_timing.dense_us),
+            avg(g_stage_timing.other_us),
+            avg(total));
+    }
+
+    void PrintStageTimingIfDue()
+    {
+        // Host only: periodic stderr. MCU prints once via PrintStageTimingSummary
+        // after the timed bench so UART I/O does not inflate invoke latency.
+#if !(defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART)
+        if (g_stage_timing.invokes > 3 && (g_stage_timing.invokes % 10) != 0)
+            return;
+        char line[512];
+        FormatStageTimingLine(line, sizeof(line));
+        std::fprintf(stderr, "%s\n", line);
+#endif
     }
 #endif
 
@@ -324,6 +388,19 @@ namespace
             static_cast<uint32_t>(conv.out_channels)));
 #else
         plan.workspace_bytes = 0;
+        // QuantOps im2col scratch only when CMSIS-NN is off (otherwise CMSIS owns
+        // the workspace and a full-im2col bump can OOM a 64 KiB MCU arena).
+        {
+            const std::size_t im2col_bytes = Conv2dQuantIm2ColWorkspaceBytes(
+                out_h,
+                out_w,
+                static_cast<uint32_t>(conv.kernel_size),
+                static_cast<uint32_t>(conv.kernel_size),
+                static_cast<uint32_t>(in_c),
+                conv.stride);
+            if (im2col_bytes > static_cast<std::size_t>(plan.workspace_bytes))
+                plan.workspace_bytes = static_cast<int32_t>(im2col_bytes);
+        }
 #endif
         // Prepare-time input_offset fold for scalar ref (weight_zp must be 0).
         plan.bias_folded = nullptr;
@@ -829,6 +906,11 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                 lp.kind = LayerKind::MaxPool2D;
                 if (!BuildPoolPlan(lp.pool, block.pool, in_h_layer, in_w_layer, in_c_layer))
                     return false;
+                // MaxPool preserves activation quant params (TF Lite / XNNPACK qs8).
+                lp.pool.input_scale = activation_scale;
+                lp.pool.input_zero_point = activation_zero_point;
+                lp.pool.output_scale = activation_scale;
+                lp.pool.output_zero_point = activation_zero_point;
                 break;
             }
             case CnnBlockType::AvgPool2D:
@@ -1147,8 +1229,24 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
         runtime->workspace = static_cast<uint8_t*>(
             arena.alloc(workspace_bytes, alignof(std::max_align_t)));
         if (!runtime->workspace)
+        {
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
             return false;
-        runtime->workspace_bytes = workspace_bytes;
+#else
+            // QuantOps im2col: take remaining arena so partial patches can still run.
+            const std::size_t rem = arena.remaining();
+            if (rem > 0)
+            {
+                runtime->workspace = static_cast<uint8_t*>(
+                    arena.alloc(rem, alignof(std::max_align_t)));
+                runtime->workspace_bytes = runtime->workspace ? rem : 0;
+            }
+#endif
+        }
+        else
+        {
+            runtime->workspace_bytes = workspace_bytes;
+        }
     }
 
 #if NETKIT_XNNPACK_PLAN_HOIST
@@ -1531,6 +1629,7 @@ namespace
         bool use_a = true;
 #if NETKIT_STAGE_TIMING
         bool seen_uib = false;
+        uint32_t stem_conv_idx = 0;
 #endif
 
         for (uint32_t i = 0; i < runtime.num_layers; ++i)
@@ -1554,10 +1653,37 @@ namespace
 
             CnnBlock& block = network.GetBlock(i);
 #if NETKIT_STAGE_TIMING
-            const auto layer_t0 = std::chrono::steady_clock::now();
+            const auto layer_t0 =
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+                dwt_cycles();
+#else
+                std::chrono::steady_clock::now();
+#endif
             double* layer_bucket = &g_stage_timing.other_us;
             if (lp.kind == LayerKind::Conv2D)
-                layer_bucket = seen_uib ? &g_stage_timing.head_conv_us : &g_stage_timing.stem_us;
+            {
+                if (seen_uib)
+                {
+                    layer_bucket = &g_stage_timing.head_conv_us;
+                }
+                else if (stem_conv_idx == 0)
+                {
+                    layer_bucket = &g_stage_timing.conv1_us;
+                    ++stem_conv_idx;
+                }
+                else if (stem_conv_idx == 1)
+                {
+                    layer_bucket = &g_stage_timing.conv2_us;
+                    ++stem_conv_idx;
+                }
+                else
+                {
+                    layer_bucket = &g_stage_timing.stem_extra_us;
+                    ++stem_conv_idx;
+                }
+            }
+            else if (lp.kind == LayerKind::MaxPool2D)
+                layer_bucket = &g_stage_timing.maxpool_us;
             else if (lp.kind == LayerKind::AvgPool2D)
                 layer_bucket = &g_stage_timing.avgpool_us;
             else if (lp.kind == LayerKind::Dense || lp.kind == LayerKind::DenseSoftmax)
@@ -2178,9 +2304,7 @@ namespace
 #if NETKIT_STAGE_TIMING
             if (lp.kind != LayerKind::MobilenetV4Uib && lp.kind != LayerKind::FlattenView)
             {
-                *layer_bucket += std::chrono::duration<double, std::micro>(
-                                     std::chrono::steady_clock::now() - layer_t0)
-                                     .count();
+                *layer_bucket += StageElapsedUs(layer_t0);
             }
 #endif
 
@@ -2263,5 +2387,30 @@ bool ForwardInt8ToBuffer(Runtime& runtime,
                        unused_cache,
                        output);
 }
+
+#if NETKIT_STAGE_TIMING
+void ResetStageTiming()
+{
+    g_stage_timing = {};
+}
+
+void PrintStageTimingSummary()
+{
+    char line[640];
+    FormatStageTimingLine(line, sizeof(line));
+#if defined(NETKIT_STAGE_TIMING_UART) && NETKIT_STAGE_TIMING_UART
+    // uart_printf() uses a 192-byte stack buffer; write the full line directly.
+    uart_write(line);
+    uart_write("\r\n");
+#else
+    std::fprintf(stderr, "%s\n", line);
+#endif
+}
+
+void RecordCmsisConvKernelUs(double us)
+{
+    g_stage_timing.cmsis_conv_kernel_us += us;
+}
+#endif
 
 }  // namespace CmsisQuantPlan

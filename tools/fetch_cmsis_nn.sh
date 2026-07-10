@@ -5,8 +5,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/third_party/CMSIS-NN"
 URL="https://github.com/ARM-software/CMSIS-NN.git"
-# Pinned to a commit with experimental float32 kernels (main, 2026-04).
-PIN="dbf45dbfcc515421dd6099037d3e2637b90748c8"
+# Match TFLM's pin (tensorflow/lite/micro/tools/make/ext_libs/cmsis_nn_download.sh).
+PIN="4ab83cc3cc98fb85ed6dafb55e8ca02f1628dcae"
 
 if [[ -d "$DEST/.git" ]]; then
   git -C "$DEST" fetch --depth 1 origin "$PIN" 2>/dev/null || git -C "$DEST" fetch origin

@@ -12,6 +12,7 @@
 #include "arena.hpp"
 #include "cmsis_quant_plan.hpp"
 #include "cnn.hpp"
+#include "mlp.hpp"
 #include "mobilenetv4_uib.hpp"
 #include "netkit_config.h"
 #include "nk_op_detail.hpp"
@@ -1597,6 +1598,13 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                         &cur_id))
         return fail("define external input failed");
 
+    // Track NHWC geometry + quant params for Flatten reshape and MaxPool.
+    uint32_t cur_h = static_cast<uint32_t>(in_h);
+    uint32_t cur_w = static_cast<uint32_t>(in_w);
+    uint32_t cur_c = static_cast<uint32_t>(in_c);
+    int32_t cur_zp = in_zp;
+    float cur_scale = in_scale;
+
     for (uint32_t i = 0; i < runtime.num_layers; ++i)
     {
         CmsisQuantPlan::LayerPlan& lp = runtime.layers[i];
@@ -1607,7 +1615,46 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
         switch (lp.kind)
         {
             case CmsisQuantPlan::LayerKind::FlattenView:
+            {
+                if (cur_h == 1 && cur_w == 1)
+                    break;
+                const uint32_t features = cur_h * cur_w * cur_c;
+                uint32_t out_id = 0;
+                const uint32_t out_ext =
+                    is_last ? runtime.xnn_net_ext_out : XNN_INVALID_VALUE_ID;
+                const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
+                if (!DefineActQint8(subgraph,
+                                    cur_zp,
+                                    cur_scale,
+                                    /*h=*/1,
+                                    /*w=*/1,
+                                    static_cast<size_t>(features),
+                                    out_ext,
+                                    out_flags,
+                                    &out_id))
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "flatten act failed layer %u", i);
+                    return fail(layer_err);
+                }
+                const size_t new_shape[4] = {1, 1, 1, static_cast<size_t>(features)};
+                if (xnn_define_static_reshape(subgraph,
+                                              /*num_dims=*/4,
+                                              new_shape,
+                                              cur_id,
+                                              out_id,
+                                              /*flags=*/0) != xnn_status_success)
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "flatten reshape failed layer %u", i);
+                    return fail(layer_err);
+                }
+                cur_id = out_id;
+                cur_h = 1;
+                cur_w = 1;
+                cur_c = features;
                 break;
+            }
 
             case CmsisQuantPlan::LayerKind::Conv2D:
             {
@@ -1657,6 +1704,11 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     return fail(layer_err);
                 }
                 cur_id = out_id;
+                cur_h = static_cast<uint32_t>(lp.conv.out_h);
+                cur_w = static_cast<uint32_t>(lp.conv.out_w);
+                cur_c = static_cast<uint32_t>(lp.conv.out_c);
+                cur_zp = lp.conv.output_offset;
+                cur_scale = lp.conv.output_scale;
                 break;
             }
 
@@ -1709,6 +1761,11 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     return fail(layer_err);
                 }
                 cur_id = out_id;
+                cur_h = static_cast<uint32_t>(lp.depthwise.out_h);
+                cur_w = static_cast<uint32_t>(lp.depthwise.out_w);
+                cur_c = static_cast<uint32_t>(lp.depthwise.channels);
+                cur_zp = lp.depthwise.output_offset;
+                cur_scale = lp.depthwise.output_scale;
                 break;
             }
 
@@ -1768,6 +1825,11 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     return fail("UIB bias scales alloc failed");
                 lp.uib.xnn_subgraph_includes_residual = includes_residual;
                 cur_id = out_id;
+                cur_h = static_cast<uint32_t>(lp.uib.out_h);
+                cur_w = static_cast<uint32_t>(lp.uib.out_w);
+                cur_c = static_cast<uint32_t>(lp.uib.out_c);
+                cur_zp = lp.uib.proj.output_offset;
+                cur_scale = lp.uib.proj.output_scale;
                 break;
             }
 
@@ -1816,15 +1878,76 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     return fail(layer_err);
                 }
                 cur_id = out_id;
+                cur_h = 1;
+                cur_w = 1;
+                cur_c = static_cast<uint32_t>(lp.pool.in_c);
+                cur_zp = out_zp;
+                cur_scale = out_scale;
                 break;
             }
 
             case CmsisQuantPlan::LayerKind::MaxPool2D:
             {
-                std::snprintf(layer_err, sizeof(layer_err),
-                              "MaxPool2D not supported in network subgraph (layer %u)",
-                              i);
-                return fail(layer_err);
+                if (!lp.pool.ready)
+                    return fail("maxpool plan not ready");
+                if (lp.pool.pad_h < 0 || lp.pool.pad_w < 0)
+                    return fail("maxpool negative pad unsupported");
+                const float out_scale =
+                    lp.pool.output_scale > 0.0f ? lp.pool.output_scale : cur_scale;
+                const int32_t out_zp = lp.pool.output_scale > 0.0f
+                                          ? lp.pool.output_zero_point
+                                          : cur_zp;
+                float out_min = 0.0f;
+                float out_max = 0.0f;
+                ActivationClampFloat(lp.pool.clamp, out_scale, out_zp, out_min, out_max);
+
+                uint32_t out_id = 0;
+                const uint32_t out_ext =
+                    is_last ? runtime.xnn_net_ext_out : XNN_INVALID_VALUE_ID;
+                const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
+                if (!DefineActQint8(subgraph,
+                                    out_zp,
+                                    out_scale,
+                                    static_cast<size_t>(lp.pool.out_h),
+                                    static_cast<size_t>(lp.pool.out_w),
+                                    static_cast<size_t>(lp.pool.in_c),
+                                    out_ext,
+                                    out_flags,
+                                    &out_id))
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "maxpool act failed layer %u", i);
+                    return fail(layer_err);
+                }
+                if (xnn_define_max_pooling_2d(
+                        subgraph,
+                        static_cast<uint32_t>(lp.pool.pad_h),
+                        static_cast<uint32_t>(lp.pool.pad_w),
+                        static_cast<uint32_t>(lp.pool.pad_h),
+                        static_cast<uint32_t>(lp.pool.pad_w),
+                        static_cast<uint32_t>(lp.pool.pool_h),
+                        static_cast<uint32_t>(lp.pool.pool_w),
+                        static_cast<uint32_t>(lp.pool.stride),
+                        static_cast<uint32_t>(lp.pool.stride),
+                        /*dilation_height=*/1,
+                        /*dilation_width=*/1,
+                        out_min,
+                        out_max,
+                        cur_id,
+                        out_id,
+                        /*flags=*/0) != xnn_status_success)
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "maxpool node failed layer %u", i);
+                    return fail(layer_err);
+                }
+                cur_id = out_id;
+                cur_h = static_cast<uint32_t>(lp.pool.out_h);
+                cur_w = static_cast<uint32_t>(lp.pool.out_w);
+                cur_c = static_cast<uint32_t>(lp.pool.in_c);
+                cur_zp = out_zp;
+                cur_scale = out_scale;
+                break;
             }
 
             case CmsisQuantPlan::LayerKind::Dense:
@@ -1898,6 +2021,11 @@ bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                     return fail(layer_err);
                 }
                 cur_id = out_id;
+                cur_h = 1;
+                cur_w = 1;
+                cur_c = static_cast<uint32_t>(lp.fc.out_features);
+                cur_zp = lp.fc.output_offset;
+                cur_scale = lp.fc.output_scale;
                 break;
             }
 
@@ -2001,6 +2129,271 @@ bool InvokeNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
     const xnn_external_value externals[2] = {
         {runtime.xnn_net_ext_in, const_cast<int8_t*>(input)},
         {runtime.xnn_net_ext_out, output},
+    };
+    if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
+        return false;
+    return xnn_invoke_runtime(xnn_rt) == xnn_status_success;
+}
+
+void DestroyMlpRuntime(MlpRuntime& runtime)
+{
+    if (runtime.xnn_network_runtime)
+    {
+        (void)xnn_delete_runtime(static_cast<xnn_runtime_t>(runtime.xnn_network_runtime));
+        runtime.xnn_network_runtime = nullptr;
+    }
+    if (runtime.xnn_weights_cache)
+    {
+        (void)xnn_delete_weights_cache(static_cast<xnn_weights_cache_t>(runtime.xnn_weights_cache));
+        runtime.xnn_weights_cache = nullptr;
+    }
+    if (runtime.xnn_workspace)
+    {
+        (void)xnn_release_workspace(static_cast<xnn_workspace_t>(runtime.xnn_workspace));
+        runtime.xnn_workspace = nullptr;
+    }
+    if (runtime.bias_scales)
+    {
+        for (uint32_t i = 0; i < runtime.bias_scales_count; ++i)
+            delete[] runtime.bias_scales[i];
+        delete[] runtime.bias_scales;
+        runtime.bias_scales = nullptr;
+        runtime.bias_scales_count = 0;
+    }
+    runtime.ready = false;
+    runtime.ext_in = 0;
+    runtime.ext_out = 1;
+    runtime.in_features = 0;
+    runtime.out_features = 0;
+}
+
+bool BuildMlpNetworkSubgraph(MLPNetwork& network,
+                             Arena& arena,
+                             uint32_t in_features,
+                             MlpRuntime*& out_runtime)
+{
+    (void)arena;
+    out_runtime = nullptr;
+    if (!network.IsValid() || network.layer_count() == 0 || in_features == 0 ||
+        !EnsureXnnInitialized())
+        return false;
+
+    MlpRuntime* runtime = new (std::nothrow) MlpRuntime{};
+    if (!runtime)
+        return false;
+
+    auto fail = [&](const char* reason) {
+        std::fprintf(stderr, "BuildMlpNetworkSubgraph: %s\n", reason);
+        DestroyMlpRuntime(*runtime);
+        delete runtime;
+        return false;
+    };
+
+    constexpr size_t kWeightsCacheBytes = 16u * 1024u * 1024u;
+    xnn_weights_cache_t cache = nullptr;
+    if (xnn_create_weights_cache_with_size(kWeightsCacheBytes, &cache) == xnn_status_success ||
+        xnn_create_weights_cache(&cache) == xnn_status_success)
+        runtime->xnn_weights_cache = cache;
+    xnn_workspace_t ws = nullptr;
+    if (xnn_create_workspace(&ws) == xnn_status_success)
+        runtime->xnn_workspace = ws;
+
+    runtime->ext_in = 0;
+    runtime->ext_out = 1;
+    runtime->in_features = in_features;
+
+    xnn_subgraph_t subgraph = nullptr;
+    if (xnn_create_subgraph(/*external_value_ids=*/2, /*flags=*/0, &subgraph) !=
+        xnn_status_success)
+        return fail("xnn_create_subgraph failed");
+
+    auto fail_sg = [&](const char* reason) {
+        (void)xnn_delete_subgraph(subgraph);
+        return fail(reason);
+    };
+
+    MLPLayer& first = network.GetLayer(0);
+    if (!first.quant.enabled || first.quant.params.input_scale <= 0.0f)
+        return fail_sg("first layer missing quant params");
+
+    uint32_t cur_id = 0;
+    const size_t in_dims[2] = {1, static_cast<size_t>(in_features)};
+    if (xnn_define_quantized_tensor_value(subgraph,
+                                         xnn_datatype_qint8,
+                                         first.quant.params.input_zero_point,
+                                         first.quant.params.input_scale,
+                                         /*num_dims=*/2,
+                                         in_dims,
+                                         /*data=*/nullptr,
+                                         runtime->ext_in,
+                                         XNN_VALUE_FLAG_EXTERNAL_INPUT,
+                                         &cur_id) != xnn_status_success)
+        return fail_sg("define external input failed");
+
+    uint32_t cur_features = in_features;
+    const uint32_t n = network.layer_count();
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        MLPLayer& layer = network.GetLayer(i);
+        const bool is_last = i + 1 == n;
+        char layer_err[96];
+
+        if (!layer.quant.enabled || !layer.weights.data || layer.weights.rank != 2)
+            return fail_sg("dense quant/weights missing");
+
+        const auto& q = layer.quant.params;
+        CmsisQuantPlan::FcPlan plan{};
+        plan.input_offset = -q.input_zero_point;
+        plan.filter_offset = -q.weight_zero_point;
+        plan.output_offset = q.output_zero_point;
+        plan.clamp = (layer.activation == ActivationType::ReLU)
+                         ? QuantInteger::QuantClamp::ReLU
+                         : (layer.activation == ActivationType::ReLU6)
+                               ? QuantInteger::QuantClamp::ReLU6
+                               : QuantInteger::QuantClamp::None;
+        // Softmax omitted in subgraph (logits), matching CNN DenseSoftmax path.
+        if (layer.activation == ActivationType::Softmax)
+            plan.clamp = QuantInteger::QuantClamp::None;
+        plan.input_scale = q.input_scale;
+        plan.weight_scale = q.weight_scale;
+        plan.output_scale = q.output_scale;
+        plan.weight_channel_scales = q.weight_channel_scales;
+        plan.num_weight_channel_scales = q.num_weight_channel_scales;
+        plan.in_features = static_cast<int32_t>(layer.weights.shape[1]);
+        plan.out_features = static_cast<int32_t>(layer.weights.shape[0]);
+        plan.ready = true;
+
+        if (static_cast<uint32_t>(plan.in_features) != cur_features)
+        {
+            std::snprintf(layer_err, sizeof(layer_err),
+                          "dense in_features mismatch layer %u", i);
+            return fail_sg(layer_err);
+        }
+
+        uint32_t filter_id = 0;
+        uint32_t bias_id = 0;
+        float* bias_scales = nullptr;
+        if (!DefineFilterAndBiasFc(subgraph,
+                                   plan,
+                                   static_cast<const int8_t*>(layer.weights.data),
+                                   static_cast<const int32_t*>(layer.bias.data),
+                                   &bias_scales,
+                                   &filter_id,
+                                   &bias_id))
+        {
+            delete[] bias_scales;
+            std::snprintf(layer_err, sizeof(layer_err),
+                          "fc filter/bias failed layer %u", i);
+            return fail_sg(layer_err);
+        }
+        if (bias_scales)
+        {
+            float** next =
+                new (std::nothrow) float*[runtime->bias_scales_count + 1];
+            if (!next)
+            {
+                delete[] bias_scales;
+                return fail_sg("bias scales alloc failed");
+            }
+            for (uint32_t j = 0; j < runtime->bias_scales_count; ++j)
+                next[j] = runtime->bias_scales[j];
+            next[runtime->bias_scales_count] = bias_scales;
+            delete[] runtime->bias_scales;
+            runtime->bias_scales = next;
+            ++runtime->bias_scales_count;
+        }
+
+        float out_min = 0.0f;
+        float out_max = 0.0f;
+        ActivationClampFloat(
+            plan.clamp, plan.output_scale, plan.output_offset, out_min, out_max);
+
+        uint32_t out_id = 0;
+        const uint32_t out_ext = is_last ? runtime->ext_out : XNN_INVALID_VALUE_ID;
+        const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
+        const size_t out_dims[2] = {1, static_cast<size_t>(plan.out_features)};
+        if (xnn_define_quantized_tensor_value(subgraph,
+                                             xnn_datatype_qint8,
+                                             plan.output_offset,
+                                             plan.output_scale,
+                                             /*num_dims=*/2,
+                                             out_dims,
+                                             /*data=*/nullptr,
+                                             out_ext,
+                                             out_flags,
+                                             &out_id) != xnn_status_success)
+        {
+            std::snprintf(layer_err, sizeof(layer_err), "fc act failed layer %u", i);
+            return fail_sg(layer_err);
+        }
+        if (xnn_define_fully_connected(subgraph,
+                                       out_min,
+                                       out_max,
+                                       cur_id,
+                                       filter_id,
+                                       bias_id,
+                                       out_id,
+                                       /*flags=*/0) != xnn_status_success)
+        {
+            std::snprintf(layer_err, sizeof(layer_err), "fc node failed layer %u", i);
+            return fail_sg(layer_err);
+        }
+        cur_id = out_id;
+        cur_features = static_cast<uint32_t>(plan.out_features);
+        if (is_last)
+            runtime->out_features = cur_features;
+    }
+
+    xnn_runtime_t xnn_rt = nullptr;
+    const xnn_status create_st =
+        xnn_create_runtime_v4(subgraph,
+                              static_cast<xnn_weights_cache_t>(runtime->xnn_weights_cache),
+                              static_cast<xnn_workspace_t>(runtime->xnn_workspace),
+                              /*threadpool=*/nullptr,
+                              XNN_FLAG_DONT_SPIN_WORKERS,
+                              &xnn_rt);
+    (void)xnn_delete_subgraph(subgraph);
+    subgraph = nullptr;
+    if (create_st != xnn_status_success || !xnn_rt)
+        return fail("xnn_create_runtime_v4 failed");
+    runtime->xnn_network_runtime = xnn_rt;
+
+    if (runtime->xnn_weights_cache)
+    {
+        auto* cache_ptr = static_cast<xnn_weights_cache_t>(runtime->xnn_weights_cache);
+        if (xnn_finalize_weights_cache(cache_ptr, xnn_weights_cache_finalization_kind_hard) !=
+            xnn_status_success)
+        {
+            (void)xnn_finalize_weights_cache(cache_ptr,
+                                             xnn_weights_cache_finalization_kind_soft);
+        }
+    }
+
+    const size_t reshape_in[2] = {1, static_cast<size_t>(in_features)};
+    if (xnn_reshape_external_value(xnn_rt, runtime->ext_in, 2, reshape_in) !=
+        xnn_status_success)
+        return fail("reshape input failed");
+    const size_t reshape_out[2] = {1, static_cast<size_t>(runtime->out_features)};
+    if (xnn_reshape_external_value(xnn_rt, runtime->ext_out, 2, reshape_out) !=
+        xnn_status_success)
+        return fail("reshape output failed");
+    if (xnn_reshape_runtime(xnn_rt) != xnn_status_success)
+        return fail("reshape_runtime failed");
+
+    runtime->ready = true;
+    std::fprintf(stderr, "BuildMlpNetworkSubgraph: MLP xnn_subgraph ready\n");
+    out_runtime = runtime;
+    return true;
+}
+
+bool InvokeMlpNetworkSubgraph(MlpRuntime& runtime, const int8_t* input, int8_t* output)
+{
+    if (!runtime.ready || !runtime.xnn_network_runtime || !input || !output)
+        return false;
+    auto* xnn_rt = static_cast<xnn_runtime_t>(runtime.xnn_network_runtime);
+    const xnn_external_value externals[2] = {
+        {runtime.ext_in, const_cast<int8_t*>(input)},
+        {runtime.ext_out, output},
     };
     if (xnn_setup_runtime_v2(xnn_rt, 2, externals) != xnn_status_success)
         return false;

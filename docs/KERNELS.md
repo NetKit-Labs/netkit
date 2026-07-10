@@ -178,8 +178,9 @@ When CMSIS-NN is off or `TryConv2dForward` returns false, `Conv2dDispatchForward
 | `conv1x1_kernel.cpp` | 1×1 stride-1 direct dot product (mandatory for 1×1) |
 | `conv_depthwise_kernel.cpp` | Depthwise direct loops (always manual) |
 | `conv_direct_kernel.cpp` | 3×3 specialist, input-stationary, padded/unpadded spatial |
-| `im2col_partial.cpp` | Hybrid: one patch per output pixel + per-filter dots |
-| `im2col_full.cpp` | Full im2col matrix + `MatMul` GEMM |
+| `im2col_partial.cpp` | Hybrid: one patch per output pixel + per-filter dots (float) |
+| `im2col_full.cpp` | Full im2col matrix + `MatMul` GEMM (float) |
+| `im2col_quant.cpp` | Int8 QuantOps partial / full im2col + int32 MAC + requant |
 
 **Hard rules:**
 
@@ -196,7 +197,7 @@ When CMSIS-NN is off or `TryConv2dForward` returns false, `Conv2dDispatchForward
 
 Padding uses inclusive input bounds (`ih ∈ [0, in_h)`, `iw ∈ [0, in_w)`) consistent with the spatial reference kernel.
 
-**Int8 quantized Conv2D** does not use this float im2col path — `forward_quantized()` routes through CMSIS-NN (`CmsisQuantPlan`) on supported MCU builds.
+**Int8 QuantOps Conv2D** uses the same `NETKIT_IM2COL` policy via `im2col_quant.cpp` when CMSIS-NN / XNNPACK do not handle the op (generic / no-Arm builds). Depthwise stays direct. If full-matrix scratch does not fit the arena, QuantOps degrades to partial then direct.
 
 ## Adding a new kernel op
 

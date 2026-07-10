@@ -3,6 +3,8 @@
 #include "activation_followup.hpp"
 #include "quant_ops.hpp"
 #include "tensor_factory.hpp"
+#include "xnnpack_float.hpp"
+#include "xnnpack_quant.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -89,6 +91,10 @@ void MLPLayer::forward(const Tensor& input, Tensor& output)
 
 MLPNetwork::MLPNetwork(uint32_t num_layers, Arena& arena)
     : layers(nullptr), num_layers(num_layers)
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+      , xnn_float_runtime_(nullptr)
+      , xnn_quant_runtime_(nullptr)
+#endif
 {
     layers = static_cast<MLPLayer*>(arena.alloc(sizeof(MLPLayer) * num_layers, alignof(MLPLayer)));
 }
@@ -105,6 +111,20 @@ bool MLPNetwork::InitActivationBuffers(Arena& arena, uint32_t batch_rows)
     ping_view_b_ = {};
     ping_i8_view_a_ = {};
     ping_i8_view_b_ = {};
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+    if (xnn_float_runtime_)
+    {
+        XnnpackFloat::DestroyRuntime(*xnn_float_runtime_);
+        delete xnn_float_runtime_;
+        xnn_float_runtime_ = nullptr;
+    }
+    if (xnn_quant_runtime_)
+    {
+        XnnpackQuant::DestroyMlpRuntime(*xnn_quant_runtime_);
+        delete xnn_quant_runtime_;
+        xnn_quant_runtime_ = nullptr;
+    }
+#endif
 
     if (num_layers <= 1 || !layers)
         return layers != nullptr;
@@ -134,6 +154,23 @@ bool MLPNetwork::InitActivationBuffers(Arena& arena, uint32_t batch_rows)
         ping_i8_view_a_ = TensorFactory::View2DInt8(ping_i8_a, batch_rows, max_hidden_cols);
         ping_i8_view_b_ = TensorFactory::View2DInt8(ping_i8_b, batch_rows, max_hidden_cols);
         hidden_activation_ = ping_i8_view_a_;
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+        if (batch_rows == 1 && layers[0].weights.rank == 2)
+        {
+            const uint32_t in_features = layers[0].weights.shape[1];
+            XnnpackQuant::MlpRuntime* rt = nullptr;
+            if (XnnpackQuant::BuildMlpNetworkSubgraph(*this, arena, in_features, rt) && rt &&
+                rt->ready)
+            {
+                xnn_quant_runtime_ = rt;
+            }
+            else if (rt)
+            {
+                XnnpackQuant::DestroyMlpRuntime(*rt);
+                delete rt;
+            }
+        }
+#endif
         return true;
     }
 
@@ -146,6 +183,23 @@ bool MLPNetwork::InitActivationBuffers(Arena& arena, uint32_t batch_rows)
     ping_view_a_ = TensorFactory::View2D(ping_a, batch_rows, max_hidden_cols);
     ping_view_b_ = TensorFactory::View2D(ping_b, batch_rows, max_hidden_cols);
     hidden_activation_ = ping_view_a_;
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+    if (batch_rows == 1 && layers[0].weights.rank == 2)
+    {
+        const uint32_t in_features = layers[0].weights.shape[1];
+        XnnpackFloat::Runtime* rt = nullptr;
+        if (XnnpackFloat::BuildMlpRuntime(*this, arena, in_features, rt) && rt &&
+            rt->xnn_network_ready)
+        {
+            xnn_float_runtime_ = rt;
+        }
+        else if (rt)
+        {
+            XnnpackFloat::DestroyRuntime(*rt);
+            delete rt;
+        }
+    }
+#endif
     return true;
 }
 
@@ -193,6 +247,18 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
         if (input.type != DataType::Int8)
             return;
 
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+        if (xnn_quant_runtime_ && xnn_quant_runtime_->ready && input.rank == 2 &&
+            input.shape[0] == 1 && output.type == DataType::Int8 && output.data)
+        {
+            if (XnnpackQuant::InvokeMlpNetworkSubgraph(
+                    *xnn_quant_runtime_,
+                    static_cast<const int8_t*>(input.data),
+                    static_cast<int8_t*>(output.data)))
+                return;
+        }
+#endif
+
         if (num_layers == 1)
         {
             ForwardQuantizedLayer(layers[0], input, output, ping_i8_a, omit_final_softmax_);
@@ -231,6 +297,17 @@ void MLPNetwork::forward(const Tensor& input, Tensor& output, Arena& /*arena*/)
         }
         return;
     }
+
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+    if (xnn_float_runtime_ && xnn_float_runtime_->xnn_network_ready && input.rank == 2 &&
+        input.shape[0] == 1 && output.data && output.type == DataType::Float32)
+    {
+        if (XnnpackFloat::InvokeNetwork(*xnn_float_runtime_,
+                                        static_cast<const float*>(input.data),
+                                        static_cast<float*>(output.data)))
+            return;
+    }
+#endif
 
     if (num_layers == 1)
     {

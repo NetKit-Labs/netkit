@@ -9,6 +9,7 @@
 struct Arena;  // defined in arena.hpp
 struct MobileNetV4Uib;  // defined in mobilenetv4_uib.hpp
 class CNNNetwork;
+class MLPNetwork;
 
 namespace CmsisQuantPlan
 {
@@ -71,6 +72,28 @@ void DestroyNetworkSubgraph(CmsisQuantPlan::Runtime& runtime);
 bool InvokeNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
                            const int8_t* input,
                            int8_t* output);
+
+// Persistent qs8 subgraph for MLP (Dense chain). Input is [1, in_features].
+struct MlpRuntime
+{
+    void* xnn_weights_cache = nullptr;
+    void* xnn_workspace = nullptr;
+    void* xnn_network_runtime = nullptr;
+    bool ready = false;
+    uint32_t ext_in = 0;
+    uint32_t ext_out = 1;
+    uint32_t in_features = 0;
+    uint32_t out_features = 0;
+    float** bias_scales = nullptr;
+    uint32_t bias_scales_count = 0;
+};
+
+bool BuildMlpNetworkSubgraph(MLPNetwork& network,
+                             Arena& arena,
+                             uint32_t in_features,
+                             MlpRuntime*& out_runtime);
+void DestroyMlpRuntime(MlpRuntime& runtime);
+bool InvokeMlpNetworkSubgraph(MlpRuntime& runtime, const int8_t* input, int8_t* output);
 #endif
 
 bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,

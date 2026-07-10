@@ -76,12 +76,12 @@ arena.reset();  // reuse for next inference
 
 Default capacity constant:
 
-| Target | `NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity` |
-|--------|-----------------------------------------------------------|
-| MCU | **64 KiB** |
-| CPU / MPU | **64 MiB** |
+| Target | `NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity` | Override |
+|--------|-----------------------------------------------------------|----------|
+| MCU | **64 KiB** | `-DNK_ARENA_DEFAULT_CAPACITY=<bytes>`, or `NETKIT_ARENA_CAPACITY` / `NETKIT_ARENA_KB` |
+| CPU / MPU | **64 MiB** | same |
 
-CLI/regression on CPU use the default heap capacity (`Arena::kDefaultCapacity`). Override with `./netkit --arena <size> …`.
+CLI/regression on CPU use the default heap capacity (`Arena::kDefaultCapacity`). Override with `./netkit --arena <size> …` at run time, or the compile-time knobs above for the constant.
 
 ### Heap-backed arena (CPU default; MCU/MPU optional)
 

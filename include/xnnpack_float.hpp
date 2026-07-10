@@ -6,6 +6,7 @@
 
 struct Arena;
 class CNNNetwork;
+class MLPNetwork;
 struct Tensor;
 
 // Float32 XNNPACK full-network subgraph (TF Lite XNNPACK delegate parity).
@@ -39,7 +40,7 @@ struct Runtime
 void DestroyRuntime(Runtime& runtime);
 
 #if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
-// Build persistent f32 subgraph for the loaded CNN (ImageNet MobileNetV4, etc.).
+// Build persistent f32 subgraph for the loaded CNN (ImageNet MobileNetV4, MNIST CNN, etc.).
 // Returns false on unsupported graphs; caller keeps the layer-loop fallback.
 bool BuildNetworkRuntime(CNNNetwork& network,
                          Arena& arena,
@@ -47,6 +48,12 @@ bool BuildNetworkRuntime(CNNNetwork& network,
                          uint32_t in_w,
                          uint32_t in_c,
                          Runtime*& out_runtime);
+
+// Persistent f32 subgraph for MLP (Dense chain). Input is [1, in_features].
+bool BuildMlpRuntime(MLPNetwork& network,
+                     Arena& arena,
+                     uint32_t in_features,
+                     Runtime*& out_runtime);
 
 bool InvokeNetwork(Runtime& runtime, const float* input, float* output);
 #endif

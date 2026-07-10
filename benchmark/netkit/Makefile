@@ -5,6 +5,9 @@
 ROOT := $(abspath ../..)
 
 .PHONY: all run run-mlp run-cnn run-mlp-cmsis run-cnn-cmsis run-cmsis run-cnn-profile run-mlp-profile \
+  run-cnn-int8 run-cnn-int8-ref run-cnn-xnnpack run-cnn-int8-xnnpack \
+  run-cnn-dw-xnnpack run-cnn-dw-int8-xnnpack \
+  run-mlp-xnnpack run-mlp-int8 run-mlp-int8-ref run-mlp-int8-xnnpack \
   run-mobilenetv4 run-mobilenetv4-int8 run-mobilenetv4-cmsis \
   run-mobilenetv4-imagenet run-mobilenetv4-imagenet-cmsis run-mobilenetv4-imagenet-xnnpack \
   run-mobilenetv4-imagenet-int8 run-mobilenetv4-imagenet-int8-xnnpack \
@@ -77,6 +80,102 @@ run-cnn-cmsis:
 	  MLP_MAIN_OBJ=src/main_cmsis.o \
 	  CNN_MAIN_OBJ=src/mnist_cnn_main_cmsis.o \
 	  run-cnn
+
+# Host MNIST CNN int8: QuantOps reference (CMSIS-NN is MCU-only — see nucleo boards).
+run-cnn-int8-ref:
+	$(MAKE) -f bench.mk BACKEND=reference CMSIS_DSP=0 CMSIS_NN=0 XNNPACK=0 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_ref \
+	  BENCH_LIB=libnetkit_bench_tflite_ref.a \
+	  CNN_INT8_BENCH=mnist_cnn_int8_bench_ref \
+	  CNN_INT8_MAIN_OBJ=src/mnist_cnn_int8_main_ref.o \
+	  run-cnn-int8
+
+run-cnn-int8: run-cnn-int8-ref
+
+# Host MNIST CNN float/int8 with XNNPACK full-network subgraph (LiteRT peer).
+run-cnn-xnnpack:
+	$(MAKE) -f bench.mk BACKEND=xnnpack CMSIS_DSP=1 XNNPACK=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_xnnpack \
+	  BENCH_LIB=libnetkit_bench_tflite_xnnpack.a \
+	  CNN_BENCH=mnist_cnn_bench_xnnpack \
+	  CNN_MAIN_OBJ=src/mnist_cnn_main_xnnpack.o \
+	  run-cnn
+
+run-cnn-int8-xnnpack:
+	$(MAKE) -f bench.mk BACKEND=xnnpack CMSIS_DSP=1 CMSIS_NN=0 XNNPACK=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_xnnpack \
+	  BENCH_LIB=libnetkit_bench_tflite_xnnpack.a \
+	  CNN_INT8_BENCH=mnist_cnn_int8_bench_xnnpack \
+	  CNN_INT8_MAIN_OBJ=src/mnist_cnn_int8_main_xnnpack.o \
+	  run-cnn-int8
+
+# Depthwise-separable MNIST CNN (PW/DW/Pool x2) — same XNNPACK peer path as run-cnn-xnnpack.
+run-cnn-dw-xnnpack:
+	@test -f $(ROOT)/models/mnist_cnn_dw.nk || \
+	  (cd $(ROOT) && python3 tools/export_mnist_cnn_dw.py)
+	@test -f $(ROOT)/benchmark/tflm/generated/cnn_dw/mnist_cnn_test_images.cc || \
+	  (cd $(ROOT) && python3 tools/export_mnist_cnn_dw_assets.py --float-only)
+	$(MAKE) -f bench.mk BACKEND=xnnpack CMSIS_DSP=1 XNNPACK=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_xnnpack \
+	  BENCH_LIB=libnetkit_bench_tflite_xnnpack.a \
+	  EXTRA_BENCH_INCLUDES=-I../tflm/generated/cnn_dw \
+	  CNN_BENCH=mnist_cnn_dw_bench_xnnpack \
+	  CNN_MAIN_OBJ=src/mnist_cnn_dw_main_xnnpack.o \
+	  CNN_IMAGES_CC=../tflm/generated/cnn_dw/mnist_cnn_test_images.cc \
+	  CNN_IMAGES_OBJ=../tflm/generated/cnn_dw/mnist_cnn_test_images.o \
+	  CNN_MODEL=models/mnist_cnn_dw.nk \
+	  run-cnn
+
+run-cnn-dw-int8-xnnpack:
+	@test -f $(ROOT)/models/mnist_cnn_dw_int8.nk || \
+	  (cd $(ROOT) && python3 tools/export_mnist_cnn_dw_int8.py)
+	@test -f $(ROOT)/benchmark/tflm/generated/cnn_dw/mnist_cnn_int8_test_images.cc || \
+	  (cd $(ROOT) && python3 tools/export_mnist_cnn_dw_assets.py)
+	$(MAKE) -f bench.mk BACKEND=xnnpack CMSIS_DSP=1 CMSIS_NN=0 XNNPACK=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_xnnpack \
+	  BENCH_LIB=libnetkit_bench_tflite_xnnpack.a \
+	  EXTRA_BENCH_INCLUDES=-I../tflm/generated/cnn_dw \
+	  CNN_INT8_BENCH=mnist_cnn_dw_int8_bench_xnnpack \
+	  CNN_INT8_MAIN_OBJ=src/mnist_cnn_dw_int8_main_xnnpack.o \
+	  CNN_INT8_IMAGES_CC=../tflm/generated/cnn_dw/mnist_cnn_int8_test_images.cc \
+	  CNN_INT8_IMAGES_OBJ=../tflm/generated/cnn_dw/mnist_cnn_int8_test_images.o \
+	  CNN_INT8_MODEL=models/mnist_cnn_dw_int8.nk \
+	  run-cnn-int8
+
+# Host MNIST MLP float/int8 with XNNPACK (LiteRT peer).
+run-mlp-xnnpack:
+	$(MAKE) -f bench.mk BACKEND=xnnpack CMSIS_DSP=1 XNNPACK=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_xnnpack \
+	  BENCH_LIB=libnetkit_bench_tflite_xnnpack.a \
+	  MLP_BENCH=mnist_mlp_bench_xnnpack \
+	  MLP_MAIN_OBJ=src/main_xnnpack.o \
+	  run-mlp
+
+run-mlp-int8-ref:
+	$(MAKE) -f bench.mk BACKEND=reference CMSIS_DSP=0 CMSIS_NN=0 XNNPACK=0 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_ref \
+	  BENCH_LIB=libnetkit_bench_tflite_ref.a \
+	  MLP_INT8_BENCH=mnist_mlp_int8_bench_ref \
+	  MLP_INT8_MAIN_OBJ=src/mnist_mlp_int8_main_ref.o \
+	  run-mlp-int8
+
+run-mlp-int8-xnnpack:
+	$(MAKE) -f bench.mk BACKEND=xnnpack CMSIS_DSP=1 CMSIS_NN=0 XNNPACK=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_xnnpack \
+	  BENCH_LIB=libnetkit_bench_tflite_xnnpack.a \
+	  MLP_INT8_BENCH=mnist_mlp_int8_bench_xnnpack \
+	  MLP_INT8_MAIN_OBJ=src/mnist_mlp_int8_main_xnnpack.o \
+	  run-mlp-int8
+
+run-mlp-int8: run-mlp-int8-ref
 
 # MobileNetV4-small float32 (host/CPU) — depthwise-heavy invoke benchmark.
 run-mobilenetv4:

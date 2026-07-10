@@ -13,6 +13,7 @@
 
 #include "arena.hpp"
 #include "cnn.hpp"
+#include "mlp.hpp"
 #include "mobilenetv4_uib.hpp"
 #include "nk_op_detail.hpp"
 
@@ -710,8 +711,40 @@ bool BuildNetworkRuntime(CNNNetwork& network,
         switch (block.type)
         {
             case CnnBlockType::Flatten:
-                // Flatten is a view; FC accepts NHWC 1×1×C with last-dim match.
+            {
+                // Reshape NHWC [1,H,W,C] → [1,1,1,H*W*C] so Dense last-dim matches
+                // (MNIST CNN). ImageNet head is already 1×1×C after global pool.
+                if (cur_h == 1 && cur_w == 1)
+                    break;
+                const uint32_t features = cur_h * cur_w * cur_c;
+                uint32_t out_id = 0;
+                const uint32_t out_ext =
+                    is_last ? runtime->xnn_net_ext_out : XNN_INVALID_VALUE_ID;
+                const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
+                if (!DefineActNhwc(subgraph, 1, 1, features, out_ext, out_flags, &out_id))
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "flatten act failed layer %u", i);
+                    return fail_sg(layer_err);
+                }
+                const size_t new_shape[4] = {1, 1, 1, static_cast<size_t>(features)};
+                if (xnn_define_static_reshape(subgraph,
+                                              /*num_dims=*/4,
+                                              new_shape,
+                                              cur_id,
+                                              out_id,
+                                              /*flags=*/0) != xnn_status_success)
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "flatten reshape failed layer %u", i);
+                    return fail_sg(layer_err);
+                }
+                cur_id = out_id;
+                cur_h = 1;
+                cur_w = 1;
+                cur_c = features;
                 break;
+            }
 
             case CnnBlockType::Conv2D:
             {
@@ -886,6 +919,59 @@ bool BuildNetworkRuntime(CNNNetwork& network,
                 cur_h = out_h;
                 cur_w = out_w;
                 cur_c = static_cast<uint32_t>(uib.out_channels);
+                break;
+            }
+
+            case CnnBlockType::MaxPool2D:
+            {
+                const MaxPool2DLayer& pool = block.pool;
+                if (pool.pad_h != pool.pad_h_end || pool.pad_w != pool.pad_w_end)
+                    return fail_sg("asymmetric maxpool padding unsupported");
+                float out_min = -FLT_MAX;
+                float out_max = FLT_MAX;
+                if (!ActivationClamp(pool.activation, out_min, out_max))
+                    return fail_sg("unsupported maxpool activation");
+
+                const uint32_t out_h =
+                    CalcOutputDim(cur_h, pool.pool_h, pool.stride, pool.pad_h);
+                const uint32_t out_w =
+                    CalcOutputDim(cur_w, pool.pool_w, pool.stride, pool.pad_w);
+                uint32_t out_id = 0;
+                const uint32_t out_ext =
+                    is_last ? runtime->xnn_net_ext_out : XNN_INVALID_VALUE_ID;
+                const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
+                if (!DefineActNhwc(
+                        subgraph, out_h, out_w, cur_c, out_ext, out_flags, &out_id))
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "maxpool act failed layer %u", i);
+                    return fail_sg(layer_err);
+                }
+                if (xnn_define_max_pooling_2d(
+                        subgraph,
+                        static_cast<uint32_t>(pool.pad_h),
+                        static_cast<uint32_t>(pool.pad_w),
+                        static_cast<uint32_t>(pool.pad_h),
+                        static_cast<uint32_t>(pool.pad_w),
+                        static_cast<uint32_t>(pool.pool_h),
+                        static_cast<uint32_t>(pool.pool_w),
+                        static_cast<uint32_t>(pool.stride),
+                        static_cast<uint32_t>(pool.stride),
+                        /*dilation_height=*/1,
+                        /*dilation_width=*/1,
+                        out_min,
+                        out_max,
+                        cur_id,
+                        out_id,
+                        /*flags=*/0) != xnn_status_success)
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "maxpool node failed layer %u", i);
+                    return fail_sg(layer_err);
+                }
+                cur_id = out_id;
+                cur_h = out_h;
+                cur_w = out_w;
                 break;
             }
 
@@ -1116,6 +1202,216 @@ bool BuildNetworkRuntime(CNNNetwork& network,
     }
 
     std::fprintf(stderr, "XnnpackFloat: network xnn_subgraph ready\n");
+    out_runtime = runtime;
+    return true;
+}
+
+bool BuildMlpRuntime(MLPNetwork& network,
+                     Arena& arena,
+                     uint32_t in_features,
+                     Runtime*& out_runtime)
+{
+    (void)arena;
+    out_runtime = nullptr;
+    if (!network.IsValid() || network.layer_count() == 0 || in_features == 0 ||
+        !EnsureXnnInitialized())
+        return false;
+
+    Runtime* runtime = new (std::nothrow) Runtime{};
+    if (!runtime)
+        return false;
+
+    auto fail = [&](const char* reason) {
+        std::fprintf(stderr, "XnnpackFloat::BuildMlpRuntime: %s\n", reason);
+        DestroyRuntime(*runtime);
+        delete runtime;
+        return false;
+    };
+
+    constexpr size_t kWeightsCacheBytes = 16u * 1024u * 1024u;
+    xnn_weights_cache_t cache = nullptr;
+    if (xnn_create_weights_cache_with_size(kWeightsCacheBytes, &cache) == xnn_status_success ||
+        xnn_create_weights_cache(&cache) == xnn_status_success)
+        runtime->xnn_weights_cache = cache;
+    xnn_workspace_t ws = nullptr;
+    if (xnn_create_workspace(&ws) == xnn_status_success)
+        runtime->xnn_workspace = ws;
+
+    runtime->xnn_net_ext_in = 0;
+    runtime->xnn_net_ext_out = 1;
+    runtime->in_h = 1;
+    runtime->in_w = 1;
+    runtime->in_c = in_features;
+
+    xnn_subgraph_t subgraph = nullptr;
+    if (xnn_create_subgraph(/*external_value_ids=*/2, /*flags=*/0, &subgraph) !=
+        xnn_status_success)
+        return fail("xnn_create_subgraph failed");
+
+    auto fail_sg = [&](const char* reason) {
+        (void)xnn_delete_subgraph(subgraph);
+        return fail(reason);
+    };
+
+    // External input [1, in_features] (2D) — matches TF Lite MLP layout.
+    uint32_t cur_id = 0;
+    const size_t in_dims[2] = {1, static_cast<size_t>(in_features)};
+    if (!DefineFp32(subgraph,
+                    2,
+                    in_dims,
+                    nullptr,
+                    runtime->xnn_net_ext_in,
+                    XNN_VALUE_FLAG_EXTERNAL_INPUT,
+                    &cur_id))
+        return fail_sg("define external input failed");
+
+    uint32_t cur_features = in_features;
+    const uint32_t n = network.layer_count();
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        MLPLayer& layer = network.GetLayer(i);
+        const bool is_last = i + 1 == n;
+        char layer_err[96];
+
+        if (!layer.weights.data || layer.weights.rank != 2)
+            return fail_sg("dense weights missing/invalid");
+        float out_min = -FLT_MAX;
+        float out_max = FLT_MAX;
+        if (!ActivationClampDense(layer.activation, out_min, out_max))
+            return fail_sg("unsupported dense activation");
+
+        const size_t out_features = layer.weights.shape[0];
+        const size_t layer_in = layer.weights.shape[1];
+        if (layer_in != cur_features)
+        {
+            std::snprintf(layer_err, sizeof(layer_err),
+                          "dense in_features mismatch layer %u (want %u got %zu)",
+                          i,
+                          cur_features,
+                          layer_in);
+            return fail_sg(layer_err);
+        }
+
+        const size_t filter_dims[2] = {out_features, layer_in};
+        uint32_t filter_id = 0;
+        if (!DefineFp32(subgraph,
+                        2,
+                        filter_dims,
+                        layer.weights.data,
+                        XNN_INVALID_VALUE_ID,
+                        0,
+                        &filter_id))
+            return fail_sg("dense filter failed");
+
+        uint32_t bias_id = XNN_INVALID_VALUE_ID;
+        if (layer.bias.data)
+        {
+            size_t bias_out = 0;
+            if (layer.bias.rank == 1)
+                bias_out = layer.bias.shape[0];
+            else if (layer.bias.rank == 2 && layer.bias.shape[0] == 1)
+                bias_out = layer.bias.shape[1];
+            else
+                return fail_sg("dense bias shape invalid");
+            if (bias_out != out_features)
+                return fail_sg("dense bias size mismatch");
+            const size_t bias_dims[1] = {out_features};
+            if (!DefineFp32(subgraph,
+                            1,
+                            bias_dims,
+                            layer.bias.data,
+                            XNN_INVALID_VALUE_ID,
+                            0,
+                            &bias_id))
+                return fail_sg("dense bias failed");
+        }
+
+        uint32_t out_id = 0;
+        const uint32_t out_ext =
+            is_last ? runtime->xnn_net_ext_out : XNN_INVALID_VALUE_ID;
+        const uint32_t out_flags = is_last ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
+        const size_t out_dims[2] = {1, out_features};
+        if (!DefineFp32(subgraph, 2, out_dims, nullptr, out_ext, out_flags, &out_id))
+        {
+            std::snprintf(layer_err, sizeof(layer_err), "dense act failed layer %u", i);
+            return fail_sg(layer_err);
+        }
+        if (xnn_define_fully_connected(subgraph,
+                                       out_min,
+                                       out_max,
+                                       cur_id,
+                                       filter_id,
+                                       bias_id,
+                                       out_id,
+                                       /*flags=*/0) != xnn_status_success)
+        {
+            std::snprintf(layer_err, sizeof(layer_err), "dense node failed layer %u", i);
+            return fail_sg(layer_err);
+        }
+        cur_id = out_id;
+        cur_features = static_cast<uint32_t>(out_features);
+        if (is_last)
+            runtime->out_elements = static_cast<uint32_t>(out_features);
+    }
+
+    xnn_runtime_t xnn_rt = nullptr;
+    const xnn_status create_st =
+        xnn_create_runtime_v4(subgraph,
+                              static_cast<xnn_weights_cache_t>(runtime->xnn_weights_cache),
+                              static_cast<xnn_workspace_t>(runtime->xnn_workspace),
+                              /*threadpool=*/nullptr,
+                              XNN_FLAG_DONT_SPIN_WORKERS,
+                              &xnn_rt);
+    (void)xnn_delete_subgraph(subgraph);
+    subgraph = nullptr;
+    if (create_st != xnn_status_success || !xnn_rt)
+    {
+        std::fprintf(stderr,
+                     "XnnpackFloat::BuildMlpRuntime: xnn_create_runtime_v4 failed (%s)\n",
+                     XnnStatusName(create_st));
+        DestroyRuntime(*runtime);
+        delete runtime;
+        return false;
+    }
+    runtime->xnn_network_runtime = xnn_rt;
+
+    if (runtime->xnn_weights_cache)
+    {
+        auto* cache_ptr = static_cast<xnn_weights_cache_t>(runtime->xnn_weights_cache);
+        if (xnn_finalize_weights_cache(cache_ptr, xnn_weights_cache_finalization_kind_hard) !=
+            xnn_status_success)
+        {
+            (void)xnn_finalize_weights_cache(cache_ptr,
+                                             xnn_weights_cache_finalization_kind_soft);
+        }
+    }
+
+    // Reshape external values then finalize runtime.
+    const size_t reshape_in[2] = {1, static_cast<size_t>(in_features)};
+    if (xnn_reshape_external_value(xnn_rt, runtime->xnn_net_ext_in, 2, reshape_in) !=
+        xnn_status_success)
+    {
+        DestroyRuntime(*runtime);
+        delete runtime;
+        return false;
+    }
+    const size_t reshape_out[2] = {1, static_cast<size_t>(runtime->out_elements)};
+    if (xnn_reshape_external_value(xnn_rt, runtime->xnn_net_ext_out, 2, reshape_out) !=
+        xnn_status_success)
+    {
+        DestroyRuntime(*runtime);
+        delete runtime;
+        return false;
+    }
+    if (xnn_reshape_runtime(xnn_rt) != xnn_status_success)
+    {
+        DestroyRuntime(*runtime);
+        delete runtime;
+        return false;
+    }
+
+    runtime->xnn_network_ready = true;
+    std::fprintf(stderr, "XnnpackFloat: MLP xnn_subgraph ready\n");
     out_runtime = runtime;
     return true;
 }

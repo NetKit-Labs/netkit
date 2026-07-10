@@ -68,4 +68,11 @@ bool ForwardInt8ToBuffer(Runtime& runtime,
                          int8_t* output,
                          uint32_t output_elements);
 
+#if defined(NETKIT_STAGE_TIMING) && NETKIT_STAGE_TIMING
+void ResetStageTiming();
+void PrintStageTimingSummary();
+// Accumulate time spent inside arm_convolve_wrapper_s8 (debug builds only).
+void RecordCmsisConvKernelUs(double us);
+#endif
+
 }  // namespace CmsisQuantPlan

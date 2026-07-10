@@ -3,6 +3,7 @@
 #include "arena.hpp"
 #include "layer_quant.hpp"
 #include "quant_output.hpp"
+#include "netkit_config.h"
 
 enum class ActivationType
 {
@@ -27,6 +28,16 @@ struct MLPLayer
     void forward(const Tensor& input, Tensor& output);
 };
 
+namespace XnnpackFloat
+{
+struct Runtime;
+}
+
+namespace XnnpackQuant
+{
+struct MlpRuntime;
+}
+
 class MLPNetwork
 {
 private:
@@ -45,6 +56,10 @@ private:
     Tensor ping_view_b_{};
     Tensor ping_i8_view_a_{};
     Tensor ping_i8_view_b_{};
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+    XnnpackFloat::Runtime* xnn_float_runtime_{};
+    XnnpackQuant::MlpRuntime* xnn_quant_runtime_{};
+#endif
 
 public:
     // Constructor allocates from Arena — no heap fragmentation
@@ -55,6 +70,8 @@ public:
     bool IsValid() const { return layers != nullptr; }
 
     bool IsQuantized() const { return quantized_; }
+
+    uint32_t layer_count() const { return num_layers; }
 
     bool HasActivationBuffers() const
     {

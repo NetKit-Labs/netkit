@@ -1,5 +1,6 @@
 #pragma once
 
+#include "conv_im2col_policy.hpp"
 #include "kernel_activation.hpp"
 
 #include <cstddef>
@@ -7,22 +8,9 @@
 
 struct Tensor;
 
-// Internal Conv2D lowering — policy selects direct / partial im2col / full im2col.
-// Not part of the public C/C++ API.
-
-enum class Conv2dExecMode : uint8_t
-{
-    Direct = 0,
-    PartialIm2Col = 1,
-    FullIm2Col = 2,
-};
-
-Conv2dExecMode SelectConv2dExecMode(int kernel_h,
-                                    int kernel_w,
-                                    int stride,
-                                    uint32_t in_channels,
-                                    uint32_t out_h,
-                                    uint32_t out_w);
+// Internal float Conv2D lowering — policy selects direct / partial im2col / full im2col.
+// Not part of the public C/C++ API. Conv2dExecMode / SelectConv2dExecMode live in
+// conv_im2col_policy.hpp (shared with int8 QuantOps).
 
 std::size_t Conv2dWorkspaceBytes(uint32_t out_h,
                                  uint32_t out_w,

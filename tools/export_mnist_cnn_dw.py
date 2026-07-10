@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Train a depthwise-separable MNIST CNN and export models/mnist_cnn_dw.nk.
+
+Architecture (same 5x5x64 flatten as the regular tutorial CNN):
+  28x28x1
+    -> Conv1x1x32 ReLU -> Depthwise3x3x32 ReLU -> MaxPool2x2
+    -> Conv1x1x64 ReLU -> Depthwise3x3x64 ReLU -> MaxPool2x2
+    -> Flatten -> Dense128 ReLU -> Dense10 Softmax
+
+Run from repo root:
+    python3 tools/export_mnist_cnn_dw.py
+
+Requires: pip install -e "python[train]"
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "python"))
+
+from netkit import RegressionSuite, write_nk_from_arch
+from netkit.datasets import load_mnist
+from netkit.torch_models import TutorialCnn28Depthwise
+from netkit.torch_pack import (
+    assert_packed_matches_reference,
+    forward_cnn_netkit,
+    pack_tutorial_cnn_depthwise,
+)
+from netkit.torch_train import select_digit_cases, train_cnn_classifier
+
+MODELS = ROOT / "models"
+
+IMG_H = 28
+IMG_W = 28
+IMG_C = 1
+EPOCHS = 8
+BATCH_SIZE = 128
+TRAIN_LIMIT = 0
+LEARNING_RATE = 0.001
+SEED = 42
+NUM_CASES = 10
+
+ARCH = {
+    "network": "cnn",
+    "input": [IMG_H, IMG_W, IMG_C],
+    "layers": [
+        {"type": "conv2d", "kernel_size": 1, "stride": 1, "filters": 32, "activation": "relu"},
+        {
+            "type": "depthwise_conv2d",
+            "kernel_h": 3,
+            "kernel_w": 3,
+            "stride": 1,
+            "filters": 32,
+            "pad_h": 0,
+            "pad_w": 0,
+            "activation": "relu",
+        },
+        {"type": "max_pool2d", "pool_size": 2, "stride": 2},
+        {"type": "conv2d", "kernel_size": 1, "stride": 1, "filters": 64, "activation": "relu"},
+        {
+            "type": "depthwise_conv2d",
+            "kernel_h": 3,
+            "kernel_w": 3,
+            "stride": 1,
+            "filters": 64,
+            "pad_h": 0,
+            "pad_w": 0,
+            "activation": "relu",
+        },
+        {"type": "max_pool2d", "pool_size": 2, "stride": 2},
+        {"type": "flatten"},
+        {"type": "dense", "units": 128, "activation": "relu"},
+        {"type": "dense", "units": 10, "activation": "softmax"},
+    ],
+}
+
+
+def main() -> None:
+    x_train, y_train, x_test, y_test = load_mnist()
+
+    print(
+        f"Training MNIST depthwise CNN on {x_train.shape[0]} images "
+        f"(PyTorch Adam lr={LEARNING_RATE}, batch={BATCH_SIZE}, epochs={EPOCHS}) ..."
+    )
+    print(
+        "Architecture: PW32/DW32/Pool -> PW64/DW64/Pool -> Flatten -> Dense128/ReLU -> Dense10/Softmax"
+    )
+
+    model = TutorialCnn28Depthwise()
+    train_cnn_classifier(
+        model,
+        x_train,
+        y_train,
+        forward_logits=model.forward_logits,
+        img_h=IMG_H,
+        img_w=IMG_W,
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        learning_rate=LEARNING_RATE,
+        seed=SEED,
+        train_limit=TRAIN_LIMIT,
+    )
+
+    model.eval()
+    test_probs = forward_cnn_netkit(model, x_test, img_h=IMG_H, img_w=IMG_W)
+    test_acc = (test_probs.argmax(axis=1) == y_test).mean()
+    print(f"Test accuracy: {test_acc * 100:.2f}%")
+
+    weights = pack_tutorial_cnn_depthwise(model)
+    assert_packed_matches_reference(
+        ARCH,
+        weights,
+        lambda inp: forward_cnn_netkit(model, inp, img_h=IMG_H, img_w=IMG_W),
+        seed=SEED,
+    )
+
+    cases = select_digit_cases(
+        lambda x: forward_cnn_netkit(model, x, img_h=IMG_H, img_w=IMG_W),
+        x_test,
+        y_test,
+        num_cases=NUM_CASES,
+        name_fmt="MNIST CNN-DW digit {digit} (test idx {i})",
+    )
+
+    MODELS.mkdir(parents=True, exist_ok=True)
+    nk_path = write_nk_from_arch(
+        ARCH,
+        weights,
+        MODELS / "mnist_cnn_dw.nk",
+        RegressionSuite(tolerance=0.0001, cases=cases),
+    )
+    print(f"Wrote {nk_path} ({weights.nbytes} bytes, {len(cases)} embedded test cases)")
+
+
+if __name__ == "__main__":
+    main()
