@@ -8,21 +8,28 @@ Headers live in [`include/`](../include/). Configuration: [`include/netkit_confi
 
 ## Build configuration
 
-| Makefile | Macro | Outputs |
-|----------|-------|---------|
-| `NETKIT_TARGET=cpu` | `NETKIT_TARGET_CPU`, `NETKIT_DESKTOP` | `netkit` CLI + full `libnetkit.a` |
-| `NETKIT_TARGET=mcu` | `NETKIT_TARGET_MCU` | Lean `libnetkit.a` only |
-| `NETKIT_TARGET=mpu` | `NETKIT_TARGET_MPU` | Lean `libnetkit.a` only |
+| Makefile | Macro | Outputs | Default backends |
+|----------|-------|---------|------------------|
+| `NETKIT_TARGET=cpu` | `NETKIT_TARGET_CPU`, `NETKIT_DESKTOP` | `netkit` CLI + full `libnetkit.a` | XNNPACK on; CMSIS-DSP/NN off |
+| `NETKIT_TARGET=mcu_arm` | `NETKIT_TARGET_MCU_ARM` | Lean `libnetkit.a` only | CMSIS-DSP + CMSIS-NN |
+| `NETKIT_TARGET=mpu_arm` | `NETKIT_TARGET_MPU_ARM` | Lean `libnetkit.a` only | XNNPACK + CMSIS-DSP helpers |
+| `NETKIT_TARGET=mcu_risc` | `NETKIT_TARGET_MCU_RISC` | Lean `libnetkit.a` only (backends TBD) | none yet |
+| `NETKIT_TARGET=mpu_risc` | `NETKIT_TARGET_MPU_RISC` | Lean `libnetkit.a` only (backends TBD) | none yet |
 
-| Flag | Macro | Arena |
-|------|-------|-------|
+Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU`, `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC`.
+
+| Flag | Macro | Arena / backend |
+|------|-------|-----------------|
 | CPU default | `NETKIT_ARENA_HEAP` | Heap API; CLI uses model-sized allocation |
 | `NETKIT_GLOBAL_ARENA=1` | `NETKIT_GLOBAL_ARENA` | Static buffer on CPU |
-| `NETKIT_HEAP_ARENA=1` (MCU/MPU) | `NETKIT_ARENA_HEAP` | Optional heap on embedded |
+| `NETKIT_HEAP_ARENA=1` (MCU/MPU class) | `NETKIT_ARENA_HEAP` | Optional heap on embedded |
+| `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Vector helpers (Arm); hot dots stay reference unless `NETKIT_CMSIS_DSP_DOT=1` |
+| `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
+| `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` / `mpu_arm` LayerFast |
 
-`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`: **64 KiB** (MCU), **64 MiB** (CPU and MPU).
+`Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`: **64 KiB** (MCU class), **64 MiB** (CPU and MPU class).
 
-See [BUILD_TARGETS.md](BUILD_TARGETS.md).
+See [BUILD_TARGETS.md](BUILD_TARGETS.md). Same macros apply to the C API — [c-api.md](c-api.md#build-configuration).
 
 ## Core headers
 

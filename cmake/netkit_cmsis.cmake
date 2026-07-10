@@ -37,9 +37,9 @@ function(netkit_add_cmsis_nn target)
     if(NOT NETKIT_CMSIS_NN)
         return()
     endif()
-    if(NOT NETKIT_TARGET STREQUAL "mcu")
+    if(NOT NETKIT_TARGET STREQUAL "mcu_arm")
         message(WARNING
-            "NETKIT_CMSIS_NN=ON ignored — requires NETKIT_TARGET=mcu and Cortex-M NETKIT_ARCH; using reference kernels")
+            "NETKIT_CMSIS_NN=ON ignored — requires NETKIT_TARGET=mcu_arm and Cortex-M NETKIT_ARCH; using reference kernels")
         return()
     endif()
 

@@ -4,10 +4,10 @@
 #include <cstdint>
 
 struct Arena {
-#if defined(NETKIT_TARGET_MCU)
+#if defined(NETKIT_CLASS_MCU)
     static constexpr std::size_t kDefaultCapacity = 64 * 1024; // 64 KiB
 #else
-    static constexpr std::size_t kDefaultCapacity = 64 * 1024 * 1024; // 64 MiB (CPU and MPU)
+    static constexpr std::size_t kDefaultCapacity = 64 * 1024 * 1024; // 64 MiB (CPU and MPU class)
 #endif
 
     std::byte* base{};

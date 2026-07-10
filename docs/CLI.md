@@ -184,7 +184,7 @@ make              # default: NETKIT_TARGET=cpu
 make cpu          # same
 ```
 
-MCU/MPU builds (`make NETKIT_TARGET=mcu lib`) do **not** produce `./netkit`. Use the library API on device; use the desktop CLI to develop and size arenas.
+MCU/MPU builds (`make NETKIT_TARGET=mcu_arm lib`) do **not** produce `./netkit`. Use the library API on device; use the desktop CLI to develop and size arenas.
 
 ## Build and memory (CLI)
 

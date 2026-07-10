@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <span>
 #include <vector>
@@ -119,6 +120,29 @@ int RunBenchmark(const char* model_path)
     }
 
     const int num_images = kImagenetMnv4Int8BenchmarkImageCount;
+    std::vector<int8_t> input_buf(static_cast<size_t>(kImagenetMnv4Int8BenchmarkInputSize));
+
+    // NETKIT_PROFILE_LOOP=<n>: load once, invoke image 0 forever (or n times) for Instruments.
+    if (const char* profile_loop = std::getenv("NETKIT_PROFILE_LOOP"))
+    {
+        const int limit = std::atoi(profile_loop);
+        std::memcpy(input_buf.data(),
+                    kImagenetMnv4Int8BenchmarkImages[0].pixels,
+                    static_cast<size_t>(kImagenetMnv4Int8BenchmarkInputSize));
+        Tensor input = MakeNhwcViewInt8(input_buf.data(), kInH, kInW, kInC);
+        std::fprintf(stderr, "NETKIT_PROFILE_LOOP active (limit=%d)\n", limit);
+        for (int n = 0; limit <= 0 || n < limit; ++n)
+        {
+            Tensor& output = network->forward(input, arena);
+            if (!output.data)
+            {
+                std::fprintf(stderr, "profile forward failed at %d\n", n);
+                return 1;
+            }
+        }
+        return 0;
+    }
+
     const char* dw_mode = (NETKIT_DW_ROW_ACCUM ? "row-accum(4)" : "serial");
     std::printf("netkit MobileNetV4 ImageNet int8 benchmark\n");
     std::printf("  backend:     %s\n", NETKIT_BENCH_BACKEND);
@@ -138,7 +162,6 @@ int RunBenchmark(const char* model_path)
     std::vector<double> samples;
     samples.reserve(static_cast<size_t>(num_images * kLoops));
     int correct = 0;
-    std::vector<int8_t> input_buf(static_cast<size_t>(kImagenetMnv4Int8BenchmarkInputSize));
 
     for (int loop = 0; loop < kLoops; ++loop)
     {

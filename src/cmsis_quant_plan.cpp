@@ -14,6 +14,7 @@
 #include "xnnpack_quant.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -22,9 +23,90 @@
 #include <xnnpack.h>
 #endif
 
+// Temporary stage timing for int8-ref latency investigation. Build with
+// -DNETKIT_STAGE_TIMING=1; leave unset for production. REVERT after investigation.
+#ifndef NETKIT_STAGE_TIMING
+#define NETKIT_STAGE_TIMING 0
+#endif
+
 namespace
 {
     using namespace TensorFactory;
+
+#if NETKIT_STAGE_TIMING
+    struct StageTiming
+    {
+        double stem_us = 0;
+        double uib_start_dw_us = 0;
+        double uib_expand_us = 0;
+        double uib_middle_dw_us = 0;
+        double uib_proj_us = 0;
+        double uib_residual_memcpy_us = 0;
+        double uib_residual_add_us = 0;
+        double uib_fallback_us = 0;
+        double avgpool_us = 0;
+        double head_conv_us = 0;
+        double dense_us = 0;
+        double other_us = 0;
+        uint64_t invokes = 0;
+        uint64_t uib_plan_ok = 0;
+        uint64_t uib_fallback = 0;
+    };
+
+    StageTiming g_stage_timing{};
+
+    struct ScopedStageTimer
+    {
+        double* bucket;
+        std::chrono::steady_clock::time_point t0;
+        explicit ScopedStageTimer(double* b)
+            : bucket(b), t0(std::chrono::steady_clock::now())
+        {
+        }
+        ~ScopedStageTimer()
+        {
+            *bucket += std::chrono::duration<double, std::micro>(
+                           std::chrono::steady_clock::now() - t0)
+                           .count();
+        }
+    };
+
+    void PrintStageTimingIfDue()
+    {
+        // Print every invoke for the first few, then every 10th.
+        if (g_stage_timing.invokes > 3 && (g_stage_timing.invokes % 10) != 0)
+            return;
+        const double total = g_stage_timing.stem_us + g_stage_timing.uib_start_dw_us +
+                             g_stage_timing.uib_expand_us + g_stage_timing.uib_middle_dw_us +
+                             g_stage_timing.uib_proj_us + g_stage_timing.uib_residual_memcpy_us +
+                             g_stage_timing.uib_residual_add_us + g_stage_timing.uib_fallback_us +
+                             g_stage_timing.avgpool_us + g_stage_timing.head_conv_us +
+                             g_stage_timing.dense_us + g_stage_timing.other_us;
+        const double n = static_cast<double>(g_stage_timing.invokes);
+        auto avg = [n](double v) { return v / n; };
+        std::fprintf(stderr,
+                     "STAGE_TIMING invokes=%llu plan_uib=%llu fallback_uib=%llu "
+                     "avg_us: stem=%.1f uib_sdw=%.1f uib_exp=%.1f uib_mdw=%.1f uib_proj=%.1f "
+                     "res_memcpy=%.1f res_add=%.1f uib_fb=%.1f avgpool=%.1f head=%.1f dense=%.1f "
+                     "other=%.1f total=%.1f\n",
+                     static_cast<unsigned long long>(g_stage_timing.invokes),
+                     static_cast<unsigned long long>(g_stage_timing.uib_plan_ok),
+                     static_cast<unsigned long long>(g_stage_timing.uib_fallback),
+                     avg(g_stage_timing.stem_us),
+                     avg(g_stage_timing.uib_start_dw_us),
+                     avg(g_stage_timing.uib_expand_us),
+                     avg(g_stage_timing.uib_middle_dw_us),
+                     avg(g_stage_timing.uib_proj_us),
+                     avg(g_stage_timing.uib_residual_memcpy_us),
+                     avg(g_stage_timing.uib_residual_add_us),
+                     avg(g_stage_timing.uib_fallback_us),
+                     avg(g_stage_timing.avgpool_us),
+                     avg(g_stage_timing.head_conv_us),
+                     avg(g_stage_timing.dense_us),
+                     avg(g_stage_timing.other_us),
+                     avg(total));
+    }
+#endif
 
     void QuantizeMultiplier(double double_multiplier, int32_t* multiplier, int32_t* shift)
     {
@@ -190,6 +272,9 @@ namespace
         plan.out_c = conv.out_channels;
         plan.kernel_size = conv.kernel_size;
 
+        QuantInteger::QuantClampRange(
+            clamp, quant.output_scale, quant.output_zero_point, &plan.act_min, &plan.act_max);
+
         const int32_t channels = conv.out_channels;
         plan.multipliers = static_cast<int32_t*>(arena.alloc(
             static_cast<std::size_t>(channels) * sizeof(int32_t) * 2, alignof(int32_t)));
@@ -238,6 +323,28 @@ namespace
 #else
         plan.workspace_bytes = 0;
 #endif
+        // Prepare-time input_offset fold for scalar ref (weight_zp must be 0).
+        plan.bias_folded = nullptr;
+        if (plan.input_offset != 0 && quant.weight_zero_point == 0 && conv.weights_q &&
+            conv.bias_q)
+        {
+            const uint32_t filter_elems =
+                static_cast<uint32_t>(conv.kernel_size) * static_cast<uint32_t>(conv.kernel_size) *
+                in_c;
+            plan.bias_folded = static_cast<int32_t*>(
+                arena.alloc(static_cast<std::size_t>(channels) * sizeof(int32_t), alignof(int32_t)));
+            if (!plan.bias_folded)
+                return false;
+            for (int32_t oc = 0; oc < channels; ++oc)
+            {
+                const int8_t* filter =
+                    conv.weights_q + static_cast<std::size_t>(oc) * filter_elems;
+                int32_t sum = 0;
+                for (uint32_t i = 0; i < filter_elems; ++i)
+                    sum += static_cast<int32_t>(filter[i]);
+                plan.bias_folded[oc] = conv.bias_q[oc] + plan.input_offset * sum;
+            }
+        }
         plan.ready = true;
         CmsisNnQuant::FinalizeConv2DPlan(plan);
         return true;
@@ -307,6 +414,9 @@ namespace
         plan.kernel_h = dw.kernel_h;
         plan.kernel_w = dw.kernel_w;
 
+        QuantInteger::QuantClampRange(
+            clamp, quant.output_scale, quant.output_zero_point, &plan.act_min, &plan.act_max);
+
         const int32_t channels = dw.channels;
         plan.multipliers = static_cast<int32_t*>(arena.alloc(
             static_cast<std::size_t>(channels) * sizeof(int32_t) * 2, alignof(int32_t)));
@@ -365,6 +475,25 @@ namespace
                 return false;
             RepackDepthwiseChwToHwc(
                 weights_chw, plan.weights_hwc, dw.kernel_h, dw.kernel_w, dw.channels);
+        }
+        plan.bias_folded = nullptr;
+        if (plan.input_offset != 0 && quant.weight_zero_point == 0 && weights_chw && dw.bias_q)
+        {
+            const uint32_t kernel_area =
+                static_cast<uint32_t>(dw.kernel_h) * static_cast<uint32_t>(dw.kernel_w);
+            plan.bias_folded = static_cast<int32_t*>(
+                arena.alloc(static_cast<std::size_t>(channels) * sizeof(int32_t), alignof(int32_t)));
+            if (!plan.bias_folded)
+                return false;
+            for (int32_t c = 0; c < channels; ++c)
+            {
+                const int8_t* filter =
+                    weights_chw + static_cast<std::size_t>(c) * kernel_area;
+                int32_t sum = 0;
+                for (uint32_t i = 0; i < kernel_area; ++i)
+                    sum += static_cast<int32_t>(filter[i]);
+                plan.bias_folded[c] = dw.bias_q[c] + plan.input_offset * sum;
+            }
         }
         plan.ready = true;
         CmsisNnQuant::FinalizeDepthwiseConv2DPlan(plan);
@@ -434,7 +563,9 @@ namespace
                      QuantInteger::QuantClamp clamp,
                      uint32_t in_features,
                      uint32_t out_features,
-                     Arena& arena)
+                     Arena& arena,
+                     const int8_t* weights = nullptr,
+                     const int32_t* bias = nullptr)
     {
         if (in_features == 0 || out_features == 0 || quant.output_scale <= 0.0f)
             return false;
@@ -450,6 +581,9 @@ namespace
         plan.num_weight_channel_scales = quant.num_weight_channel_scales;
         plan.in_features = static_cast<int32_t>(in_features);
         plan.out_features = static_cast<int32_t>(out_features);
+
+        QuantInteger::QuantClampRange(
+            clamp, quant.output_scale, quant.output_zero_point, &plan.act_min, &plan.act_max);
 
         const int32_t channels = static_cast<int32_t>(out_features);
         plan.multipliers = static_cast<int32_t*>(arena.alloc(
@@ -492,6 +626,59 @@ namespace
 #else
         plan.workspace_bytes = 0;
 #endif
+        plan.bias_folded = nullptr;
+        if (plan.input_offset != 0 && plan.filter_offset == 0 && weights && bias)
+        {
+            plan.bias_folded = static_cast<int32_t*>(
+                arena.alloc(static_cast<std::size_t>(channels) * sizeof(int32_t), alignof(int32_t)));
+            if (!plan.bias_folded)
+                return false;
+            for (int32_t oc = 0; oc < channels; ++oc)
+            {
+                const int8_t* row =
+                    weights + static_cast<std::size_t>(oc) * in_features;
+                int32_t sum = 0;
+                for (uint32_t i = 0; i < in_features; ++i)
+                    sum += static_cast<int32_t>(row[i]);
+                plan.bias_folded[oc] = bias[oc] + plan.input_offset * sum;
+            }
+        }
+        plan.ready = true;
+        return true;
+    }
+
+    bool BuildElementwiseAddPlan(CmsisQuantPlan::ElementwiseAddPlan& plan,
+                                 float input1_scale,
+                                 int32_t input1_zero_point,
+                                 float input2_scale,
+                                 int32_t input2_zero_point,
+                                 float output_scale,
+                                 int32_t output_zero_point,
+                                 int32_t block_size)
+    {
+        constexpr int32_t kLeftShift = 20;
+        const double twice_max_input_scale =
+            2.0 * std::max(static_cast<double>(input1_scale), static_cast<double>(input2_scale));
+        if (twice_max_input_scale <= 0.0 || output_scale <= 0.0f)
+            return false;
+
+        plan.input1_offset = -input1_zero_point;
+        plan.input2_offset = -input2_zero_point;
+        plan.output_offset = output_zero_point;
+        plan.left_shift = kLeftShift;
+        plan.block_size = block_size;
+        plan.act_min = -128;
+        plan.act_max = 127;
+        QuantizeMultiplier(static_cast<double>(input1_scale) / twice_max_input_scale,
+                           &plan.input1_mult,
+                           &plan.input1_shift);
+        QuantizeMultiplier(static_cast<double>(input2_scale) / twice_max_input_scale,
+                           &plan.input2_mult,
+                           &plan.input2_shift);
+        QuantizeMultiplier(
+            twice_max_input_scale / ((1LL << kLeftShift) * static_cast<double>(output_scale)),
+            &plan.output_mult,
+            &plan.output_shift);
         plan.ready = true;
         return true;
     }
@@ -804,6 +991,27 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                     }
                 }
 
+                if (up.has_residual)
+                {
+                    const int32_t block_size = static_cast<int32_t>(up.out_h) *
+                                              static_cast<int32_t>(up.out_w) *
+                                              static_cast<int32_t>(up.out_c);
+                    if (!BuildElementwiseAddPlan(up.add,
+                                                 uib.proj_quant.output_scale,
+                                                 uib.proj_quant.output_zero_point,
+                                                 uib.block_input_scale,
+                                                 uib.block_input_zero_point,
+                                                 uib.proj_quant.output_scale,
+                                                 uib.proj_quant.output_zero_point,
+                                                 block_size))
+                    {
+                        std::fprintf(stderr,
+                                     "BuildRuntime: UIB residual add plan failed layer %u\n",
+                                     i);
+                        return false;
+                    }
+                }
+
                 up.ready = true;
                 activation_scale = uib.proj_quant.output_scale;
                 activation_zero_point = uib.proj_quant.output_zero_point;
@@ -828,7 +1036,9 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                      QuantInteger::QuantClamp::None,
                                      in_features,
                                      out_features,
-                                     arena))
+                                     arena,
+                                     static_cast<const int8_t*>(block.dense.weights.data),
+                                     static_cast<const int32_t*>(block.dense.bias.data)))
                     {
                         std::fprintf(stderr, "BuildRuntime: BuildFcPlan(softmax) failed layer %u\n", i);
                         return false;
@@ -861,7 +1071,9 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                                      clamp,
                                      in_features,
                                      out_features,
-                                     arena))
+                                     arena,
+                                     static_cast<const int8_t*>(block.dense.weights.data),
+                                     static_cast<const int32_t*>(block.dense.bias.data)))
                     {
                         std::fprintf(stderr, "BuildRuntime: BuildFcPlan failed layer %u\n", i);
                         return false;
@@ -1315,6 +1527,9 @@ namespace
         int8_t* slot_a = runtime.act_a;
         int8_t* slot_b = runtime.act_b;
         bool use_a = true;
+#if NETKIT_STAGE_TIMING
+        bool seen_uib = false;
+#endif
 
         for (uint32_t i = 0; i < runtime.num_layers; ++i)
         {
@@ -1336,20 +1551,33 @@ namespace
                 return false;
 
             CnnBlock& block = network.GetBlock(i);
+#if NETKIT_STAGE_TIMING
+            const auto layer_t0 = std::chrono::steady_clock::now();
+            double* layer_bucket = &g_stage_timing.other_us;
+            if (lp.kind == LayerKind::Conv2D)
+                layer_bucket = seen_uib ? &g_stage_timing.head_conv_us : &g_stage_timing.stem_us;
+            else if (lp.kind == LayerKind::AvgPool2D)
+                layer_bucket = &g_stage_timing.avgpool_us;
+            else if (lp.kind == LayerKind::Dense || lp.kind == LayerKind::DenseSoftmax)
+                layer_bucket = &g_stage_timing.dense_us;
+            // UIB timed in sub-op buckets below; layer_bucket unused for UIB.
+#endif
             switch (lp.kind)
             {
                 case LayerKind::Conv2D:
                 {
                     const Conv2D& conv = block.conv.conv;
-                    if (XnnpackQuant::TryConv2dNhwcQuantPlan(
-                            lp.conv, current, conv.weights_q, conv.bias_q, out))
+                    if constexpr (XnnpackQuant::kEnabled)
                     {
-                        break;
+                        if (XnnpackQuant::TryConv2dNhwcQuantPlan(
+                                lp.conv, current, conv.weights_q, conv.bias_q, out))
+                            break;
                     }
-                    if (CmsisNnQuant::TryConv2dNhwcQuantPlan(
-                            lp.conv, current, conv.weights_q, conv.bias_q, out))
+                    if constexpr (CmsisNnQuant::kEnabled)
                     {
-                        break;
+                        if (CmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                lp.conv, current, conv.weights_q, conv.bias_q, out))
+                            break;
                     }
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                     return false;
@@ -1369,7 +1597,13 @@ namespace
                                               conv.out_channels,
                                               block.conv.quant.params,
                                               lp.conv.clamp,
-                                              out);
+                                              out,
+                                              nullptr,
+                                              lp.conv.multipliers,
+                                              lp.conv.shifts,
+                                              &lp.conv.act_min,
+                                              &lp.conv.act_max,
+                                              lp.conv.bias_folded);
                     break;
 #endif
                 }
@@ -1378,15 +1612,17 @@ namespace
                     const DepthwiseConv2D& dw = block.depthwise_conv.depthwise;
                     const int8_t* weights = lp.depthwise.weights_hwc ? lp.depthwise.weights_hwc
                                                                      : dw.weights_q;
-                    if (XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
-                            lp.depthwise, current, dw.weights_q, dw.bias_q, out))
+                    if constexpr (XnnpackQuant::kEnabled)
                     {
-                        break;
+                        if (XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                lp.depthwise, current, dw.weights_q, dw.bias_q, out))
+                            break;
                     }
-                    if (CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
-                            lp.depthwise, current, weights, dw.bias_q, out))
+                    if constexpr (CmsisNnQuant::kEnabled)
                     {
-                        break;
+                        if (CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                lp.depthwise, current, weights, dw.bias_q, out))
+                            break;
                     }
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                     return false;
@@ -1406,16 +1642,27 @@ namespace
                                                        dw.pad_w_end,
                                                        block.depthwise_conv.quant.params,
                                                        lp.depthwise.clamp,
-                                                       out);
+                                                       out,
+                                                       lp.depthwise.multipliers,
+                                                       lp.depthwise.shifts,
+                                                       &lp.depthwise.act_min,
+                                                       &lp.depthwise.act_max,
+                                                       lp.depthwise.bias_folded);
                     break;
 #endif
                 }
                 case LayerKind::MaxPool2D:
                 {
-                    if (XnnpackQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
-                        break;
-                    if (CmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
-                        break;
+                    if constexpr (XnnpackQuant::kEnabled)
+                    {
+                        if (XnnpackQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
+                            break;
+                    }
+                    if constexpr (CmsisNnQuant::kEnabled)
+                    {
+                        if (CmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
+                            break;
+                    }
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                     return false;
 #else
@@ -1467,39 +1714,20 @@ namespace
                     // NETKIT_XNNPACK=0 and compiles reference / Try* fallbacks instead).
                     if (up.xnn_subgraph_ready)
                     {
-                        int8_t* residual_buf = nullptr;
-                        if (up.has_residual && !up.xnn_subgraph_includes_residual && up.scratch)
+                        // Residual aliases `current` when the subgraph omits the add —
+                        // UIB body does not overwrite the block input buffer.
+                        if (XnnpackQuant::kEnabled &&
+                            XnnpackQuant::InvokeUibSubgraph(up, current, out))
                         {
-                            const uint32_t expand_c = uib.expanded_channels();
-                            const uint32_t max_spatial =
-                                static_cast<uint32_t>(up.in_h) * static_cast<uint32_t>(up.in_w);
-                            int8_t* work_a = up.scratch;
-                            int8_t* work_b =
-                                work_a + static_cast<std::size_t>(max_spatial) * expand_c;
-                            residual_buf =
-                                work_b + static_cast<std::size_t>(max_spatial) * expand_c;
-                            std::memcpy(residual_buf,
-                                        current,
-                                        static_cast<std::size_t>(up.in_h) * up.in_w * up.in_c);
-                        }
-
-                        if (XnnpackQuant::InvokeUibSubgraph(up, current, out))
-                        {
-                            if (up.has_residual && !up.xnn_subgraph_includes_residual &&
-                                residual_buf)
+                            if (up.has_residual && !up.xnn_subgraph_includes_residual)
                             {
                                 const uint32_t count = static_cast<uint32_t>(up.out_h) *
                                                        static_cast<uint32_t>(up.out_w) *
                                                        static_cast<uint32_t>(up.out_c);
                                 QuantOps::ElementwiseAddS8(out,
-                                                           residual_buf,
+                                                           current,
                                                            count,
-                                                           uib.proj_quant.output_scale,
-                                                           uib.proj_quant.output_zero_point,
-                                                           uib.block_input_scale,
-                                                           uib.block_input_zero_point,
-                                                           uib.proj_quant.output_scale,
-                                                           uib.proj_quant.output_zero_point,
+                                                           up.add,
                                                            out);
                             }
                             ran_plans = true;
@@ -1517,34 +1745,68 @@ namespace
                         int8_t* work_a = up.scratch;
                         int8_t* work_b =
                             up.scratch + static_cast<std::size_t>(max_spatial) * expand_c;
-                        int8_t* residual_buf =
-                            work_b + static_cast<std::size_t>(max_spatial) * expand_c;
-
-                        if (up.has_residual)
-                            std::memcpy(residual_buf,
-                                        current,
-                                        static_cast<std::size_t>(in_h) * in_w * in_c);
+                        // Residual aliases block input; body writes only to scratch/`out`.
+                        const int8_t* residual_src = up.has_residual ? current : nullptr;
 
                         const int8_t* cur_data = current;
                         int8_t* next_data = work_a;
                         bool cur_in_work = false;
                         bool ok = true;
+                        bool up_residual_done = false;
 
                         if (up.has_start_dw)
                         {
-                            ok = XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
-                                     up.start_dw,
-                                     cur_data,
-                                     uib.start_dw_weights_q,
-                                     uib.start_dw_bias_q,
-                                     next_data) ||
-                                 CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
-                                     up.start_dw,
-                                     cur_data,
-                                     up.start_dw.weights_hwc ? up.start_dw.weights_hwc
-                                                             : uib.start_dw_weights_q,
-                                     uib.start_dw_bias_q,
-                                     next_data);
+#if NETKIT_STAGE_TIMING
+                            ScopedStageTimer _t_sdw(&g_stage_timing.uib_start_dw_us);
+#endif
+                            ok = false;
+                            if constexpr (XnnpackQuant::kEnabled)
+                            {
+                                ok = XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                    up.start_dw,
+                                    cur_data,
+                                    uib.start_dw_weights_q,
+                                    uib.start_dw_bias_q,
+                                    next_data);
+                            }
+                            if constexpr (CmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                               up.start_dw,
+                                               cur_data,
+                                               up.start_dw.weights_hwc ? up.start_dw.weights_hwc
+                                                                       : uib.start_dw_weights_q,
+                                               uib.start_dw_bias_q,
+                                               next_data);
+                            }
+#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+                            if (!ok)
+                            {
+                                QuantOps::DepthwiseConv2dNhwcQuant(
+                                    cur_data,
+                                    in_h,
+                                    in_w,
+                                    in_c,
+                                    uib.start_dw_weights_q,
+                                    uib.start_dw_bias_q,
+                                    up.start_dw.kernel_h,
+                                    up.start_dw.kernel_w,
+                                    up.start_dw.stride,
+                                    up.start_dw.pad_h,
+                                    up.start_dw.pad_w,
+                                    up.start_dw.pad_h,
+                                    up.start_dw.pad_w,
+                                    uib.start_dw_quant,
+                                    up.start_dw.clamp,
+                                    next_data,
+                                    up.start_dw.multipliers,
+                                    up.start_dw.shifts,
+                                    &up.start_dw.act_min,
+                                    &up.start_dw.act_max,
+                                    up.start_dw.bias_folded);
+                                ok = true;
+                            }
+#endif
                             if (ok)
                             {
                                 cur_data = next_data;
@@ -1554,19 +1816,61 @@ namespace
 
                         if (ok)
                         {
+#if NETKIT_STAGE_TIMING
+                            ScopedStageTimer _t_exp(&g_stage_timing.uib_expand_us);
+#endif
                             int8_t* expand_out = cur_in_work ? work_b : work_a;
-                            ok = XnnpackQuant::TryConv2dNhwcQuantPlan(
-                                     up.expand,
-                                     cur_data,
-                                     uib.expand_weights_q,
-                                     uib.expand_bias_q,
-                                     expand_out) ||
-                                 CmsisNnQuant::TryConv2dNhwcQuantPlan(
-                                     up.expand,
-                                     cur_data,
-                                     uib.expand_weights_q,
-                                     uib.expand_bias_q,
-                                     expand_out);
+                            ok = false;
+                            if constexpr (XnnpackQuant::kEnabled)
+                            {
+                                ok = XnnpackQuant::TryConv2dNhwcQuantPlan(
+                                    up.expand,
+                                    cur_data,
+                                    uib.expand_weights_q,
+                                    uib.expand_bias_q,
+                                    expand_out);
+                            }
+                            if constexpr (CmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || CmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                               up.expand,
+                                               cur_data,
+                                               uib.expand_weights_q,
+                                               uib.expand_bias_q,
+                                               expand_out);
+                            }
+#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+                            if (!ok)
+                            {
+                                const uint32_t cur_h = static_cast<uint32_t>(
+                                    up.has_start_dw ? up.start_dw.out_h : up.in_h);
+                                const uint32_t cur_w = static_cast<uint32_t>(
+                                    up.has_start_dw ? up.start_dw.out_w : up.in_w);
+                                QuantOps::Conv2dNhwcQuant(cur_data,
+                                                          cur_h,
+                                                          cur_w,
+                                                          in_c,
+                                                          uib.expand_weights_q,
+                                                          uib.expand_bias_q,
+                                                          up.expand.kernel_size,
+                                                          up.expand.stride,
+                                                          up.expand.pad_h,
+                                                          up.expand.pad_w,
+                                                          up.expand.pad_h,
+                                                          up.expand.pad_w,
+                                                          static_cast<int>(expand_c),
+                                                          uib.expand_quant,
+                                                          up.expand.clamp,
+                                                          expand_out,
+                                                          nullptr,
+                                                          up.expand.multipliers,
+                                                          up.expand.shifts,
+                                                          &up.expand.act_min,
+                                                          &up.expand.act_max,
+                                                          up.expand.bias_folded);
+                                ok = true;
+                            }
+#endif
                             if (ok)
                             {
                                 cur_data = expand_out;
@@ -1576,66 +1880,176 @@ namespace
 
                         if (ok && up.has_middle_dw)
                         {
+#if NETKIT_STAGE_TIMING
+                            ScopedStageTimer _t_mdw(&g_stage_timing.uib_middle_dw_us);
+#endif
                             int8_t* middle_out = cur_in_work ? work_b : work_a;
-                            ok = XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
-                                     up.middle_dw,
-                                     cur_data,
-                                     uib.middle_dw_weights_q,
-                                     uib.middle_dw_bias_q,
-                                     middle_out) ||
-                                 CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
-                                     up.middle_dw,
-                                     cur_data,
-                                     up.middle_dw.weights_hwc ? up.middle_dw.weights_hwc
-                                                              : uib.middle_dw_weights_q,
-                                     uib.middle_dw_bias_q,
-                                     middle_out);
+                            ok = false;
+                            if constexpr (XnnpackQuant::kEnabled)
+                            {
+                                ok = XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                    up.middle_dw,
+                                    cur_data,
+                                    uib.middle_dw_weights_q,
+                                    uib.middle_dw_bias_q,
+                                    middle_out);
+                            }
+                            if constexpr (CmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                               up.middle_dw,
+                                               cur_data,
+                                               up.middle_dw.weights_hwc ? up.middle_dw.weights_hwc
+                                                                        : uib.middle_dw_weights_q,
+                                               uib.middle_dw_bias_q,
+                                               middle_out);
+                            }
+#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+                            if (!ok)
+                            {
+                                QuantOps::DepthwiseConv2dNhwcQuant(
+                                    cur_data,
+                                    static_cast<uint32_t>(up.expand.out_h),
+                                    static_cast<uint32_t>(up.expand.out_w),
+                                    expand_c,
+                                    uib.middle_dw_weights_q,
+                                    uib.middle_dw_bias_q,
+                                    up.middle_dw.kernel_h,
+                                    up.middle_dw.kernel_w,
+                                    up.middle_dw.stride,
+                                    up.middle_dw.pad_h,
+                                    up.middle_dw.pad_w,
+                                    up.middle_dw.pad_h,
+                                    up.middle_dw.pad_w,
+                                    uib.middle_dw_quant,
+                                    up.middle_dw.clamp,
+                                    middle_out,
+                                    up.middle_dw.multipliers,
+                                    up.middle_dw.shifts,
+                                    &up.middle_dw.act_min,
+                                    &up.middle_dw.act_max,
+                                    up.middle_dw.bias_folded);
+                                ok = true;
+                            }
+#endif
                             if (ok)
                                 cur_data = middle_out;
                         }
 
                         if (ok)
                         {
-                            ok = XnnpackQuant::TryConv2dNhwcQuantPlan(
-                                     up.proj,
-                                     cur_data,
-                                     uib.proj_weights_q,
-                                     uib.proj_bias_q,
-                                     out) ||
-                                 CmsisNnQuant::TryConv2dNhwcQuantPlan(
-                                     up.proj,
-                                     cur_data,
-                                     uib.proj_weights_q,
-                                     uib.proj_bias_q,
-                                     out);
+#if NETKIT_STAGE_TIMING
+                            ScopedStageTimer _t_proj(&g_stage_timing.uib_proj_us);
+#endif
+                            ok = false;
+                            if constexpr (XnnpackQuant::kEnabled)
+                            {
+                                ok = XnnpackQuant::TryConv2dNhwcQuantPlan(
+                                    up.proj, cur_data, uib.proj_weights_q, uib.proj_bias_q, out);
+                            }
+                            if constexpr (CmsisNnQuant::kEnabled)
+                            {
+                                ok = ok || CmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                               up.proj,
+                                               cur_data,
+                                               uib.proj_weights_q,
+                                               uib.proj_bias_q,
+                                               out);
+                            }
+#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+                            if (!ok)
+                            {
+                                const uint32_t proj_in_h = static_cast<uint32_t>(
+                                    up.has_middle_dw ? up.middle_dw.out_h : up.expand.out_h);
+                                const uint32_t proj_in_w = static_cast<uint32_t>(
+                                    up.has_middle_dw ? up.middle_dw.out_w : up.expand.out_w);
+                                QuantOps::ResidualAddS8 residual{};
+                                const QuantOps::ResidualAddS8* residual_ptr = nullptr;
+                                if (up.has_residual)
+                                {
+                                    residual.data = residual_src;
+                                    residual.scale = uib.block_input_scale;
+                                    residual.zero_point = uib.block_input_zero_point;
+                                    residual.add_plan = up.add.ready ? &up.add : nullptr;
+                                    residual_ptr = &residual;
+                                }
+                                QuantOps::Conv2dNhwcQuant(cur_data,
+                                                          proj_in_h,
+                                                          proj_in_w,
+                                                          expand_c,
+                                                          uib.proj_weights_q,
+                                                          uib.proj_bias_q,
+                                                          up.proj.kernel_size,
+                                                          up.proj.stride,
+                                                          up.proj.pad_h,
+                                                          up.proj.pad_w,
+                                                          up.proj.pad_h,
+                                                          up.proj.pad_w,
+                                                          static_cast<int>(up.out_c),
+                                                          uib.proj_quant,
+                                                          up.proj.clamp,
+                                                          out,
+                                                          residual_ptr,
+                                                          up.proj.multipliers,
+                                                          up.proj.shifts,
+                                                          &up.proj.act_min,
+                                                          &up.proj.act_max,
+                                                          up.proj.bias_folded);
+                                ok = true;
+                                // Residual already fused in Conv2dNhwcQuant epilogue.
+                                up_residual_done = true;
+                            }
+#endif
                         }
 
-                        if (ok && up.has_residual)
+                        if (ok && up.has_residual && !up_residual_done)
                         {
+#if NETKIT_STAGE_TIMING
+                            ScopedStageTimer _t_add(&g_stage_timing.uib_residual_add_us);
+#endif
                             const uint32_t count = static_cast<uint32_t>(up.out_h) *
                                                    static_cast<uint32_t>(up.out_w) *
                                                    static_cast<uint32_t>(up.out_c);
-                            QuantOps::ElementwiseAddS8(out,
-                                                       residual_buf,
-                                                       count,
-                                                       uib.proj_quant.output_scale,
-                                                       uib.proj_quant.output_zero_point,
-                                                       uib.block_input_scale,
-                                                       uib.block_input_zero_point,
-                                                       uib.proj_quant.output_scale,
-                                                       uib.proj_quant.output_zero_point,
-                                                       out);
+                            if (up.add.ready)
+                            {
+                                QuantOps::ElementwiseAddS8(
+                                    out, residual_src, count, up.add, out);
+                            }
+                            else
+                            {
+                                QuantOps::ElementwiseAddS8(out,
+                                                           residual_src,
+                                                           count,
+                                                           uib.proj_quant.output_scale,
+                                                           uib.proj_quant.output_zero_point,
+                                                           uib.block_input_scale,
+                                                           uib.block_input_zero_point,
+                                                           uib.proj_quant.output_scale,
+                                                           uib.proj_quant.output_zero_point,
+                                                           out);
+                            }
                         }
 
                         ran_plans = ok;
+#if NETKIT_STAGE_TIMING
+                        if (ok)
+                            ++g_stage_timing.uib_plan_ok;
+#endif
                     }
                     if (!ran_plans)
                     {
+#if NETKIT_STAGE_TIMING
+                        ScopedStageTimer _t_fb(&g_stage_timing.uib_fallback_us);
+                        ++g_stage_timing.uib_fallback;
+#endif
                         uib.forward_quant(current,
                                           out,
                                           static_cast<uint32_t>(lp.uib.in_h),
                                           static_cast<uint32_t>(lp.uib.in_w));
                     }
+#if NETKIT_STAGE_TIMING
+                    seen_uib = true;
+#endif
                     break;
                 }
                 case LayerKind::Dense:
@@ -1643,14 +2057,24 @@ namespace
                     const int8_t* weights = static_cast<const int8_t*>(block.dense.weights.data);
                     const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
                     int8_t* dense_out = (is_last && output_dest != nullptr) ? output_dest : out;
-                    if (XnnpackQuant::TryFullyConnectedQuantPlan(
-                            lp.fc, current, weights, bias, dense_out) ||
-                        CmsisNnQuant::TryFullyConnectedQuantPlan(
-                            lp.fc, current, weights, bias, dense_out))
                     {
-                        if (dense_out == output_dest)
-                            out = output_dest;
-                        break;
+                        bool ran = false;
+                        if constexpr (XnnpackQuant::kEnabled)
+                        {
+                            ran = XnnpackQuant::TryFullyConnectedQuantPlan(
+                                lp.fc, current, weights, bias, dense_out);
+                        }
+                        if constexpr (CmsisNnQuant::kEnabled)
+                        {
+                            ran = ran || CmsisNnQuant::TryFullyConnectedQuantPlan(
+                                             lp.fc, current, weights, bias, dense_out);
+                        }
+                        if (ran)
+                        {
+                            if (dense_out == output_dest)
+                                out = output_dest;
+                            break;
+                        }
                     }
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                     return false;
@@ -1663,7 +2087,12 @@ namespace
                                                   static_cast<uint32_t>(lp.fc.out_features),
                                                   block.dense.quant.params,
                                                   lp.fc.clamp,
-                                                  dense_out);
+                                                  dense_out,
+                                                  lp.fc.multipliers,
+                                                  lp.fc.shifts,
+                                                  &lp.fc.act_min,
+                                                  &lp.fc.act_max,
+                                                  lp.fc.bias_folded);
                     if (dense_out == output_dest)
                         out = output_dest;
                     break;
@@ -1677,11 +2106,20 @@ namespace
                     // Classification path: write logits directly (argmax-equivalent to Softmax).
                     int8_t* fc_dest =
                         runtime.omit_final_softmax ? softmax_out : runtime.logits;
-                    if (!XnnpackQuant::TryFullyConnectedQuantPlan(
-                            lp.fc, current, weights, bias, fc_dest) &&
-                        !CmsisNnQuant::TryFullyConnectedQuantPlan(
-                            lp.fc, current, weights, bias, fc_dest))
                     {
+                        bool ran = false;
+                        if constexpr (XnnpackQuant::kEnabled)
+                        {
+                            ran = XnnpackQuant::TryFullyConnectedQuantPlan(
+                                lp.fc, current, weights, bias, fc_dest);
+                        }
+                        if constexpr (CmsisNnQuant::kEnabled)
+                        {
+                            ran = ran || CmsisNnQuant::TryFullyConnectedQuantPlan(
+                                             lp.fc, current, weights, bias, fc_dest);
+                        }
+                        if (!ran)
+                        {
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                         return false;
 #else
@@ -1693,8 +2131,14 @@ namespace
                                                       static_cast<uint32_t>(lp.fc.out_features),
                                                       block.dense.quant.params,
                                                       lp.fc.clamp,
-                                                      fc_dest);
+                                                      fc_dest,
+                                                      lp.fc.multipliers,
+                                                      lp.fc.shifts,
+                                                      &lp.fc.act_min,
+                                                      &lp.fc.act_max,
+                                                      lp.fc.bias_folded);
 #endif
+                        }
                     }
                     if (runtime.omit_final_softmax)
                     {
@@ -1702,8 +2146,15 @@ namespace
                         (void)output_format;
                         break;
                     }
-                    if (!CmsisNnQuant::TrySoftmaxS8Plan(lp.softmax, runtime.logits, softmax_out))
                     {
+                        bool ran = false;
+                        if constexpr (CmsisNnQuant::kEnabled)
+                        {
+                            ran = CmsisNnQuant::TrySoftmaxS8Plan(
+                                lp.softmax, runtime.logits, softmax_out);
+                        }
+                        if (!ran)
+                        {
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
                         return false;
 #else
@@ -1712,6 +2163,7 @@ namespace
                                             block.dense.quant.params.output_scale,
                                             softmax_out);
 #endif
+                        }
                     }
                     out = softmax_out;
                     (void)output_format;
@@ -1721,6 +2173,15 @@ namespace
                     break;
             }
 
+#if NETKIT_STAGE_TIMING
+            if (lp.kind != LayerKind::MobilenetV4Uib && lp.kind != LayerKind::FlattenView)
+            {
+                *layer_bucket += std::chrono::duration<double, std::micro>(
+                                     std::chrono::steady_clock::now() - layer_t0)
+                                     .count();
+            }
+#endif
+
             if (lp.kind != LayerKind::FlattenView)
             {
                 current = out;
@@ -1728,6 +2189,11 @@ namespace
                     use_a = !use_a;
             }
         }
+
+#if NETKIT_STAGE_TIMING
+        ++g_stage_timing.invokes;
+        PrintStageTimingIfDue();
+#endif
 
         if (output_dest != nullptr)
             return true;

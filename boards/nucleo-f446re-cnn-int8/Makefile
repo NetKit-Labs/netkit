@@ -2,7 +2,7 @@
 #
 # Build profile (explicit CMSIS opt-in — not inferred from NETKIT_TARGET alone):
 #   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
-#   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4 (weights always flash/blob-backed)
+#   NETKIT_TARGET=mcu_arm, NETKIT_ARCH=CM4 (weights always flash/blob-backed)
 #   Toolchain: boards/nucleo-f446re/mcu_tflm_toolchain.mk (TFLM microlite tiers:
 #     CORE/KERNEL/THIRD_PARTY all -O2, -flto link)
 #   Default: interpreter embed (--no-lower) — fair vs TFLM MicroInterpreter
@@ -73,7 +73,7 @@ NETKIT_TRACE_SOURCES :=
 endif
 
 NETKIT_CPPFLAGS := \
-	-DNETKIT_TARGET_MCU=1 \
+	-DNETKIT_TARGET_MCU_ARM=1 \
 	-DNETKIT_MCU_QUANT_ONLY=$(NETKIT_MCU_QUANT_ONLY) \
 	-DNETKIT_KERNELS_OPTIMIZED_FOR_SPEED=1 \
 	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \

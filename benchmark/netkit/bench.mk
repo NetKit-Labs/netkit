@@ -27,9 +27,11 @@ else
 endif
 
 CMSIS_DSP_DIR := $(ROOT)/third_party/CMSIS-DSP
+CMSIS_NN_DIR := $(ROOT)/third_party/CMSIS-NN
 XNNPACK_DIR := $(ROOT)/third_party/XNNPACK
 XNNPACK_LIB_DIR := $(XNNPACK_DIR)/netkit_lib
 XNNPACK ?= 0
+CMSIS_NN ?= 0
 
 BENCH_RUNTIME_SOURCES := \
   src/arena.cpp \
@@ -118,6 +120,29 @@ else
   CMSIS_DSP_INCLUDES :=
 endif
 
+CMSIS_NN_OBJS :=
+CMSIS_NN_INCLUDES :=
+ifeq ($(CMSIS_NN),1)
+  ifeq ($(wildcard $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h),)
+    $(error CMSIS-NN not found at $(CMSIS_NN_DIR) — run ./tools/fetch_cmsis_nn.sh)
+  endif
+  # Host ImageNet int8 peer: portable CMSIS-NN C (force ALLOWED; DSP off for this variant).
+  # Also link float CMSIS-NN + cmsis_nn_backend — ActiveKernel becomes CmsisNnKernel.
+  BENCH_RUNTIME_SOURCES += src/cmsis_nn_backend.cpp
+  NETKIT_BENCH_VARIANT_CPPFLAGS += \
+    -DNETKIT_USE_CMSIS_NN=1 \
+    -DNETKIT_CMSIS_NN_ALLOWED=1 \
+    -DARM_NN_ENABLE_F32=1 \
+    -DARM_MATH_CM4 \
+    -D__GNUC_PYTHON__
+  CMSIS_NN_INCLUDES := -I$(CMSIS_NN_DIR)/Include
+  include $(ROOT)/third_party/cmsis_nn.mk
+  CMSIS_NN_OBJS := $(patsubst $(CMSIS_NN_DIR)/%.c,$(BENCH_OBJDIR)/cmsis_nn/%.o,$(CMSIS_NN_SOURCES))
+  CMSIS_NN_CFLAGS := -std=c11 $(TFLM_KERNEL_OPT) \
+    -I$(CMSIS_NN_DIR)/Include \
+    -DARM_NN_ENABLE_F32=1 -DARM_MATH_CM4 -D__GNUC_PYTHON__
+endif
+
 XNNPACK_LDFLAGS :=
 ifeq ($(XNNPACK),1)
   ifeq ($(wildcard $(XNNPACK_DIR)/include/xnnpack.h),)
@@ -156,7 +181,7 @@ ifeq ($(XNNPACK),1)
 endif
 
 BENCH_KERNEL_CPPFLAGS := $(NETKIT_BENCH_CPPFLAGS) $(NETKIT_BENCH_VARIANT_CPPFLAGS)
-BENCH_KERNEL_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_KERNEL_OPT) $(BENCH_KERNEL_CPPFLAGS) $(CMSIS_DSP_INCLUDES) -I$(ROOT)/include
+BENCH_KERNEL_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_KERNEL_OPT) $(BENCH_KERNEL_CPPFLAGS) $(CMSIS_DSP_INCLUDES) $(CMSIS_NN_INCLUDES) -I$(ROOT)/include
 BENCH_CORE_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_CORE_OPT) $(BENCH_KERNEL_CPPFLAGS) $(TFLM_BENCH_INCLUDES)
 BENCH_MAIN_CPPFLAGS := -DNETKIT_BENCH_BACKEND=\"$(BACKEND)\"
 
@@ -229,7 +254,11 @@ $(BENCH_OBJDIR)/cmsis_dsp/%.o: $(CMSIS_DSP_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(TFLM_HOST_CC) $(CMSIS_DSP_CFLAGS) -c $< -o $@
 
-$(BENCH_LIB): $(BENCH_LIB_OBJS) $(CMSIS_DSP_OBJS)
+$(BENCH_OBJDIR)/cmsis_nn/%.o: $(CMSIS_NN_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(TFLM_HOST_CC) $(CMSIS_NN_CFLAGS) -c $< -o $@
+
+$(BENCH_LIB): $(BENCH_LIB_OBJS) $(CMSIS_DSP_OBJS) $(CMSIS_NN_OBJS)
 	$(TFLM_HOST_AR) rcs $@ $^
 
 # Link with the same opt tier as compile (LTO-free; keeps profile consistent).

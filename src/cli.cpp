@@ -22,7 +22,7 @@ namespace Cli
         constexpr uint32_t kMaxInputFloats = NK_MAX_CASE_FLOATS;
 
 #if !defined(NETKIT_ARENA_HEAP)
-#if defined(NETKIT_TARGET_MCU)
+#if defined(NETKIT_CLASS_MCU)
         alignas(std::max_align_t) unsigned char g_arena_buffer[Arena::kDefaultCapacity];
 #else
         // CPU GLOBAL_ARENA: avoid a 64 MiB .bss; heap builds use Arena::kDefaultCapacity.

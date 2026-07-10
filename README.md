@@ -155,8 +155,8 @@ Format overview: [docs/NK_FORMAT.md](docs/NK_FORMAT.md). Byte-level spec and ins
 
 ```bash
 make              # netkit CLI + libnetkit.a (NETKIT_TARGET=cpu, heap arena default)
-make NETKIT_TARGET=mcu lib   # lean embedded runtime
-make NETKIT_TARGET=mpu lib   # lean embedded runtime
+make NETKIT_TARGET=mcu_arm lib   # lean embedded runtime
+make NETKIT_TARGET=mpu_arm lib   # lean embedded runtime
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # desktop, static arena
 make build-all    # cpu: netkit + examples + C API test binary
 make test         # default: C++/C embedded regression + fast Python (~1 min)
@@ -183,18 +183,21 @@ CMSIS backends are **opt-in** via `NETKIT_CMSIS_*=1` (or CMake `-DNETKIT_CMSIS_*
 
 **Profile defaults** (override on the command line, e.g. `make NETKIT_CMSIS_DSP=0`):
 
-| `NETKIT_TARGET` | Default CMSIS-DSP | Default CMSIS-NN |
-|-----------------|-------------------|------------------|
-| `cpu` | on | off |
-| `mcu` | on | on (Cortex-M `NETKIT_ARCH` required) |
-| `mpu` | on | off |
+| `NETKIT_TARGET` | Default CMSIS-DSP | Default CMSIS-NN | Default XNNPACK |
+|-----------------|-------------------|------------------|-----------------|
+| `cpu` | off (fewer host deps) | off | on |
+| `mcu_arm` | on (helpers; dots off unless `NETKIT_CMSIS_DSP_DOT=1`) | on (Cortex-M `NETKIT_ARCH`) | off |
+| `mpu_arm` | on (helpers) | off | on |
+| `mcu_risc` / `mpu_risc` | off | off | off |
 
 ```bash
 make cmsis-init
-make test-cpp                         # cpu: CMSIS-DSP on by default
-make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 lib   # mcu: CMSIS-DSP + CMSIS-NN
+make xnnpack-init                     # once, for cpu/mpu_arm LayerFast
+make test-cpp                         # cpu: XNNPACK preferred, DSP off
+make NETKIT_CMSIS_DSP=1 test-cpp      # optional portable DSP helpers on host
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib   # mcu_arm: CMSIS-DSP + CMSIS-NN
 
-# Host smoke before on-device bring-up (7 profiles; sets NETKIT_HOST_SMOKE=1)
+# Host smoke before on-device bring-up (sets NETKIT_HOST_SMOKE=1)
 make test-embedded-smoke-matrix
 ```
 

@@ -192,10 +192,10 @@ void CNNNetwork::InitQuantizedMobilenetV4UibLayer(uint32_t layer_idx,
 
     const uint32_t spatial = spatial_h * spatial_w;
     const uint32_t expand_c = block.expanded_channels();
-    const uint32_t residual =
-        (stride == 1 && in_channels == out_channels) ? static_cast<uint32_t>(in_channels) : 0u;
+    // Two ping-pong work buffers only. Residual aliases the block input (UIB body
+    // never overwrites it); no third residual memcpy buffer.
     const uint32_t scratch_bytes =
-        (2u * spatial * expand_c + spatial * residual) * static_cast<uint32_t>(sizeof(int8_t));
+        (2u * spatial * expand_c) * static_cast<uint32_t>(sizeof(int8_t));
     block.scratch_i8 =
         static_cast<int8_t*>(arena.alloc(static_cast<std::size_t>(scratch_bytes), alignof(int8_t)));
     block.scratch_i8_bytes = block.scratch_i8 ? scratch_bytes : 0;

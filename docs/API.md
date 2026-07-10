@@ -25,7 +25,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 |----------|----------|
 | [PHILOSOPHY.md](PHILOSOPHY.md) | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager; memory and roadmap |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Clone, build, CLI, integrate C/C++ |
-| [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET=cpu\|mcu\|mpu`, arena flags, defaults |
+| [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET=cpu\|mcu_arm\|mpu_arm\|mcu_risc\|mpu_risc`, arena flags, backend defaults |
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect`, help |
 | [ARENA.md](ARENA.md) | Bump allocator, sizing, alignment |
 | [DATATYPES.md](DATATYPES.md) | Float32 + int8 today; float16/int16/int4 roadmap |
@@ -43,8 +43,9 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 | Target | Command | CLI | `NK_ARENA_DEFAULT_CAPACITY` |
 |--------|---------|-----|----------------------------|
 | CPU | `make` | Yes | **64 MiB** |
-| MCU | `make NETKIT_TARGET=mcu lib` | No | **64 KiB** |
-| MPU | `make NETKIT_TARGET=mpu lib` | No | **64 MiB** |
+| MCU_ARM | `make NETKIT_TARGET=mcu_arm lib` | No | **64 KiB** |
+| MPU_ARM | `make NETKIT_TARGET=mpu_arm lib` | No | **64 MiB** |
+| MCU_RISC / MPU_RISC | `make NETKIT_TARGET=mcu_risc\|mpu_risc lib` | No | **64 KiB** / **64 MiB** |
 
 **Arena backing flags** (see [BUILD_TARGETS.md](BUILD_TARGETS.md)):
 
@@ -52,7 +53,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 |------|--------|
 | *(CPU default)* | Heap arena — `nk_arena_init_heap` / CLI default 64 MiB |
 | `NETKIT_GLOBAL_ARENA=1` (CPU) | Static/global arena only |
-| `NETKIT_HEAP_ARENA=1` (MCU/MPU) | Compile in optional heap arena API |
+| `NETKIT_HEAP_ARENA=1` (MCU/MPU class) | Compile in optional heap arena API |
 
 ## Quick comparison
 
@@ -138,16 +139,17 @@ Runtime models are **`.nk` v3** single files — [NK_FORMAT.md](NK_FORMAT.md).
 
 Convert ONNX → `.nk` with `python -m netkit convert` or `make export-nk`. Supported ONNX ops: [ONNX.md](ONNX.md).
 
-## Optional CMSIS backends
+## Optional CMSIS / XNNPACK backends
 
-CMSIS backends are **not** inferred from `NETKIT_ARCH` — set `NETKIT_CMSIS_*=1` explicitly or use **profile defaults** (`cpu`: DSP only; `mcu`: DSP + NN; `mpu`: DSP only).
+Backends are **not** inferred from `NETKIT_ARCH` alone — set flags explicitly or use **profile defaults** (`cpu`: XNNPACK on, DSP/NN off; `mcu_arm`: DSP + NN; `mpu_arm`: XNNPACK + DSP helpers; RISC: none yet).
 
 | Backend | When enabled | Targets |
 |---------|----------------|---------|
-| **CMSIS-NN** | `NETKIT_CMSIS_NN=1` + `NETKIT_TARGET=mcu` + Cortex-M `NETKIT_ARCH` | MCU firmware (CM4, M33, …) |
-| **CMSIS-DSP** | `NETKIT_CMSIS_DSP=1` | Desktop, MCU, MPU |
+| **CMSIS-NN** | `NETKIT_CMSIS_NN=1` + `NETKIT_TARGET=mcu_arm` + Cortex-M `NETKIT_ARCH` | Arm MCU firmware (CM4, M33, …) |
+| **CMSIS-DSP** | `NETKIT_CMSIS_DSP=1` | Arm ISA (`mcu_arm` / `mpu_arm`; optional on `cpu`) — **helpers only** by default |
+| **XNNPACK** | `NETKIT_XNNPACK=1` | `cpu` / `mpu_arm` LayerFast |
 
-On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` prints a Make warning and is ignored — reference kernels (and optional CMSIS-DSP) apply. When CMSIS-DSP is enabled, float im2col/direct conv, reference fallbacks, and board utilities use `cmsis_dsp_util` (`arm_dot_prod_f32`, `arm_copy_f32`, etc.). Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
+On **cpu** or **mpu_arm**, `NETKIT_CMSIS_NN=1` is ignored (Make warning). CMSIS-DSP vector helpers use `cmsis_dsp_util`; hot float dots stay on the inlined reference path unless `NETKIT_CMSIS_DSP_DOT=1`. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
 
 ## Testing
 

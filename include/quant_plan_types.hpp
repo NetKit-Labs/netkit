@@ -49,6 +49,12 @@ struct Conv2DPlan
     int32_t workspace_bytes = 0;
     int32_t* multipliers = nullptr;
     int32_t* shifts = nullptr;
+    // Baked output clamp (TF Lite quantized_activation_min/max).
+    int32_t act_min = -128;
+    int32_t act_max = 127;
+    // Prepare-time bias' = bias + input_offset * sum(w) when weight_zp==0 and
+    // input_offset!=0. Used by scalar ref interior / 1x1 paths (bit-exact).
+    int32_t* bias_folded = nullptr;
 #if NETKIT_CMSIS_PLAN_HOIST
     Conv2DCmsisHoist cmsis{};
 #endif
@@ -82,7 +88,11 @@ struct DepthwiseConv2DPlan
     int32_t workspace_bytes = 0;
     int32_t* multipliers = nullptr;
     int32_t* shifts = nullptr;
+    int32_t act_min = -128;
+    int32_t act_max = 127;
     int8_t* weights_hwc = nullptr;
+    // Prepare-time folded bias (see Conv2DPlan::bias_folded).
+    int32_t* bias_folded = nullptr;
 #if NETKIT_CMSIS_PLAN_HOIST
     DepthwiseConv2DCmsisHoist cmsis{};
 #endif
@@ -120,6 +130,7 @@ struct Pool2DPlan
 
 struct ElementwiseAddPlan
 {
+    // TF Lite ArithmeticParams-style (offsets are -zero_point).
     int32_t input1_offset = 0;
     int32_t input2_offset = 0;
     int32_t output_offset = 0;
@@ -127,10 +138,12 @@ struct ElementwiseAddPlan
     int32_t input1_shift = 0;
     int32_t input2_mult = 0;
     int32_t input2_shift = 0;
-    int32_t left_shift = 0;
+    int32_t left_shift = 20;
     int32_t output_mult = 0;
     int32_t output_shift = 0;
     int32_t block_size = 0;
+    int32_t act_min = -128;
+    int32_t act_max = 127;
     bool ready = false;
 };
 
@@ -186,8 +199,12 @@ struct FcPlan
     // Per-output-channel requant (TFLite-style); length == out_features when set.
     int32_t* multipliers = nullptr;
     int32_t* shifts = nullptr;
+    int32_t act_min = -128;
+    int32_t act_max = 127;
     int32_t workspace_bytes = 0;
     int32_t* kernel_sums = nullptr;
+    // Prepare-time folded bias (see Conv2DPlan::bias_folded).
+    int32_t* bias_folded = nullptr;
 #if NETKIT_CMSIS_PLAN_HOIST
     FcCmsisHoist cmsis{};
 #endif

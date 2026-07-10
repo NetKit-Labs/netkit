@@ -2,99 +2,90 @@
 #
 # Primary build system (GNU Make). See docs/TESTING.md and docs/BUILD_TARGETS.md.
 #
-# Build target (NETKIT_TARGET):
-#   cpu (default) — desktop: CLI, regression; arena defaults to heap
-#   mcu           — lean runtime only; arena defaults to caller-owned global/static buffer
-#   mpu           — lean runtime only; same arena default as MCU
+# Build target (NETKIT_TARGET) — ISA-qualified firmware profiles:
+#   cpu       (default) — desktop: CLI, regression; arena defaults to heap
+#   mcu_arm             — Arm MCU lean runtime; CMSIS-DSP + CMSIS-NN defaults
+#   mpu_arm             — Arm MPU lean runtime; XNNPACK + CMSIS-DSP (helpers) defaults
+#   mcu_risc            — RISC-V MCU lean runtime (backends TBD)
+#   mpu_risc            — RISC-V MPU lean runtime (backends TBD)
+#
+# Legacy NETKIT_TARGET=mcu|mpu is rejected — use mcu_arm / mpu_arm.
 #
 # Arena overrides:
 #   NETKIT_GLOBAL_ARENA=1  — CPU only: use static/global arena instead of heap default
-#   NETKIT_HEAP_ARENA=1    — MCU/MPU: compile heap arena helpers (off by default)
+#   NETKIT_HEAP_ARENA=1    — MCU/MPU class: compile heap arena helpers (off by default)
 #
 # File-load mmap (POSIX macOS/Linux only):
-#   NETKIT_MMAP=1          — enable mmap for LoadMLP/LoadCNN from path (default: cpu=1, mcu/mpu=0)
+#   NETKIT_MMAP=1          — enable mmap for LoadMLP/LoadCNN from path (default: cpu=1, else 0)
 #   NETKIT_MMAP=0          — fread into arena instead (or use Load*FromBuffer / flash)
-#   MPU defaults off so RTOS/bare-metal builds match MCU; opt in on embedded Linux.
-#
-# Weights always stay in the .nk blob (flash/XIP, mmap, or buffer); arena holds
-# activations and structs only.
 #
 # Optional backends (profile defaults below; override on command line):
-#   NETKIT_CMSIS_NN=1      — Cortex-M MCU only (NETKIT_TARGET=mcu + NETKIT_ARCH=CM4|M33|...)
-#   NETKIT_CMSIS_DSP=1     — CMSIS-DSP float32 vector/matrix ops
-#   NETKIT_XNNPACK=1      — Google XNNPACK float32 + int8 (cpu/mpu only; run ./tools/fetch_xnnpack.sh)
+#   NETKIT_CMSIS_NN=1      — Arm MCU only (NETKIT_TARGET=mcu_arm + NETKIT_ARCH=CM4|M33|...)
+#   NETKIT_CMSIS_DSP=1     — CMSIS-DSP vector helpers (not hot float dots by default)
+#   NETKIT_CMSIS_DSP_DOT=1 — optional: route DotProductF32 through arm_dot_prod_f32
+#   NETKIT_XNNPACK=1       — Google XNNPACK (cpu / mpu_arm; run ./tools/fetch_xnnpack.sh)
 #
-# Profile defaults (e.g. make NETKIT_CMSIS_DSP=0 NETKIT_XNNPACK=0):
-#   cpu — CMSIS-DSP on, CMSIS-NN off, XNNPACK on
-#   mcu — CMSIS-DSP + CMSIS-NN on (requires NETKIT_ARCH for NN), XNNPACK off
-#   mpu — CMSIS-DSP on, CMSIS-NN off, XNNPACK on
+# Profile defaults:
+#   cpu      — XNNPACK on, CMSIS-DSP off, CMSIS-NN off
+#   mcu_arm  — CMSIS-DSP + CMSIS-NN on, XNNPACK off
+#   mpu_arm  — XNNPACK + CMSIS-DSP on (helpers), CMSIS-NN off
+#   mcu_risc / mpu_risc — all backends off (placeholders)
 #
 # Optional reference-kernel loop unroll (netkit code only; not CMSIS):
 # NETKIT_IM2COL=0|1|2 — float Conv2D strategy: 0 direct (default), 1 partial, 2 full im2col+GEMM.
-#                             Default 0 (direct) on all targets (unset here).
 #   NETKIT_LOOP_UNROLL=1    — EXPERIMENTAL: 4× unroll in reference kernels (default 0).
-#                             Increases .text; verify flash headroom on MCU before use.
 #
 # Target architecture (empty = desktop CPU; sets ARM_MATH_* flags for CMSIS):
-#   NETKIT_ARCH=CM4        — Cortex-M4 (ARM_MATH_CM4)
-#   NETKIT_ARCH=CM7         — Cortex-M7 (ARM_MATH_CM7)
-#   NETKIT_ARCH=M33        — Cortex-M33 (ARM_MATH_ARMV8MML)
-#   NETKIT_ARCH=M55        — Cortex-M55 (ARM_MATH_M55)
-#   NETKIT_ARCH=NEON       — Cortex-A with NEON (ARM_MATH_NEON)
-#   See third_party/netkit_arch.mk for full list
-#
-# Common targets:
-#   make              — cpu: netkit CLI + libnetkit.a (heap arena default)
-#   make lib          — libnetkit.a for current NETKIT_TARGET
-#   make build-all    — cpu: netkit + examples + C API tests; mcu/mpu: lib + examples
-#   make test         — default regression: C++/C + fast Python (cpu only)
-#   make test-full    — full regression incl. ONNX/backbone parity (manual / pre-release)
-#   make test-cpp     — ./netkit test (cpu only)
-#   make test-c       — ./tests/test_c_api (cpu only)
-#   make embedded-smoke — lean MCU/MPU smoke binary
-#   make test-embedded-smoke-matrix — MCU/MPU + NETKIT_ARCH + CMSIS profiles (host smoke)
-#   make examples     — infer_cpp + infer_c
-#   make export-mnist — regenerate MNIST model + cases (requires numpy)
-#   make clean        — remove build products
-#   make rebuild      — clean + make
+#   NETKIT_ARCH=CM4|CM7|M33|M55|NEON|...  — see third_party/netkit_arch.mk
 #
 # Examples:
 #   make                                    # desktop (cpu, heap arena)
 #   make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all
-#   make NETKIT_TARGET=mcu lib              # lean runtime, global arena
-#   make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
+#   make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib
+#   make NETKIT_TARGET=mpu_arm lib
 
 NETKIT_TARGET ?= cpu
 NETKIT_GLOBAL_ARENA ?= 0
 NETKIT_HEAP_ARENA ?= 0
-# mmap file load: on for cpu, off for mcu/mpu (override with NETKIT_MMAP=0|1)
+NETKIT_CMSIS_DSP_DOT ?= 0
+# mmap file load: on for cpu, off for firmware class (override with NETKIT_MMAP=0|1)
 ifeq ($(NETKIT_TARGET),cpu)
   NETKIT_MMAP ?= 1
 else
   NETKIT_MMAP ?= 0
 endif
 ifeq ($(NETKIT_TARGET),cpu)
-  NETKIT_CMSIS_DSP ?= 1
+  NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
-else ifeq ($(NETKIT_TARGET),mcu)
+else ifeq ($(NETKIT_TARGET),mcu_arm)
   NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 1
   NETKIT_XNNPACK ?= 0
-else ifeq ($(NETKIT_TARGET),mpu)
+else ifeq ($(NETKIT_TARGET),mpu_arm)
   NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
+else ifeq ($(NETKIT_TARGET),mcu_risc)
+  NETKIT_CMSIS_DSP ?= 0
+  NETKIT_CMSIS_NN ?= 0
+  NETKIT_XNNPACK ?= 0
+else ifeq ($(NETKIT_TARGET),mpu_risc)
+  NETKIT_CMSIS_DSP ?= 0
+  NETKIT_CMSIS_NN ?= 0
+  NETKIT_XNNPACK ?= 0
+else ifeq ($(NETKIT_TARGET),mcu)
+  $(error NETKIT_TARGET=mcu is removed — use NETKIT_TARGET=mcu_arm)
+else ifeq ($(NETKIT_TARGET),mpu)
+  $(error NETKIT_TARGET=mpu is removed — use NETKIT_TARGET=mpu_arm)
 else
   NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 0
 endif
-# In CI, exercise CMSIS-DSP only for the host cpu build (CMSIS-DSP's portable
-# __GNUC_PYTHON__ path). Cross-target (mcu/mpu) host compile-checks — e.g. the
-# AOT MCU codegen test's `make NETKIT_TARGET=mcu lib` — have no ARM toolchain or
-# CMSIS-Core headers on the runner, so keep them on reference kernels.
-# XNNPACK is also forced off in CI (large fetch/build; enable locally).
+# In CI, exercise CMSIS-DSP only when explicitly requested on the host cpu build
+# (portable __GNUC_PYTHON__ path). Cross-target host compile-checks keep reference
+# kernels (no ARM toolchain / CMSIS-Core on the runner). XNNPACK forced off in CI.
 ifeq ($(GITHUB_ACTIONS),true)
   ifneq ($(NETKIT_TARGET),cpu)
     override NETKIT_CMSIS_DSP := 0
@@ -102,7 +93,7 @@ ifeq ($(GITHUB_ACTIONS),true)
   endif
   override NETKIT_XNNPACK := 0
 endif
-# Default direct Conv2D loops (0) on cpu/mcu/mpu; override at build time if needed.
+# Default direct Conv2D loops (0) on all targets; override at build time if needed.
 NETKIT_IM2COL ?= 0
 NETKIT_LOOP_UNROLL ?= 0
 NETKIT_ARCH ?=
@@ -150,14 +141,14 @@ ifneq ($(wildcard $(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_
   TARGET_CPPFLAGS += -DNETKIT_USE_CMSIS_SOFTMAX_S8=1 -I$(CMSIS_NN_DIR)/Include
 endif
 ifeq ($(NETKIT_CMSIS_NN),1)
-  ifeq ($(NETKIT_TARGET),mcu)
+  ifeq ($(NETKIT_TARGET),mcu_arm)
     ifeq ($(NETKIT_ARCH_IS_M_PROFILE),1)
       NETKIT_CMSIS_NN_EFFECTIVE := 1
     else
       $(warning NETKIT_CMSIS_NN=1 ignored — set NETKIT_ARCH=CM4|M33|... (Cortex-M); using reference kernels)
     endif
   else
-    $(warning NETKIT_CMSIS_NN=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-NN is MCU + Cortex-M only; using reference kernels)
+    $(warning NETKIT_CMSIS_NN=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-NN is mcu_arm + Cortex-M only)
   endif
 endif
 ifeq ($(NETKIT_CMSIS_NN_EFFECTIVE),1)
@@ -172,6 +163,12 @@ endif
 
 CMSIS_DSP_OBJECTS =
 ifeq ($(NETKIT_CMSIS_DSP),1)
+  ifneq ($(filter $(NETKIT_TARGET),mcu_risc mpu_risc),)
+    $(warning NETKIT_CMSIS_DSP=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-DSP is Arm ISA only)
+    override NETKIT_CMSIS_DSP := 0
+  endif
+endif
+ifeq ($(NETKIT_CMSIS_DSP),1)
   CMSIS_DSP_DIR ?= third_party/CMSIS-DSP
   ifeq ($(wildcard $(CMSIS_DSP_DIR)/Include/arm_math.h),)
     $(error NETKIT_CMSIS_DSP=1 requires CMSIS-DSP at $(CMSIS_DSP_DIR) — run ./tools/fetch_cmsis_dsp.sh)
@@ -181,14 +178,14 @@ ifeq ($(NETKIT_CMSIS_DSP),1)
   RUNTIME_SOURCES += src/cmsis_dsp_backend.cpp
 endif
 
-# XNNPACK: cpu/mpu LayerFast accelerator (default on for those targets; off for mcu).
+# XNNPACK: cpu / mpu_arm LayerFast accelerator.
 XNNPACK_DIR ?= third_party/XNNPACK
 XNNPACK_LIB_DIR ?= $(XNNPACK_DIR)/netkit_lib
 XNNPACK_LDFLAGS :=
 NETKIT_XNNPACK_EFFECTIVE := 0
 ifeq ($(NETKIT_XNNPACK),1)
-  ifeq ($(NETKIT_TARGET),mcu)
-    $(warning NETKIT_XNNPACK=1 ignored on NETKIT_TARGET=mcu — XNNPACK is cpu/mpu only)
+  ifneq ($(filter $(NETKIT_TARGET),mcu_arm mcu_risc mpu_risc),)
+    $(warning NETKIT_XNNPACK=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — XNNPACK is cpu/mpu_arm only)
   else ifeq ($(wildcard $(XNNPACK_DIR)/include/xnnpack.h),)
     $(warning NETKIT_XNNPACK=1 but XNNPACK headers missing — run ./tools/fetch_xnnpack.sh; using reference kernels)
   else ifeq ($(wildcard $(XNNPACK_LIB_DIR)/libXNNPACK.a),)
@@ -240,16 +237,32 @@ ifeq ($(NETKIT_TARGET),cpu)
   ifeq ($(NETKIT_GLOBAL_ARENA),1)
     TARGET_CPPFLAGS += -DNETKIT_GLOBAL_ARENA=1
   endif
-else ifeq ($(NETKIT_TARGET),mcu)
-  TARGET_CPPFLAGS += -DNETKIT_TARGET_MCU=1
+else ifeq ($(NETKIT_TARGET),mcu_arm)
+  TARGET_CPPFLAGS += -DNETKIT_TARGET_MCU_ARM=1
   CORE_SOURCES = $(RUNTIME_SOURCES)
   BUILD_CLI = 0
   BUILD_C_TESTS = 0
   ifeq ($(NETKIT_HEAP_ARENA),1)
     TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
   endif
-else ifeq ($(NETKIT_TARGET),mpu)
-  TARGET_CPPFLAGS += -DNETKIT_TARGET_MPU=1
+else ifeq ($(NETKIT_TARGET),mpu_arm)
+  TARGET_CPPFLAGS += -DNETKIT_TARGET_MPU_ARM=1
+  CORE_SOURCES = $(RUNTIME_SOURCES)
+  BUILD_CLI = 0
+  BUILD_C_TESTS = 0
+  ifeq ($(NETKIT_HEAP_ARENA),1)
+    TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
+  endif
+else ifeq ($(NETKIT_TARGET),mcu_risc)
+  TARGET_CPPFLAGS += -DNETKIT_TARGET_MCU_RISC=1
+  CORE_SOURCES = $(RUNTIME_SOURCES)
+  BUILD_CLI = 0
+  BUILD_C_TESTS = 0
+  ifeq ($(NETKIT_HEAP_ARENA),1)
+    TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
+  endif
+else ifeq ($(NETKIT_TARGET),mpu_risc)
+  TARGET_CPPFLAGS += -DNETKIT_TARGET_MPU_RISC=1
   CORE_SOURCES = $(RUNTIME_SOURCES)
   BUILD_CLI = 0
   BUILD_C_TESTS = 0
@@ -257,11 +270,12 @@ else ifeq ($(NETKIT_TARGET),mpu)
     TARGET_CPPFLAGS += -DNETKIT_HEAP_ARENA=1
   endif
 else
-  $(error NETKIT_TARGET must be cpu, mcu, or mpu (got '$(NETKIT_TARGET)'))
+  $(error NETKIT_TARGET must be cpu, mcu_arm, mpu_arm, mcu_risc, or mpu_risc (got '$(NETKIT_TARGET)'))
 endif
 
 TARGET_CPPFLAGS += -DNETKIT_IM2COL=$(NETKIT_IM2COL)
 TARGET_CPPFLAGS += -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
+TARGET_CPPFLAGS += -DNETKIT_CMSIS_DSP_DOT=$(NETKIT_CMSIS_DSP_DOT)
 TARGET_CPPFLAGS += -DNETKIT_USE_MMAP=$(NETKIT_MMAP)
 
 CFLAGS += $(TARGET_CPPFLAGS)
@@ -305,7 +319,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
 # Rebuild objects when target/backends change — avoids mixing CPU and MCU .o files in libnetkit.a.
 NETKIT_BUILD_STAMP = .netkit_build_stamp
-NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),mmap=$(NETKIT_MMAP),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
+NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),mmap=$(NETKIT_MMAP),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),cmsis_dsp_dot=$(NETKIT_CMSIS_DSP_DOT),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
 
 NETKIT_STALE_BINARIES = $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 
@@ -323,8 +337,8 @@ netkit-config-sync:
 .PHONY: all lib clean rebuild test test-full test-cpp test-c test-python test-python-full run example-c example-cpp examples \
         export-mnist export-mnist-int8 export-mnist-cnn export-mnist-all export-op-matrix \
         export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
-        cpu cpu-global mcu mcu-heap mpu mpu-heap embedded-smoke test-embedded-smoke \
-        test-embedded-smoke-matrix trim-lib check-trim-lib
+        cpu cpu-global mcu-arm mcu-arm-heap mpu-arm mpu-arm-heap mcu-risc mpu-risc \
+        embedded-smoke test-embedded-smoke test-embedded-smoke-matrix trim-lib check-trim-lib
 
 ifeq ($(BUILD_CLI),1)
 all: netkit-config-sync $(TARGET)
@@ -460,17 +474,23 @@ cpu:
 cpu-global:
 	$(MAKE) NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all
 
-mcu:
-	$(MAKE) NETKIT_TARGET=mcu lib
+mcu-arm:
+	$(MAKE) NETKIT_TARGET=mcu_arm lib
 
-mcu-heap:
-	$(MAKE) NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
+mcu-arm-heap:
+	$(MAKE) NETKIT_TARGET=mcu_arm NETKIT_HEAP_ARENA=1 lib
 
-mpu:
-	$(MAKE) NETKIT_TARGET=mpu lib
+mpu-arm:
+	$(MAKE) NETKIT_TARGET=mpu_arm lib
 
-mpu-heap:
-	$(MAKE) NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
+mpu-arm-heap:
+	$(MAKE) NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
+
+mcu-risc:
+	$(MAKE) NETKIT_TARGET=mcu_risc lib
+
+mpu-risc:
+	$(MAKE) NETKIT_TARGET=mpu_risc lib
 
 cmsis-nn-init:
 	./tools/fetch_cmsis_nn.sh

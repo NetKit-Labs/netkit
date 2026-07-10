@@ -27,7 +27,7 @@ cmake -B cmake-build && cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Embedded runtime-only builds: `make NETKIT_TARGET=mcu lib` or `make NETKIT_TARGET=mpu lib` — see [BUILD_TARGETS.md](BUILD_TARGETS.md). Full regression requires `NETKIT_TARGET=cpu`. MCU/MPU bring-up smoke: `make test-embedded-smoke-matrix` — see [Embedded smoke](#embedded-smoke-mcupu). New users: [GETTING_STARTED.md](GETTING_STARTED.md).
+Embedded runtime-only builds: `make NETKIT_TARGET=mcu_arm lib` or `make NETKIT_TARGET=mpu_arm lib` — see [BUILD_TARGETS.md](BUILD_TARGETS.md). Full regression requires `NETKIT_TARGET=cpu`. MCU/MPU bring-up smoke: `make test-embedded-smoke-matrix` — see [Embedded smoke](#embedded-smoke-mcupu). New users: [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ## C++ regression (`.nk` loader + inference)
 
@@ -75,7 +75,7 @@ Requires **`make tools/nk_infer`** (model-sized heap arena via `nk_recommended_a
 
 ## AOT compile tests
 
-`python/tests/test_aot_compile.py` generates C++26 and C23 sources from hand `.nk` models, compiles them against `libnetkit.a`, and checks outputs against the NumPy reference forward pass (embedded TCAS inputs). Generated headers are checked for arena sizing constants; an MCU-target compile (`-DNETKIT_TARGET_MCU=1`) is exercised against `mlp_hand.nk`.
+`python/tests/test_aot_compile.py` generates C++26 and C23 sources from hand `.nk` models, compiles them against `libnetkit.a`, and checks outputs against the NumPy reference forward pass (embedded TCAS inputs). Generated headers are checked for arena sizing constants; an MCU-target compile (`-DNETKIT_TARGET_MCU_ARM=1`) is exercised against `mlp_hand.nk`.
 
 Models exercised: `test_mlp.nk`, `cnn_4x4_single.nk`, `mlp_hand.nk`, `cnn_hand.nk`. With `--optimize` / `optimize=True`, `cnn_extended_ops.nk` is also checked end-to-end (optimized graph embedded, runtime parity preserved).
 
@@ -99,7 +99,7 @@ For **`mlp_hand.nk`** and **`cnn_hand.nk`**, use **`make test`** (embedded TCAS 
 
 ```bash
 make cmsis-init   # required for CMSIS profiles
-make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
 ./tests/embedded_smoke
 
 # Full matrix (mcu/mpu × reference + CMSIS × CM4/M33/A32 arch flags)
@@ -209,14 +209,14 @@ Re-run the fast workflow manually if needed:
 gh workflow run ci.yml
 ```
 
-The **`build-and-test`** job on `ubuntu-latest` uses **host Clang**. The checkout fetches the CMSIS submodules (`submodules: recursive`), so the Make build runs the **CMSIS-DSP** float32 path (`NETKIT_CMSIS_DSP=1`). CMSIS-NN stays off — it is Cortex-M (MCU) only and cannot link on the host `cpu` target:
+The **`build-and-test`** job on `ubuntu-latest` uses **host Clang**. The checkout fetches the CMSIS submodules (`submodules: recursive`). Default `cpu` has CMSIS-DSP **off**; CI explicitly rebuilds with helpers on. CMSIS-NN stays off — it is Cortex-M (`mcu_arm`) only and cannot link on the host `cpu` target:
 
-1. `make` — initial build (cpu profile: CMSIS-DSP on)
-2. `make NETKIT_CMSIS_DSP=1 rebuild test` — default C++ embedded + C API + fast Python suite, CMSIS-DSP kernels
+1. `make` — initial build (cpu profile: XNNPACK preferred, DSP off; CI forces XNNPACK off)
+2. `make NETKIT_CMSIS_DSP=1 rebuild test` — C++ embedded + C API + fast Python suite with portable CMSIS-DSP helpers
 3. Example and CLI smoke tests
 4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release, `-DNETKIT_CMSIS_DSP=OFF`) — cross-checks the **reference-kernel** path in the same run
 
-The **`Test full`** workflow uses the same setup (`submodules: recursive`, `make NETKIT_CMSIS_DSP=1 rebuild test-full`). CMSIS-NN and on-device paths are still validated **locally only** (`make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 ...`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
+The **`Test full`** workflow uses the same setup (`submodules: recursive`, `make NETKIT_CMSIS_DSP=1 rebuild test-full`). CMSIS-NN and on-device paths are still validated **locally only** (`make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 ...`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
 
 **CI build notes**
 

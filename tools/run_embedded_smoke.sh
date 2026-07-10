@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and run tests/embedded_smoke for MCU/MPU + NETKIT_ARCH + CMSIS profiles.
+# Build and run tests/embedded_smoke for MCU/MPU ISA profiles + CMSIS.
 #
 # Host execution validates linking and inference paths before on-device bring-up.
 # Requires CMSIS trees (make cmsis-init) when NETKIT_CMSIS_* profiles are used.
@@ -34,8 +34,10 @@ run_profile() {
 }
 
 # Reference kernels only (no CMSIS fetch required).
-run_profile "mcu" NETKIT_TARGET=mcu
-run_profile "mpu" NETKIT_TARGET=mpu
+run_profile "mcu_arm" NETKIT_TARGET=mcu_arm NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0
+run_profile "mpu_arm" NETKIT_TARGET=mpu_arm NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 NETKIT_XNNPACK=0
+run_profile "mcu_risc" NETKIT_TARGET=mcu_risc
+run_profile "mpu_risc" NETKIT_TARGET=mpu_risc
 
 if [[ ! -f third_party/CMSIS-NN/Include/arm_nnfunctions.h ]]; then
   echo "CMSIS-NN not found — run: make cmsis-init" >&2
@@ -46,11 +48,11 @@ if [[ ! -f third_party/CMSIS-DSP/Include/arm_math.h ]]; then
   exit 1
 fi
 
-run_profile "mcu+dsp" NETKIT_TARGET=mcu NETKIT_CMSIS_DSP=1
-run_profile "mcu+cm4+cmsis" NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
-run_profile "mcu+m33+cmsis" NETKIT_TARGET=mcu NETKIT_ARCH=M33 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
-run_profile "mpu+dsp" NETKIT_TARGET=mpu NETKIT_CMSIS_DSP=1
-run_profile "mpu+a32+dsp" NETKIT_TARGET=mpu NETKIT_ARCH=A32 NETKIT_CMSIS_DSP=1
+run_profile "mcu_arm+dsp" NETKIT_TARGET=mcu_arm NETKIT_CMSIS_DSP=1 NETKIT_CMSIS_NN=0
+run_profile "mcu_arm+cm4+cmsis" NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
+run_profile "mcu_arm+m33+cmsis" NETKIT_TARGET=mcu_arm NETKIT_ARCH=M33 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1
+run_profile "mpu_arm+dsp" NETKIT_TARGET=mpu_arm NETKIT_CMSIS_DSP=1 NETKIT_XNNPACK=0
+run_profile "mpu_arm+a32+dsp" NETKIT_TARGET=mpu_arm NETKIT_ARCH=A32 NETKIT_CMSIS_DSP=1 NETKIT_XNNPACK=0
 
 echo ""
 echo "All embedded smoke profiles passed."

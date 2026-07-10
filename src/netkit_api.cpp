@@ -21,7 +21,7 @@
 
 namespace
 {
-#if defined(NETKIT_TARGET_MCU) || defined(NETKIT_TARGET_MPU)
+#if defined(NETKIT_CLASS_MCU) || defined(NETKIT_CLASS_MPU)
     char g_last_error[NK_MAX_MESSAGE_LEN] = {};
 #else
     thread_local char g_last_error[NK_MAX_MESSAGE_LEN] = {};
@@ -351,7 +351,7 @@ namespace
 
     nk_status_t ParseNkModel(const char* nk_path, NkLoader::ParsedModel& parsed, const char** resolved_out)
     {
-#if defined(NETKIT_TARGET_MCU) || defined(NETKIT_TARGET_MPU)
+#if defined(NETKIT_CLASS_MCU) || defined(NETKIT_CLASS_MPU)
         static char path_buffer[NkLoader::kMaxPathLen];
 #else
         static thread_local char path_buffer[NkLoader::kMaxPathLen];

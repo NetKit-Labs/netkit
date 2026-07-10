@@ -81,8 +81,8 @@ Select target with **`NETKIT_TARGET`**:
 | Target | Command | What you get |
 |--------|---------|--------------|
 | **CPU** (default) | `make` | CLI + full library + tests |
-| **MCU** | `make NETKIT_TARGET=mcu lib` | Lean runtime only |
-| **MPU** | `make NETKIT_TARGET=mpu lib` | Lean runtime only |
+| **MCU** | `make NETKIT_TARGET=mcu_arm lib` | Lean runtime only |
+| **MPU** | `make NETKIT_TARGET=mpu_arm lib` | Lean runtime only |
 
 ### Arena defaults
 
@@ -95,9 +95,9 @@ Select target with **`NETKIT_TARGET`**:
 ```bash
 make                                    # CPU, heap default
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all   # CPU, static arena
-make NETKIT_TARGET=mcu lib              # firmware, 64 KiB constant
-make NETKIT_TARGET=mpu lib              # firmware, 64 MiB constant
-make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib     # MPU + heap helpers
+make NETKIT_TARGET=mcu_arm lib              # firmware, 64 KiB constant
+make NETKIT_TARGET=mpu_arm lib              # firmware, 64 MiB constant
+make NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib     # MPU + heap helpers
 ```
 
 Macros are defined in [`include/netkit_config.h`](../include/netkit_config.h). Full tables: [BUILD_TARGETS.md](BUILD_TARGETS.md).
@@ -112,10 +112,10 @@ make
 
 # Cortex-M4 firmware library with CMSIS backends
 make cmsis-init
-make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 
 # Cortex-M33 (adds __DSP_PRESENT=1)
-make NETKIT_ARCH=M33 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+make NETKIT_ARCH=M33 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 ```
 
 | Core | `NETKIT_ARCH` | Extra CMSIS flags |
@@ -141,8 +141,9 @@ See the full core table in [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architectu
 
 ```bash
 make cmsis-init
-make test-cpp                                    # cpu: CMSIS-DSP on by default
-make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 lib       # mcu firmware: DSP + NN
+make test-cpp                                    # cpu: XNNPACK on, CMSIS-DSP off by default
+make NETKIT_CMSIS_DSP=1 test-cpp                 # optional portable DSP helpers on host
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib       # mcu firmware: DSP + NN
 make NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 test   # reference kernels only (CI)
 ```
 
@@ -158,7 +159,7 @@ make test-embedded-smoke-matrix   # MCU CM4/M33 + CMSIS-NN; MPU DSP-only profile
 Single profile:
 
 ```bash
-make NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
 ./tests/embedded_smoke
 ```
 
@@ -172,7 +173,7 @@ cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu` for MCU firmware (CMake defaults: CMSIS-DSP and CMSIS-NN on for `mcu`, DSP-only for `cpu`/`mpu`). Override with `-DNETKIT_CMSIS_DSP=OFF` / `-DNETKIT_CMSIS_NN=OFF`.
+Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu_arm` for MCU firmware (CMake defaults: CMSIS-DSP and CMSIS-NN on for `mcu_arm`; XNNPACK + CMSIS-DSP helpers for `mpu_arm`; DSP/NN off for `cpu`). Override with `-DNETKIT_CMSIS_DSP=OFF` / `-DNETKIT_CMSIS_NN=OFF`.
 
 ### Size a buffer for your model
 
@@ -359,7 +360,7 @@ netkit/
 | Run full regression in CI | `gh workflow run test-full.yml` (manual only) |
 | Try a model quickly | `./netkit run model.nk --input ...` |
 | Size firmware RAM | `./netkit inspect model.nk --full` |
-| Ship on MCU | `make NETKIT_TARGET=mcu lib`, link into firmware, static arena |
+| Ship on MCU | `make NETKIT_TARGET=mcu_arm lib`, link into firmware, static arena |
 | Smoke MCU/MPU + CMSIS on host | `make test-embedded-smoke-matrix` |
 | Add regression case | Edit `HAND_CASE_INPUTS` in `python/netkit/regression_data.py`, `make embed-tests`, register in `src/test.cpp` |
 

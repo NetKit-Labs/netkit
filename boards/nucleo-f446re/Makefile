@@ -2,7 +2,7 @@
 #
 # Build profile (explicit CMSIS opt-in):
 #   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
-#   NETKIT_TARGET=mcu, NETKIT_ARCH=CM4 (weights always flash/blob-backed)
+#   NETKIT_TARGET=mcu_arm, NETKIT_ARCH=CM4 (weights always flash/blob-backed)
 #   Toolchain: mcu_tflm_toolchain.mk (CORE/KERNEL/THIRD_PARTY all -O2, -flto link)
 #     so netkit and TFLM firmware are compiled with matching speed flags.
 #
@@ -47,7 +47,7 @@ NETKIT_CMSIS_DSP ?= 1
 NETKIT_CMSIS_NN ?= 1
 
 NETKIT_CPPFLAGS := \
-	-DNETKIT_TARGET_MCU=1 \
+	-DNETKIT_TARGET_MCU_ARM=1 \
 	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \
 	$(if $(filter 1,$(NETKIT_CMSIS_NN)),-DNETKIT_USE_CMSIS_NN=1 -DARM_NN_ENABLE_F32=1,) \
 	-DNETKIT_LOOP_UNROLL=0 \

@@ -1,12 +1,18 @@
 # Build Targets
 
-netkit builds for three deployment profiles. Select one with **`NETKIT_TARGET`** when invoking Make or CMake, or define the matching `-D` flag in your embedded toolchain.
+netkit builds for ISA-qualified deployment profiles. Select one with **`NETKIT_TARGET`** when invoking Make or CMake, or define the matching `-D` flag in your embedded toolchain.
 
-| Target | Makefile / CMake | Role | What's included |
-|--------|------------------|------|-----------------|
-| **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev, debug, CI | Lean runtime **plus** CLI, embedded regression tests, future debug/analysis tooling |
-| **MCU** | `NETKIT_TARGET=mcu` | Microcontroller firmware | Lean runtime only — `.nk` load, arena, tensors, kernel ops, inference |
-| **MPU** | `NETKIT_TARGET=mpu` | Microprocessor / RTOS | Same lean runtime as MCU |
+| Target | Makefile / CMake | Role | Default backends |
+|--------|------------------|------|------------------|
+| **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev, debug, CI | XNNPACK on; CMSIS-DSP/NN off |
+| **MCU_ARM** | `NETKIT_TARGET=mcu_arm` | Arm microcontroller firmware | CMSIS-DSP + CMSIS-NN |
+| **MPU_ARM** | `NETKIT_TARGET=mpu_arm` | Arm microprocessor / RTOS | XNNPACK + CMSIS-DSP (helpers) |
+| **MCU_RISC** | `NETKIT_TARGET=mcu_risc` | RISC-V MCU (placeholder) | none yet |
+| **MPU_RISC** | `NETKIT_TARGET=mpu_risc` | RISC-V MPU (placeholder) | none yet |
+
+Legacy `NETKIT_TARGET=mcu` / `mpu` are **rejected** — use `mcu_arm` / `mpu_arm`.
+
+Derived macros: `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` (firmware class), `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` (backend family).
 
 ## Build systems
 
@@ -36,7 +42,7 @@ Both use the same optional CMSIS backends and `NETKIT_ARCH` → `ARM_MATH_*` map
 | `A32`, `MPU` | `ARM_MATH_A32` | MPU | off (flag ignored) |
 | `NEON`, `A64` | `ARM_MATH_NEON` | MPU | off (flag ignored) |
 
-Aliases like `Cortex-M4` normalize to `CM4`. CMake also sets `NETKIT_TARGET` from the arch (`cpu` / `mcu` / `mpu`); with Make you pass `NETKIT_TARGET` explicitly for firmware.
+Aliases like `Cortex-M4` normalize to `CM4`. CMake also sets `NETKIT_TARGET` from the arch (`cpu` / `mcu_arm` / `mpu_arm`); with Make you pass `NETKIT_TARGET` explicitly for firmware.
 
 ### Additional CMSIS preprocessor flags (auto-applied)
 
@@ -62,18 +68,23 @@ Compile-time macros (from `include/netkit_config.h`):
 | Macro | Meaning |
 |-------|---------|
 | `NETKIT_TARGET_CPU` | Desktop / CPU build |
-| `NETKIT_TARGET_MCU` | MCU build |
-| `NETKIT_TARGET_MPU` | MPU build |
+| `NETKIT_TARGET_MCU_ARM` | Arm MCU build |
+| `NETKIT_TARGET_MPU_ARM` | Arm MPU build |
+| `NETKIT_TARGET_MCU_RISC` | RISC-V MCU build (backends TBD) |
+| `NETKIT_TARGET_MPU_RISC` | RISC-V MPU build (backends TBD) |
+| `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` | Firmware class (arena / lean API) |
+| `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` | Instruction-set family (backend policy) |
 | `NETKIT_DESKTOP` | CPU only — CLI, regression, debug tooling |
 | `NETKIT_ARENA_HEAP` | Heap arena API compiled in (CPU default; MCU/MPU when opted in) |
 | `NETKIT_GLOBAL_ARENA` | CPU only — force global/static arena instead of heap default |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
-| `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP backends enabled (see CMSIS section) |
-| `NETKIT_IM2COL` | float Conv2D strategy (single tri-state knob): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets** (cpu/mcu/mpu) — direct convolution with the multi-accumulator dot is fastest for the small models we target. Leave unset for the default, or opt into `1`/`2` per workload. Int8 quantized inference uses CMSIS-NN, not float im2col. |
-| `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Most likely worth considering on **MPU** targets with flash headroom — avoid on tight MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
-| `NETKIT_DW_ROW_ACCUM` | Depthwise conv cross-row accumulator strategy (default **1**). `1` = round-robin kernel rows across 4 independent accumulators (breaks the cross-row serial dependency; +~144 B). `0` = single serial cross-row accumulator. Both keep the 4-accumulator inner tap reduction (`dot_strided`). Benchmarks show no measurable difference on out-of-order hosts; the break can help in-order MCUs with tall (5×5) kernels. Defined in `src/conv_depthwise_kernel.cpp`. |
+| `NETKIT_USE_CMSIS_DSP` | CMSIS-DSP vector helpers enabled (see CMSIS section) |
+| `NETKIT_CMSIS_DSP_DOT` | `1` — route hot float dots through `arm_dot_prod_f32` (default **0**, helpers-only) |
+| `NETKIT_IM2COL` | float Conv2D strategy (single tri-state knob): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets**. Int8 quantized inference uses CMSIS-NN, not float im2col. |
+| `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
+| `NETKIT_DW_ROW_ACCUM` | Depthwise conv cross-row accumulator strategy (default **1**). See `src/conv_depthwise_kernel.cpp`. |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS without CMSIS-Core |
-| `NETKIT_USE_MMAP` | POSIX mmap for path-based `.nk` load (`NETKIT_MMAP=0\|1`). Default **1** on cpu, **0** on mcu/mpu |
+| `NETKIT_USE_MMAP` | POSIX mmap for path-based `.nk` load (`NETKIT_MMAP=0\|1`). Default **1** on cpu, **0** on MCU/MPU class |
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
 
@@ -96,42 +107,44 @@ make build-all
 make NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1 all
 
 # Lean runtime libraries for firmware
-make NETKIT_TARGET=mcu lib
-make NETKIT_TARGET=mpu lib
+make NETKIT_TARGET=mcu_arm lib
+make NETKIT_TARGET=mpu_arm lib
 
 # MCU firmware with CMSIS + core flags
-make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
-make NETKIT_ARCH=M33 NETKIT_TARGET=mcu NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+make NETKIT_ARCH=M33 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
 
 # MCU/MPU with optional heap arena API
-make NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
-make NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
+make NETKIT_TARGET=mcu_arm NETKIT_HEAP_ARENA=1 lib
+make NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
 
 # Convenience aliases
 make cpu              # NETKIT_TARGET=cpu (heap default)
 make cpu-global       # NETKIT_TARGET=cpu NETKIT_GLOBAL_ARENA=1
-make mcu              # NETKIT_TARGET=mcu lib
-make mcu-heap         # NETKIT_TARGET=mcu NETKIT_HEAP_ARENA=1 lib
-make mpu              # NETKIT_TARGET=mpu lib
-make mpu-heap         # NETKIT_TARGET=mpu NETKIT_HEAP_ARENA=1 lib
+make mcu-arm              # NETKIT_TARGET=mcu_arm lib
+make mcu-arm-heap         # NETKIT_TARGET=mcu_arm NETKIT_HEAP_ARENA=1 lib
+make mpu-arm              # NETKIT_TARGET=mpu_arm lib
+make mpu-arm-heap         # NETKIT_TARGET=mpu_arm NETKIT_HEAP_ARENA=1 lib
+make mcu-risc             # NETKIT_TARGET=mcu_risc lib (backends TBD)
+make mpu-risc             # NETKIT_TARGET=mpu_risc lib (backends TBD)
 make cmsis-init       # fetch CMSIS-Core + CMSIS-NN + CMSIS-DSP
 make embedded-smoke   # lean MCU/MPU smoke binary (test_mlp, cnn_4x4_single)
-make test-embedded-smoke-matrix   # 7-profile host smoke (see TESTING.md)
+make test-embedded-smoke-matrix   # host smoke matrix (see TESTING.md)
 ```
 
 ## Quick commands (CMake)
 
 ```bash
-# Desktop — CMSIS-DSP on by default (cpu profile), CMSIS-NN off
+# Desktop — XNNPACK on by default (cpu profile), CMSIS-DSP/NN off
 cmake -B cmake-build -DNETKIT_TARGET=cpu
 cmake --build cmake-build
 ./cmake-build/netkit test
 
 # MCU firmware (use with your toolchain file)
-cmake -B build-firmware -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu -DNETKIT_ARCH=CM7 -DNETKIT_CMSIS_NN=ON
+cmake -B build-firmware -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu_arm -DNETKIT_ARCH=CM7 -DNETKIT_CMSIS_NN=ON
 cmake --build build-firmware
 
-cmake -B build-m55 -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu -DNETKIT_ARCH=M55 -DNETKIT_CMSIS_NN=ON
+cmake -B build-m55 -DCMAKE_TOOLCHAIN_FILE=... -DNETKIT_TARGET=mcu_arm -DNETKIT_ARCH=M55 -DNETKIT_CMSIS_NN=ON
 ```
 
 CMake cache options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, `NETKIT_GLOBAL_ARENA`, `NETKIT_HEAP_ARENA`.
@@ -187,7 +200,7 @@ Same lean runtime as MCU. Default static arena constant is **`NK_ARENA_DEFAULT_C
 | MPU deployment | Weight load |
 |----------------|-------------|
 | RTOS / bare metal | Flash/XIP or `nk_*_load_memory` / `Load*FromBuffer` (same as MCU). `NETKIT_MMAP=0` (default). |
-| Embedded Linux | Opt in: `make NETKIT_TARGET=mpu NETKIT_MMAP=1 lib` for POSIX `mmap` file load. |
+| Embedded Linux | Opt in: `make NETKIT_TARGET=mpu_arm NETKIT_MMAP=1 lib` for POSIX `mmap` file load. |
 
 Do not assume every MPU build has a virtual-memory OS.
 
@@ -206,9 +219,9 @@ Do not assume every MPU build has a virtual-memory OS.
 The Makefile uses host `clang`/`clang++` for desktop builds. For firmware:
 
 1. Set **`NETKIT_ARCH`** to your core (e.g. `CM4`, `M33`, `M55`, `NEON`).
-2. Build with `NETKIT_TARGET=mcu` or `mpu` and link `libnetkit.a` into your board project, **or**
+2. Build with `NETKIT_TARGET=mcu_arm` or `mpu` and link `libnetkit.a` into your board project, **or**
 3. Use CMake with a **`CMAKE_TOOLCHAIN_FILE`** and `-DNETKIT_ARCH=...`, **or**
-4. Add runtime `.cpp` sources to your board build with `-DNETKIT_TARGET_MCU=1` (or `MPU`) and `-std=c++26 -Iinclude`.
+4. Add runtime `.cpp` sources to your board build with `-DNETKIT_TARGET_MCU_ARM=1` (or `MPU`) and `-std=c++26 -Iinclude`.
 
 Your firmware toolchain must still pass the appropriate `-mcpu` / `-march` flags; netkit's `NETKIT_ARCH` adds the matching CMSIS `ARM_MATH_*` preprocessor defines.
 
@@ -222,54 +235,59 @@ Optional compile-time kernel backends (Apache-2.0). Fetch once with `make cmsis-
 
 ### CMSIS-NN
 
-[ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) accelerates layer kernels when **`NETKIT_CMSIS_NN=1`**, **`NETKIT_TARGET=mcu`**, and **`NETKIT_ARCH`** is Cortex-M (CM4, M33, …). Includes **depthwise conv** (linked from `arm_depthwise_conv_f32.c` and support kernels). On **cpu** or **mpu**, the flag is **ignored** (Make warning) and reference kernels run.
+[ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) accelerates layer kernels when **`NETKIT_CMSIS_NN=1`**, **`NETKIT_TARGET=mcu_arm`**, and **`NETKIT_ARCH`** is Cortex-M (CM4, M33, …). Includes **depthwise conv** (linked from `arm_depthwise_conv_f32.c` and support kernels). On **cpu**, **mpu_arm**, or RISC targets, the flag is **ignored** (Make warning) and reference kernels run.
 
 ### CMSIS-DSP
 
-[ARM CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) accelerates vector/matrix ops: elementwise add/mul, scale, clip (ReLU/ReLU6 fallback), `MatMul`, fully-connected / batch-norm fallbacks, **LayerNorm2d**, and **GRN** on **desktop, MPU, and MCU** (vector role when both NN and DSP are enabled).
+[ARM CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP) is **VectorFast helpers** on Arm targets: elementwise add/mul, scale, clip, `MatMul`, FC/batch-norm fallbacks, **LayerNorm2d**, **GRN**, copy, and argmax.
 
-When enabled, **`cmsis_dsp_util`** (`include/cmsis_dsp_util.hpp`) routes contiguous f32/q7 copy, argmax, dot-product, mul/add/scale through CMSIS-DSP in float conv/im2col paths, reference fallbacks, and MCU benchmark firmware. See [KERNELS.md](KERNELS.md).
+**Helpers-only policy:** hot float inner products (`CmsisDspUtil::DotProductF32`) stay on the inlined 4-accumulator reference path by default, even when `NETKIT_USE_CMSIS_DSP=1`. Portable host CMSIS dots were a large regression vs reference. Opt into `arm_dot_prod_f32` with **`NETKIT_CMSIS_DSP_DOT=1`**.
 
-**MCU firmware:** stage inputs in SRAM before timed inference (flash-resident test vectors + conv from XIP is slower than TFLM’s tensor-arena copy). Both NUCLEO board `main.cpp` files use `g_input_staging` + `CmsisDspUtil::CopyInt8` / `CopyF32`.
+CMSIS-DSP is ignored on `mcu_risc` / `mpu_risc`. On **cpu** it defaults **off** (opt in with `NETKIT_CMSIS_DSP=1` for CI/smoke).
+
+**MCU firmware:** stage inputs in SRAM before timed inference. NUCLEO board `main.cpp` files use `g_input_staging` + `CmsisDspUtil::CopyInt8` / `CopyF32`.
 
 Both backends are **compile-time only** — one binary, one backend set; no runtime switching.
 
-**NN vs DSP:** On **MCU with both flags**, CMSIS-NN owns layer kernels — CMSIS-DSP does not substitute. On **desktop and MPU**, use CMSIS-DSP (CMSIS-NN is not linked).
+**NN vs DSP:** On **mcu_arm with both flags**, CMSIS-NN owns layer kernels — CMSIS-DSP does not substitute. On **mpu_arm**, XNNPACK owns LayerFast; CMSIS-DSP is helpers only.
 
 ### Make flags
 
-CMSIS backends are **not** inferred from `NETKIT_ARCH` alone — use `NETKIT_CMSIS_*=1` or the **profile defaults** below. Override with `make NETKIT_CMSIS_DSP=0` for a reference-kernel build (the CMake smoke step in CI builds this way).
+CMSIS backends are **not** inferred from `NETKIT_ARCH` alone — use `NETKIT_CMSIS_*=1` or the **profile defaults** below.
 
-**MCU board firmware:** `boards/nucleo-f446re-cnn-int8/Makefile` **overrides** `NETKIT_CMSIS_DSP` and `NETKIT_CMSIS_NN` to `1` so a host env that leaves CMSIS-NN off cannot link CMSIS stub kernels. Pass `NETKIT_CPPFLAGS` on the LTO link line so CMSIS macros match compile units.
+**MCU board firmware:** `boards/nucleo-f446re-cnn-int8/Makefile` **overrides** `NETKIT_CMSIS_DSP` and `NETKIT_CMSIS_NN` to `1`. Pass `NETKIT_CPPFLAGS` on the LTO link line so CMSIS macros match compile units.
 
 | `NETKIT_TARGET` | Default `NETKIT_CMSIS_DSP` | Default `NETKIT_CMSIS_NN` | Default `NETKIT_XNNPACK` |
 |-----------------|----------------------------|---------------------------|--------------------------|
-| `cpu` | 1 | 0 | 1 (requires `./tools/fetch_xnnpack.sh`) |
-| `mcu` | 1 | 1 (effective only with Cortex-M `NETKIT_ARCH`) | 0 |
-| `mpu` | 1 | 0 | 1 (requires `./tools/fetch_xnnpack.sh`) |
+| `cpu` | 0 | 0 | 1 (requires `./tools/fetch_xnnpack.sh`) |
+| `mcu_arm` | 1 | 1 (effective only with Cortex-M `NETKIT_ARCH`) | 0 |
+| `mpu_arm` | 1 (helpers; dots off unless `NETKIT_CMSIS_DSP_DOT=1`) | 0 | 1 (requires `./tools/fetch_xnnpack.sh`) |
+| `mcu_risc` / `mpu_risc` | 0 | 0 | 0 |
 
 ```bash
 make cmsis-init
-make xnnpack-init                # once, for cpu/mpu XNNPACK LayerFast
+make xnnpack-init                # once, for cpu/mpu_arm XNNPACK LayerFast
 
 # Profile defaults (no extra flags needed after fetch)
-make test-cpp                    # cpu: CMSIS-DSP + XNNPACK
-make NETKIT_TARGET=mcu lib       # mcu: CMSIS-DSP + CMSIS-NN (set NETKIT_ARCH=CM4 for NN)
-make NETKIT_TARGET=mpu lib       # mpu: CMSIS-DSP + XNNPACK
+make test-cpp                    # cpu: XNNPACK (DSP off by default)
+make NETKIT_CMSIS_DSP=1 test-cpp # optional portable DSP helpers on host
+make NETKIT_TARGET=mcu_arm lib   # mcu_arm: CMSIS-DSP + CMSIS-NN (set NETKIT_ARCH=CM4 for NN)
+make NETKIT_TARGET=mpu_arm lib   # mpu_arm: XNNPACK + CMSIS-DSP helpers
 
-# Explicit off (reference kernels / CMSIS-DSP only)
+# Explicit off (reference kernels)
 make NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 NETKIT_XNNPACK=0 rebuild test
 
-# Reference-kernel 4× loop unroll — experimental (MPU only if at all; increases .text)
+# Reference-kernel 4× loop unroll — experimental (increases .text)
 make NETKIT_LOOP_UNROLL=1 test-cpp
 ```
 
 | Makefile flag | Macro | Effect |
 |---------------|-------|--------|
-| `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | MCU + Cortex-M `NETKIT_ARCH` only (ignored with warning on cpu/mpu) |
-| `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Ops add/mul/scale/clip/matmul; FC/batch-norm on desktop/MPU; `ARM_MATH_LOOPUNROLL` |
-| `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | cpu/mpu float32 LayerFast + int8 qs8 (conv/depthwise/pool/FC); ignored on mcu; soft-falls back if not fetched |
-| `NETKIT_LOOP_UNROLL=1` | `NETKIT_LOOP_UNROLL=1` | **Experimental.** 4× manual unroll in reference kernels only (default 0). Larger `.text`; verify flash budget. Most likely an **MPU** consideration — avoid on flash-limited MCUs. |
+| `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
+| `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Vector helpers (add/mul/scale/clip/matmul/copy/argmax); Arm ISA only |
+| `NETKIT_CMSIS_DSP_DOT=1` | `NETKIT_CMSIS_DSP_DOT=1` | Route hot float dots through `arm_dot_prod_f32` (default 0) |
+| `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | cpu/`mpu_arm` float32 LayerFast + int8 qs8; ignored on MCU class / RISC |
+| `NETKIT_LOOP_UNROLL=1` | `NETKIT_LOOP_UNROLL=1` | **Experimental.** 4× manual unroll in reference kernels only (default 0) |
 | `NETKIT_ARCH=<core>` | `ARM_MATH_*` (see table above) | Core-specific CMSIS-DSP/NN tuning |
 
 Dense weights use CMSIS-NN `[out, in]` layout via `Kernels::FullyConnectedWithBias` (same as PyTorch `nn.Linear`).
@@ -278,17 +296,17 @@ Float32 CMSIS-NN support is **experimental** upstream. Helium (MVE) and Neon tar
 
 ### XNNPACK
 
-[Google XNNPACK](https://github.com/google/XNNPACK) (BSD-3) accelerates float32 and int8 (qs8) kernels on **cpu** and **mpu** when `NETKIT_XNNPACK=1` (the default for those profiles). It is the host/MPU analogue of CMSIS-NN on MCU:
+[Google XNNPACK](https://github.com/google/XNNPACK) (BSD-3) accelerates float32 and int8 (qs8) kernels on **cpu** and **mpu_arm** when `NETKIT_XNNPACK=1` (the default for those profiles). It is the host/MPU_ARM analogue of CMSIS-NN on MCU_ARM:
 
 - **float32:** `XnnpackKernel` is `LayerFast` in `active_kernel.hpp` (conv, depthwise, max/avg pool, FC with ReLU/ReLU6 clamp).
 - **int8:** `XnnpackQuant` is tried first in the quantized plan / `QuantOps` path (qs8 conv, depthwise, max pool, FC), then CMSIS-NN if enabled, then reference.
 
-MCU builds default to `NETKIT_XNNPACK=0` and ignore the flag if forced on.
+MCU class and RISC builds default to `NETKIT_XNNPACK=0` and ignore the flag if forced on.
 
 ```bash
 ./tools/fetch_xnnpack.sh   # or: make xnnpack-init
-make NETKIT_XNNPACK=1 lib  # default on cpu/mpu once fetched
-make NETKIT_XNNPACK=0 lib  # force reference/CMSIS-DSP LayerFast path
+make NETKIT_XNNPACK=1 lib  # default on cpu/mpu_arm once fetched
+make NETKIT_XNNPACK=0 lib  # force reference LayerFast path
 ```
 
 If headers/libs are missing, Make prints a warning and builds without XNNPACK (reference LayerFast). CI forces `NETKIT_XNNPACK=0`.
@@ -357,7 +375,7 @@ Default regression (`make test`) and full suite (`make test-full`) require **`NE
 make cmsis-init
 make NETKIT_CMSIS_DSP=1 test-cpp
 make test-embedded-smoke-matrix          # host MCU/MPU + CMSIS profiles
-make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib
+make NETKIT_HOST_SMOKE=1 NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 lib
 ```
 
 See [TESTING.md](TESTING.md) and [ARENA.md](ARENA.md).

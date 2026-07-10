@@ -114,7 +114,21 @@ inline void QuantClampRange(QuantClamp clamp,
     *act_max = std::clamp(q6, q0, int32_t{127});
 }
 
-// int32 accumulator → int8 via (input_scale * weight_scale / output_scale).
+// Hot path: baked act_min/act_max (TF Lite Prepare style — no float in the loop).
+inline int8_t RequantizeAccToInt8(int32_t acc,
+                                  int32_t multiplier,
+                                  int shift,
+                                  int32_t output_zero_point,
+                                  int32_t act_min,
+                                  int32_t act_max)
+{
+    int32_t q = MultiplyByQuantizedMultiplier(acc, multiplier, shift);
+    q += output_zero_point;
+    q = std::clamp(q, act_min, act_max);
+    return static_cast<int8_t>(q);
+}
+
+// Convenience: derive clamp bounds once (callers with a plan should bake act_min/max).
 inline int8_t RequantizeAccToInt8(int32_t acc,
                                   int32_t multiplier,
                                   int shift,
@@ -122,13 +136,10 @@ inline int8_t RequantizeAccToInt8(int32_t acc,
                                   QuantClamp clamp,
                                   float output_scale)
 {
-    int32_t q = MultiplyByQuantizedMultiplier(acc, multiplier, shift);
-    q += output_zero_point;
     int32_t act_min = -128;
     int32_t act_max = 127;
     QuantClampRange(clamp, output_scale, output_zero_point, &act_min, &act_max);
-    q = std::clamp(q, act_min, act_max);
-    return static_cast<int8_t>(q);
+    return RequantizeAccToInt8(acc, multiplier, shift, output_zero_point, act_min, act_max);
 }
 
 inline int8_t RequantizeAccToInt8(int32_t acc,

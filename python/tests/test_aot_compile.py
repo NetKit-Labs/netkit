@@ -369,7 +369,7 @@ class TestAotCompile(unittest.TestCase):
         case = suite.cases[0]
         expected = _reference_output(arch, weights, np.asarray(case.input, dtype=np.float32))
 
-        subprocess.run(["make", "NETKIT_TARGET=mcu", "lib"], cwd=ROOT, check=True)
+        subprocess.run(["make", "NETKIT_TARGET=mcu_arm", "lib"], cwd=ROOT, check=True)
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp = Path(tmpdir)
@@ -381,7 +381,7 @@ class TestAotCompile(unittest.TestCase):
                     result.source_path,
                     harness,
                     out_dir / "aot_runner",
-                    extra_cppflags=["-DNETKIT_TARGET_MCU=1"],
+                    extra_cppflags=["-DNETKIT_TARGET_MCU_ARM=1"],
                 )
                 actual = np.array([float(v) for v in stdout.split(",")], dtype=np.float32)
                 np.testing.assert_allclose(

@@ -1,50 +1,39 @@
 /*
  * netkit_config.h — compile-time build target selection (C and C++).
  *
- * Set exactly one target via Makefile NETKIT_TARGET=cpu|mcu|mpu or -D flags:
- *   NETKIT_TARGET_CPU  — desktop dev/test (CLI, regression, debug tooling)
- *   NETKIT_TARGET_MCU  — lean embedded runtime (.nk load + inference only)
- *   NETKIT_TARGET_MPU  — lean embedded runtime (.nk load + inference only)
+ * Set exactly one target via Makefile/CMake NETKIT_TARGET=... or -D flags:
+ *   NETKIT_TARGET_CPU       — desktop dev/test (CLI, regression, debug tooling)
+ *   NETKIT_TARGET_MCU_ARM   — Arm microcontroller firmware (lean runtime)
+ *   NETKIT_TARGET_MPU_ARM   — Arm microprocessor / RTOS (lean runtime)
+ *   NETKIT_TARGET_MCU_RISC  — RISC-V MCU (lean runtime; backends TBD)
+ *   NETKIT_TARGET_MPU_RISC  — RISC-V MPU (lean runtime; backends TBD)
+ *
+ * Derived class / ISA macros (set automatically from the target above):
+ *   NETKIT_CLASS_MCU / NETKIT_CLASS_MPU — firmware class (arena / lean API)
+ *   NETKIT_ISA_ARM / NETKIT_ISA_RISC    — instruction-set family (backend policy)
+ *
+ * Backend profile defaults (Makefile / CMake; override with NETKIT_CMSIS_*=0|1):
+ *   cpu       — XNNPACK on, CMSIS-DSP off, CMSIS-NN off
+ *   mcu_arm   — CMSIS-DSP + CMSIS-NN on, XNNPACK off
+ *   mpu_arm   — XNNPACK + CMSIS-DSP on (DSP = vector helpers only), CMSIS-NN off
+ *   mcu_risc / mpu_risc — no Arm backends yet (all off)
+ *
+ * CMSIS-DSP policy: when enabled, DSP accelerates vector helpers (copy, argmax,
+ * add/mul/scale, MatMul/FC/BN/LN/GRN Try*). Hot float inner products stay on the
+ * inlined reference 4-accumulator path unless NETKIT_CMSIS_DSP_DOT=1.
  *
  * Arena static defaults (NK_ARENA_DEFAULT_CAPACITY / Arena::kDefaultCapacity):
- *   MCU — 64 KiB   CPU and MPU — 64 MiB
+ *   CLASS_MCU — 64 KiB   CPU and CLASS_MPU — 64 MiB
  *
  * Arena backing (override via Makefile):
- *   CPU default  — one heap malloc per session; free when session ends (CLI command or test suite).
+ *   CPU default  — one heap malloc per session; free when session ends.
  *                  Set NETKIT_GLOBAL_ARENA=1 for static/global only (no heap).
  *   MCU / MPU default — caller-owned static/global buffer via nk_arena_init().
- *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup; never freed.
+ *                       NETKIT_HEAP_ARENA=1 allows one init_heap() at startup.
  *
- * Weights always stay in the .nk blob; the arena holds activations and structs.
- *   Preferred on MCU and RTOS/bare-metal MPU: flash/XIP or Load*FromBuffer (bind views).
- *   Optional POSIX mmap file load (NETKIT_USE_MMAP / Makefile NETKIT_MMAP):
- *     Default ON for CPU (macOS/Linux), OFF for MCU and MPU (RTOS-first).
- *     Opt in on embedded Linux MPU with NETKIT_MMAP=1. Arena owns the mapping.
- *
- * Optional kernel backends (Makefile / CMake — explicit NETKIT_CMSIS_*=1, profile defaults per target):
- *   NETKIT_USE_CMSIS_NN  — when NETKIT_CMSIS_NN=1 on MCU + Cortex-M NETKIT_ARCH
- *   NETKIT_USE_CMSIS_DSP — when NETKIT_CMSIS_DSP=1 (cpu/mpu/mcu)
- *   Profile defaults (Makefile): cpu=DSP only, mcu=DSP+NN, mpu=DSP only. Override with NETKIT_CMSIS_*=0.
- *   CMSIS-NN is ignored on cpu/mpu even if NETKIT_CMSIS_NN=1 (warning).
- *
- * Optional reference-kernel tuning (Makefile / CMake):
- *   NETKIT_IM2COL — float Conv2D execution strategy (single tri-state knob):
- *     0 = direct loops only (no im2col)
- *     1 = partial im2col on large layers, direct otherwise
- *     2 = full im2col + GEMM on large layers (partial/direct fallback for the rest)
- *     Default 0 (direct) on all targets (CPU/MCU/MPU). Direct convolution with the
- *     multi-accumulator dot is fastest for the small models we target; opt into
- *     im2col (1 or 2) explicitly per workload.
- *   NETKIT_REFERENCE_QUANT_LOOPS — When 1, int8 quantized forward uses netkit QuantOps
- *     reference loops (scalar conv/pool/FC + reference softmax) instead of CMSIS-NN kernels.
- *     Default 0 (CMSIS-NN). Used for MCU firmware profiling / kernel validation.
- *   NETKIT_LOOP_UNROLL — EXPERIMENTAL. When 1, 4× manual loop unroll in netkit reference
- *     kernels only (default 0). Increases .text/flash size; can exceed program memory on
- *     small MCUs. Independent of CMSIS-DSP ARM_MATH_LOOPUNROLL.
- *
- * Target architecture (Makefile NETKIT_ARCH=... / CMake -DNETKIT_ARCH=...):
- *   Maps to CMSIS ARM_MATH_* flags (CM0–M85, A32, NEON). Unset = desktop host.
- *   Also sets ARM_MATH_LOOPUNROLL (DSP), __DSP_PRESENT (M33), MVEF/MVEI (M55/M85).
+ * Optional POSIX mmap (NETKIT_USE_MMAP / Makefile NETKIT_MMAP):
+ *   Default ON for CPU (macOS/Linux), OFF for MCU/MPU class. Opt in on embedded
+ *   Linux MPU_ARM with NETKIT_MMAP=1.
  *
  * See docs/BUILD_TARGETS.md.
  */
@@ -59,12 +48,38 @@
 #define NETKIT_MCU_QUANT_ONLY 0
 #endif
 
-#if defined(NETKIT_TARGET_CPU) + defined(NETKIT_TARGET_MCU) + defined(NETKIT_TARGET_MPU) > 1
-#error "Define only one of NETKIT_TARGET_CPU, NETKIT_TARGET_MCU, NETKIT_TARGET_MPU"
+/* Reject legacy bare MCU/MPU macros — use MCU_ARM / MPU_ARM (or *_RISC). */
+#if (defined(NETKIT_TARGET_MCU) || defined(NETKIT_TARGET_MPU)) &&                                 \
+    !defined(NETKIT_TARGET_MCU_ARM) && !defined(NETKIT_TARGET_MPU_ARM) &&                         \
+    !defined(NETKIT_TARGET_MCU_RISC) && !defined(NETKIT_TARGET_MPU_RISC)
+#error "NETKIT_TARGET_MCU / NETKIT_TARGET_MPU are removed — use NETKIT_TARGET_MCU_ARM, "         \
+       "NETKIT_TARGET_MPU_ARM, NETKIT_TARGET_MCU_RISC, or NETKIT_TARGET_MPU_RISC"
 #endif
 
-#if !defined(NETKIT_TARGET_CPU) && !defined(NETKIT_TARGET_MCU) && !defined(NETKIT_TARGET_MPU)
+#if defined(NETKIT_TARGET_CPU) + defined(NETKIT_TARGET_MCU_ARM) + defined(NETKIT_TARGET_MPU_ARM) + \
+        defined(NETKIT_TARGET_MCU_RISC) + defined(NETKIT_TARGET_MPU_RISC) >                        \
+    1
+#error "Define only one of NETKIT_TARGET_CPU, NETKIT_TARGET_MCU_ARM, NETKIT_TARGET_MPU_ARM, "     \
+       "NETKIT_TARGET_MCU_RISC, NETKIT_TARGET_MPU_RISC"
+#endif
+
+#if !defined(NETKIT_TARGET_CPU) && !defined(NETKIT_TARGET_MCU_ARM) &&                             \
+    !defined(NETKIT_TARGET_MPU_ARM) && !defined(NETKIT_TARGET_MCU_RISC) &&                        \
+    !defined(NETKIT_TARGET_MPU_RISC)
 #define NETKIT_TARGET_CPU 1
+#endif
+/* Class + ISA derived from the concrete target. */
+#if defined(NETKIT_TARGET_MCU_ARM) || defined(NETKIT_TARGET_MCU_RISC)
+#define NETKIT_CLASS_MCU 1
+#endif
+#if defined(NETKIT_TARGET_MPU_ARM) || defined(NETKIT_TARGET_MPU_RISC)
+#define NETKIT_CLASS_MPU 1
+#endif
+#if defined(NETKIT_TARGET_MCU_ARM) || defined(NETKIT_TARGET_MPU_ARM)
+#define NETKIT_ISA_ARM 1
+#endif
+#if defined(NETKIT_TARGET_MCU_RISC) || defined(NETKIT_TARGET_MPU_RISC)
+#define NETKIT_ISA_RISC 1
 #endif
 
 #if defined(NETKIT_TARGET_CPU)
@@ -79,18 +94,16 @@
 #endif
 
 /* Static arena default for examples and NK_ARENA_DEFAULT_CAPACITY. */
-#if defined(NETKIT_TARGET_MCU)
+#if defined(NETKIT_CLASS_MCU)
 #define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U)
 #else
-#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U * 1024U) /* CPU and MPU */
+#define NK_ARENA_DEFAULT_CAPACITY (64U * 1024U * 1024U) /* CPU and MPU class */
 #endif
 
 /*
  * float Conv2D execution strategy (single tri-state knob):
  *   0 = direct loops only, 1 = partial im2col, 2 = full im2col + GEMM.
- * Default 0 (direct) on all targets (CPU/MCU/MPU). Builds pass -DNETKIT_IM2COL=0
- * unless overridden; direct convolution with the multi-accumulator dot is fastest
- * for the small models we target.
+ * Default 0 (direct) on all targets.
  */
 #ifndef NETKIT_IM2COL
 #define NETKIT_IM2COL 0
@@ -116,8 +129,18 @@
 #error "NETKIT_LOOP_UNROLL must be 0 or 1"
 #endif
 
-/* CMSIS-NN: Cortex-M MCU firmware only (not desktop CPU or Cortex-A MPU). */
-#if defined(NETKIT_TARGET_MCU) &&                                                                 \
+/* CMSIS-DSP hot float dots: off by default (helpers-only policy). */
+#ifndef NETKIT_CMSIS_DSP_DOT
+#define NETKIT_CMSIS_DSP_DOT 0
+#endif
+
+#if NETKIT_CMSIS_DSP_DOT != 0 && NETKIT_CMSIS_DSP_DOT != 1
+#error "NETKIT_CMSIS_DSP_DOT must be 0 or 1"
+#endif
+
+/* CMSIS-NN: Arm MCU (Cortex-M) only. */
+#ifndef NETKIT_CMSIS_NN_ALLOWED
+#if defined(NETKIT_TARGET_MCU_ARM) &&                                                              \
     (defined(ARM_MATH_CM0) || defined(ARM_MATH_CM0PLUS) || defined(ARM_MATH_CM3) ||               \
      defined(ARM_MATH_CM4) || defined(ARM_MATH_CM7) || defined(ARM_MATH_ARMV8MBL) ||               \
      defined(ARM_MATH_ARMV8MML) || defined(ARM_MATH_M55) || defined(ARM_MATH_M85))
@@ -125,13 +148,12 @@
 #else
 #define NETKIT_CMSIS_NN_ALLOWED 0
 #endif
+#endif
 
 /*
- * XNNPACK (optional LayerFast backend): host CPU and Cortex-A MPU only (not MCU).
- * Enable with Makefile/CMake NETKIT_XNNPACK=1 (default on cpu/mpu). Defines
- * NETKIT_USE_XNNPACK at compile time when allowed. See docs/BUILD_TARGETS.md.
+ * XNNPACK LayerFast: desktop CPU and Arm MPU only (not MCU class, not RISC yet).
  */
-#if (defined(NETKIT_TARGET_CPU) || defined(NETKIT_TARGET_MPU)) && !defined(NETKIT_TARGET_MCU)
+#if defined(NETKIT_TARGET_CPU) || defined(NETKIT_TARGET_MPU_ARM)
 #define NETKIT_XNNPACK_ALLOWED 1
 #else
 #define NETKIT_XNNPACK_ALLOWED 0
@@ -139,10 +161,7 @@
 
 /*
  * POSIX mmap for .nk file loads (macOS/Linux only at compile time).
- * Default: CPU on, MCU/MPU off (MPU often means RTOS/bare metal without mmap).
- * Override with -DNETKIT_USE_MMAP=0|1 or Makefile NETKIT_MMAP=0|1.
- * When off or unavailable, file load falls back to fread into the arena;
- * buffer/AOT load is unchanged (preferred for RTOS/firmware).
+ * Default: CPU on, MCU/MPU class off.
  */
 #ifndef NETKIT_USE_MMAP
 #if defined(NETKIT_TARGET_CPU) && (defined(__APPLE__) || defined(__linux__))

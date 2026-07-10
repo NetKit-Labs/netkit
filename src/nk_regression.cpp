@@ -18,7 +18,7 @@ namespace NkRegression
     namespace
     {
 #if !defined(NETKIT_ARENA_HEAP)
-#if defined(NETKIT_TARGET_MCU)
+#if defined(NETKIT_CLASS_MCU)
         alignas(std::max_align_t) unsigned char g_arena_buffer[Arena::kDefaultCapacity];
 #else
         // Avoid 64 MiB .bss on CPU GLOBAL_ARENA / MPU static builds.

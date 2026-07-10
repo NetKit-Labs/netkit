@@ -5,7 +5,7 @@
  * small hand-checked models (test_mlp, cnn_4x4_single) using a caller-owned
  * static arena. Primary use: MCU/MPU bring-up; also runs on CPU for host validation.
  *
- * Build: make embedded-smoke  (CPU)  or  make NETKIT_TARGET=mcu embedded-smoke
+ * Build: make embedded-smoke  (CPU)  or  make NETKIT_TARGET=mcu_arm embedded-smoke
  * Run:   ./tests/embedded_smoke
  * Matrix: ./tools/run_embedded_smoke.sh  (MCU/MPU + CMSIS profiles)
  */
@@ -64,10 +64,14 @@ static void TestTargetProfile(void)
 {
     printf("\n--- target profile ---\n");
 
-#if defined(NETKIT_TARGET_MCU)
-    printf("target: MCU (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
-#elif defined(NETKIT_TARGET_MPU)
-    printf("target: MPU (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
+#if defined(NETKIT_TARGET_MCU_ARM)
+    printf("target: MCU_ARM (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
+#elif defined(NETKIT_TARGET_MPU_ARM)
+    printf("target: MPU_ARM (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
+#elif defined(NETKIT_TARGET_MCU_RISC)
+    printf("target: MCU_RISC (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
+#elif defined(NETKIT_TARGET_MPU_RISC)
+    printf("target: MPU_RISC (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
 #elif defined(NETKIT_TARGET_CPU)
     printf("target: CPU host smoke (arena default %u bytes)\n", NK_ARENA_DEFAULT_CAPACITY);
 #else

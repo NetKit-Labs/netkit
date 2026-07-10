@@ -62,7 +62,7 @@ ifneq ($(NETKIT_ARCH),)
   endif
 endif
 
-# Cortex-M profile (CMSIS-NN is restricted to NETKIT_TARGET=mcu + these arches).
+# Cortex-M profile (CMSIS-NN is restricted to NETKIT_TARGET=mcu_arm + these arches).
 NETKIT_ARCH_IS_M_PROFILE := 0
 ifneq ($(NETKIT_ARCH),)
   ifeq ($(filter $(NETKIT_ARCH_UPPER),A32 MPU NEON CORTEXA A64),$(NETKIT_ARCH_UPPER))

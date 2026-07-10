@@ -19,6 +19,8 @@ C source in this repository is limited to `tests/test_c_api.c` and `examples/inf
 
 When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-api.md](cpp-api.md).
 
+**Build targets / backends** are shared via `include/netkit_config.h` (included by both `netkit.h` and C++ headers). Keep the Build configuration tables in [c-api.md](c-api.md#build-configuration) and [cpp-api.md](cpp-api.md#build-configuration) in sync when changing `NETKIT_TARGET_*`, arena, or CMSIS/XNNPACK defaults — [BUILD_TARGETS.md](BUILD_TARGETS.md).
+
 **Manual network construction** (layer init call order, activation buffers, forward): [cpp-api.md](cpp-api.md#manual-construction-call-order) (MLP + CNN) and [c-api.md](c-api.md#mlp-manual-construction-call-order) (C). Composite blocks (ResNet, UIB, ConvNeXt, YOLOX head): same docs plus feature guides ([YOLOX.md](YOLOX.md#manual-construction), etc.).
 
 Related docs: [NK_FORMAT.md](NK_FORMAT.md), [CLI.md](CLI.md), [BUILD_TARGETS.md](BUILD_TARGETS.md), [PHILOSOPHY.md](PHILOSOPHY.md).

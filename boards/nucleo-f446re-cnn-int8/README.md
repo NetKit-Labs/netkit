@@ -10,7 +10,7 @@ Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm
 
 | Setting | Value |
 |---------|--------|
-| Target | `NETKIT_TARGET_MCU` |
+| Target | `NETKIT_TARGET_MCU_ARM` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
 | CMSIS | **CMSIS-NN** + **CMSIS-DSP** (q7 copy/max utils; layer kernels are CMSIS-NN) |
 | Weights | **Flash** — embedded `.nk` blob in `.rodata` |

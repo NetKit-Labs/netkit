@@ -13,23 +13,30 @@ Overview for new users: [GETTING_STARTED.md](GETTING_STARTED.md). Philosophy and
 
 Set the deployment target when building or integrating netkit:
 
-| Makefile | `-D` macro | Role |
-|----------|------------|------|
-| `NETKIT_TARGET=cpu` (default) | `NETKIT_TARGET_CPU` | Desktop — CLI, regression |
-| `NETKIT_TARGET=mcu` | `NETKIT_TARGET_MCU` | Lean firmware runtime |
-| `NETKIT_TARGET=mpu` | `NETKIT_TARGET_MPU` | Lean firmware runtime |
+| Makefile | `-D` macro | Role | Default backends |
+|----------|------------|------|------------------|
+| `NETKIT_TARGET=cpu` (default) | `NETKIT_TARGET_CPU` (+ `NETKIT_DESKTOP`) | Desktop — CLI, regression | XNNPACK on; CMSIS-DSP/NN off |
+| `NETKIT_TARGET=mcu_arm` | `NETKIT_TARGET_MCU_ARM` | Arm MCU lean firmware | CMSIS-DSP + CMSIS-NN |
+| `NETKIT_TARGET=mpu_arm` | `NETKIT_TARGET_MPU_ARM` | Arm MPU lean firmware | XNNPACK + CMSIS-DSP helpers |
+| `NETKIT_TARGET=mcu_risc` | `NETKIT_TARGET_MCU_RISC` | RISC-V MCU (backends TBD) | none yet |
+| `NETKIT_TARGET=mpu_risc` | `NETKIT_TARGET_MPU_RISC` | RISC-V MPU (backends TBD) | none yet |
+
+Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU`, `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC`.
 
 | Makefile flag | Macro | Effect |
 |---------------|-------|--------|
 | *(CPU default)* | `NETKIT_ARENA_HEAP` | `nk_arena_init_heap()` available; default CPU examples use heap |
 | `NETKIT_GLOBAL_ARENA=1` (CPU) | `NETKIT_GLOBAL_ARENA` | Static arena only on CPU; no heap helpers |
-| `NETKIT_HEAP_ARENA=1` (MCU/MPU) | `NETKIT_HEAP_ARENA` → `NETKIT_ARENA_HEAP` | Optional heap API on embedded |
+| `NETKIT_HEAP_ARENA=1` (MCU/MPU class) | `NETKIT_HEAP_ARENA` → `NETKIT_ARENA_HEAP` | Optional heap API on embedded |
+| `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Vector helpers (Arm); hot dots stay reference unless `NETKIT_CMSIS_DSP_DOT=1` |
+| `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
+| `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` / `mpu_arm` LayerFast |
 
-| `NK_ARENA_DEFAULT_CAPACITY` | MCU | CPU / MPU |
-|-----------------------------|-----|-----------|
+| `NK_ARENA_DEFAULT_CAPACITY` | MCU class | CPU / MPU class |
+|-----------------------------|-----------|-----------------|
 | Value | **64 KiB** | **64 MiB** |
 
-Full guide: [BUILD_TARGETS.md](BUILD_TARGETS.md).
+Full guide: [BUILD_TARGETS.md](BUILD_TARGETS.md). Same macros apply to the C++ API — [cpp-api.md](cpp-api.md#build-configuration).
 
 ### Desktop-only symbols (`NETKIT_DESKTOP`)
 

@@ -301,10 +301,8 @@ void MobileNetV4Uib::forward_quant(const int8_t* input, int8_t* output, uint32_t
     const uint32_t max_spatial = in_h * in_w;
     int8_t* work_a = scratch_i8;
     int8_t* work_b = scratch_i8 + static_cast<std::size_t>(max_spatial) * expand_c;
-    int8_t* residual_buf = work_b + static_cast<std::size_t>(max_spatial) * expand_c;
-
-    if (has_residual())
-        std::memcpy(residual_buf, input, static_cast<std::size_t>(in_h) * in_w * in_c);
+    // Residual aliases input: expand/middle/proj write to scratch or output only.
+    const int8_t* residual_src = has_residual() ? input : nullptr;
 
     uint32_t cur_h = in_h;
     uint32_t cur_w = in_w;
@@ -401,9 +399,9 @@ void MobileNetV4Uib::forward_quant(const int8_t* input, int8_t* output, uint32_t
 
     QuantOps::ResidualAddS8 residual{};
     const QuantOps::ResidualAddS8* residual_ptr = nullptr;
-    if (has_residual())
+    if (residual_src)
     {
-        residual.data = residual_buf;
+        residual.data = residual_src;
         residual.scale = block_input_scale;
         residual.zero_point = block_input_zero_point;
         residual_ptr = &residual;

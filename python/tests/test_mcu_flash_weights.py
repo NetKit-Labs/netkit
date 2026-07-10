@@ -133,7 +133,7 @@ def _probe_arena_used(tmp: Path, harness: Path) -> int:
             "-std=c++26",
             "-Wall",
             "-Wextra",
-            "-DNETKIT_TARGET_MCU=1",
+            "-DNETKIT_TARGET_MCU_ARM=1",
             f"-I{ROOT / 'include'}",
             str(harness),
             str(LIB),
@@ -174,7 +174,7 @@ class TestMcuFlashWeights(unittest.TestCase):
             tmp = Path(tmpdir)
             harness = _write_probe_harness(tmp, nk_bytes)
 
-            _rebuild_lib("NETKIT_TARGET=mcu")
+            _rebuild_lib("NETKIT_TARGET=mcu_arm")
             try:
                 used_flash = _probe_arena_used(tmp, harness)
             finally:

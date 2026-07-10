@@ -53,12 +53,41 @@ def _symmetric_scale(values: np.ndarray) -> tuple[float, int]:
     return scale, 0
 
 
+def _affine_scale(values: np.ndarray) -> tuple[float, int]:
+    """TFLite-style asymmetric per-tensor scale from [rmin, rmax] → int8.
+
+    scale = (rmax - rmin) / 255, zero_point = qmin - round(rmin / scale) with
+    qmin=-128. Bounds are nudged to include 0 (TFLite convention).
+    """
+    flat = np.asarray(values, dtype=np.float32).reshape(-1)
+    if flat.size == 0:
+        return 1.0, 0
+    rmin = float(np.min(flat))
+    rmax = float(np.max(flat))
+    if rmin == rmax:
+        if rmin == 0.0:
+            return 1.0, 0
+        return _symmetric_scale(flat)
+    rmin = min(rmin, 0.0)
+    rmax = max(rmax, 0.0)
+    scale = (rmax - rmin) / 255.0
+    if scale <= 0.0:
+        return 1.0, 0
+    zero_point = int(np.round(-128.0 - rmin / scale))
+    zero_point = int(np.clip(zero_point, -128, 127))
+    return scale, zero_point
+
+
 def _activation_scale(values: np.ndarray, *, non_negative: bool = False) -> tuple[float, int]:
     """Per-tensor activation scale.
 
     ReLU / non-negative tensors use asymmetric int8 (zp=-128) so the full
     [-128, 127] code space maps to [0, amax] — roughly 2x resolution vs
     symmetric zp=0, which is critical for deep MobileNet graphs.
+
+    Signed tensors (ImageNet-normalized inputs, residual adds) use true
+    affine min/max quant — matching TFLite full-integer PTQ — instead of
+    symmetric zp=0.
     """
     flat = np.asarray(values, dtype=np.float32).reshape(-1)
     if flat.size == 0:
@@ -68,7 +97,7 @@ def _activation_scale(values: np.ndarray, *, non_negative: bool = False) -> tupl
         if amax <= 0.0:
             return 1.0, -128
         return amax / 255.0, -128
-    return _symmetric_scale(flat)
+    return _affine_scale(flat)
 
 
 def quantize_symmetric_int8(values: np.ndarray) -> tuple[np.ndarray, float, int]:
@@ -1007,7 +1036,8 @@ def _quantize_uib_layer(
             for proj, resid in zip(next_samples, residual_inputs)
         ]
         stacked = np.stack(combined_f, axis=0)
-        output_scale, output_zp = _activation_scale(stacked, non_negative=False)
+        # Residual sum is signed; use affine min/max (not symmetric zp=0).
+        output_scale, output_zp = _affine_scale(stacked)
         quant_layers[-1].output_scale = output_scale
         quant_layers[-1].output_zero_point = output_zp
         next_samples = combined_f
@@ -1201,6 +1231,8 @@ def quantize_cnn(
     *,
     num_calibration: int = 256,
     aligned_quants: list[QuantLayerParams] | None = None,
+    input_scale: float | None = None,
+    input_zero_point: int | None = None,
 ) -> QuantizedCnnPack:
     if arch.get("network") != "cnn":
         raise ValueError("quantize_cnn only supports CNN architectures")
@@ -1224,11 +1256,15 @@ def quantize_cnn(
             raise ValueError(f"aligned_quants length {len(aligned_quants)} != {expected}")
 
     h, w, channels = arch["input"]
-    if aligned_quants is not None:
-        input_scale = aligned_quants[0].input_scale
-        input_zp = aligned_quants[0].input_zero_point
+    if input_scale is not None and input_zero_point is not None:
+        input_zp = int(input_zero_point)
+        input_scale = float(input_scale)
+    elif aligned_quants is not None:
+        input_scale = float(aligned_quants[0].input_scale)
+        input_zp = int(aligned_quants[0].input_zero_point)
     else:
-        input_scale, input_zp = _symmetric_scale(cal.reshape(-1))
+        # Affine min/max for signed ImageNet-normalized inputs (TFLite-style).
+        input_scale, input_zp = _affine_scale(cal.reshape(-1))
 
     hidden_samples = [sample.reshape(h, w, channels) for sample in cal]
     tensor_idx = 0

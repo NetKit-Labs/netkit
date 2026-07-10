@@ -11,7 +11,7 @@ When `NETKIT_ARCH` is set and `third_party/CMSIS-Core/CMSIS/Core/Include` exists
 [ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) is Apache-2.0 licensed and provides
 optimized neural-network kernels for Arm Cortex-M (with portable scalar fallbacks for host builds).
 
-When enabled on **`NETKIT_TARGET=mcu`** with a **Cortex-M `NETKIT_ARCH`**, netkit uses CMSIS-NN for conv, pool, batch norm, FC, and activations. On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` is ignored (build warning) and reference kernels are used.
+When enabled on **`NETKIT_TARGET=mcu_arm`** with a **Cortex-M `NETKIT_ARCH`**, netkit uses CMSIS-NN for conv, pool, batch norm, FC, and activations. On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` is ignored (build warning) and reference kernels are used.
 
 - Conv2d (with symmetric padding), max-pool, avg-pool, batch norm, fully-connected (dense weights in `[out, in]` layout)
 - Activations (ReLU, sigmoid, tanh, leaky ReLU, ReLU6) and softmax
