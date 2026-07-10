@@ -1,4 +1,5 @@
-# Optional XNNPACK LayerFast backend for cpu / mpu_arm builds.
+# Optional XNNPACK LayerFast backend for cpu / MPU builds (any ISA).
+# Forbidden on MCU — never link or define USE_XNNPACK there.
 
 function(netkit_add_xnnpack target)
     if(NOT NETKIT_XNNPACK)
@@ -7,12 +8,8 @@ function(netkit_add_xnnpack target)
 
     # MCU: always off (never link / define USE_XNNPACK).
     if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc")
-        message(WARNING "NETKIT_XNNPACK=ON forced off — XNNPACK is never enabled on MCU")
+        message(WARNING "NETKIT_XNNPACK=ON forced off — XNNPACK is forbidden on MCU")
         set(NETKIT_XNNPACK OFF PARENT_SCOPE)
-        return()
-    endif()
-    if(NETKIT_TARGET STREQUAL "mpu_risc")
-        message(WARNING "NETKIT_XNNPACK=ON ignored — XNNPACK is cpu/mpu_arm only")
         return()
     endif()
 

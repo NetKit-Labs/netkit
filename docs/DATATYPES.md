@@ -1,6 +1,6 @@
 # Data Types and Numeric Precision
 
-Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** is the default inference path. **Int8** post-training quantization is implemented for MNIST **CNN** and **MLP** on MCU (CMSIS-NN); broader dtype support is Phase 2.
+Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md) and [STATUS.md](STATUS.md). **Float32** and **int8** inference are **complete** on cpu, Arm MCU, Arm MPU, and RISC MPU (XNNPACK); RISC MCU uses the same portable generic/reference kernels. float16 / int16 / int4 remain Phase 2.
 
 ## Float32 (default)
 
@@ -16,9 +16,15 @@ Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md). **Float32** i
 
 There is **no float64 (double) inference path**. CLI values are parsed with `strtof` / `ParseFloat` and stored as float32.
 
-## Int8 (MNIST CNN + MLP — implemented)
+## Int8 (implemented — MNIST + ImageNet fixtures)
 
-Int8 inference is available for MNIST **CNN** and **MLP** on **MCU + CMSIS-NN**:
+Int8 inference is available end-to-end (int8 in → int8 out) for MNIST **CNN** / **MLP** and ImageNet MobileNetV4 fixtures:
+
+| Path | Backend |
+|------|---------|
+| Arm MCU | CMSIS-NN (NUCLEO-F446RE boards) |
+| cpu / MPU (incl. RISC MPU) | XNNPACK qs8 when enabled; else QuantOps integer reference |
+| RISC MCU | QuantOps / reference only (CMSIS + XNNPACK forbidden) |
 
 | Component | Type |
 |-----------|------|
@@ -37,29 +43,29 @@ Int8 inference is available for MNIST **CNN** and **MLP** on **MCU + CMSIS-NN**:
 
 TFLite input-quant alignment (layer 0) is optional when matching `benchmark/tflm/generated/mnist_*_int8.tflite` exists. Weight and hidden-layer output scales are calibrated from netkit float weights (Python export). ImageNet MobileNetV4 int8 PTQ emits per-channel weight scales so CMSIS-NN / XNNPACK `qc8w` / reference requant match TFLite’s per-axis weights.
 
-Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`). On **cpu/mpu**, int8 LayerFast uses **XNNPACK qs8 / qs8_qc8w** when `NETKIT_XNNPACK=1`, else netkit integer reference loops. Python `forward_quantized_cnn` / `forward_quantized_mlp` and MCU firmware remain the CMSIS-NN validation paths. Host regression and ImageNet/MNIST int8 benches load **native int8** inputs (Python-prequantized; TCAS uses `FLAG_HAS_INT8_TESTS`) via `nk_model_run_int8` / int8 tensor views — never float→int8 inside C++. Float models stay float32 end-to-end.
+Host desktop builds do not run the CMSIS-NN quant forward path (`NETKIT_CMSIS_NN_ALLOWED=0`). On **cpu / any MPU**, int8 LayerFast uses **XNNPACK qs8 / qs8_qc8w** when `NETKIT_XNNPACK=1`, else netkit integer reference loops. Python `forward_quantized_cnn` / `forward_quantized_mlp` and Arm MCU firmware remain the CMSIS-NN validation paths. Host regression and ImageNet/MNIST int8 benches load **native int8** inputs (Python-prequantized; TCAS uses `FLAG_HAS_INT8_TESTS`) via `nk_model_run_int8` / int8 tensor views — never float→int8 inside C++. Float models stay float32 end-to-end.
 
-The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future tensor metadata beyond the MNIST CNN path.
+The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future tensor metadata beyond the current int8 fixtures.
 
 ## Planned (roadmap)
 
-Quantized and reduced-precision paths are planned for **Phase 2** (Python packager + runtime decode kernels):
+Additional reduced-precision paths are planned for **Phase 2** (Python packager + runtime decode kernels):
 
 | Type | Status | Intended use |
 |------|--------|--------------|
 | **float16** | Planned | Half-precision weights/activations where hardware supports FP16 |
 | **int16** | Planned | Wider quantized weights; intermediate precision |
-| **int8** | **MNIST CNN + MLP MCU** | Post-training quant export + CMSIS-NN kernels; broader models planned |
+| **int8** | **Complete** (MNIST + ImageNet fixtures) | PTQ `.nk` + CMSIS-NN (Arm MCU) / XNNPACK qs8 (cpu/MPU) / QuantOps reference; broader models planned |
 | **int4** | Planned | Aggressive edge quantization (kernel and layout TBD) |
 
-When added, expect:
+When float16 / int16 / int4 land, expect:
 
 - Extended `.nk` format versions with per-tensor dtype tags
 - Packager-side quantization, calibration, and layout selection ([PHILOSOPHY.md](PHILOSOPHY.md))
 - Runtime load paths and kernels per dtype (possibly fused in Phase 2)
 - Updated regression suites with tolerance policies per type
 
-Until broader dtype support lands, **export scripts for non-CNN models must emit float32** — see [NK_FORMAT.md](NK_FORMAT.md).
+Float32 remains the default for models without a dedicated int8 export — see [NK_FORMAT.md](NK_FORMAT.md) and [STATUS.md](STATUS.md).
 
 ## API surface
 

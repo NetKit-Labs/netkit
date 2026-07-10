@@ -2,7 +2,7 @@
 
 netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. It is written in **C++26** using modern C++ patterns and type safety (primary API), with a **C23** API for firmware and FFI. Develop and validate on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-**Status:** Active development. **Float32** and **int8** inference work today (MNIST MLP/CNN on host and NUCLEO-F446RE MCU with CMSIS-NN) — see [docs/DATATYPES.md](docs/DATATYPES.md). **Kalman estimation and tracking** are planned for the backend.
+**Status:** Active development. **Float32** and **int8** inference are complete on **cpu**, **Arm MCU**, and **Arm MPU**. **RISC MPU** uses XNNPACK by default; **RISC MCU** runs on fast generic kernels (no RISC-tuned microkernels yet). See [docs/STATUS.md](docs/STATUS.md) for platform maturity and recent peer-bench results. float16 / int16 / int4 and **Kalman estimation** remain on the roadmap.
 
 Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
@@ -13,12 +13,13 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | Guide | Description |
 |-------|-------------|
 | **[Philosophy](docs/PHILOSOPHY.md)** | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager |
+| **[Status](docs/STATUS.md)** | Dtype + platform maturity; recent CPU/MCU peer-bench results |
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, CLI, and first inference for new users |
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
-| **[Data Types](docs/DATATYPES.md)** | Float32 and int8 (MNIST MCU); float16 / int16 / int4 roadmap |
+| **[Data Types](docs/DATATYPES.md)** | Float32 + int8 (cpu / Arm / RISC); float16 / int16 / int4 roadmap |
 | **[ONNX Import](docs/ONNX.md)** | Python packager (ONNX → `.nk`); parity tests in Python |
 | **[Binary .nk Format](docs/NK_FORMAT.md)** | Single-file models — overview |
 | **[`.nk` File Specification](docs/NK_FILE_SPECIFICATION.md)** | Byte-level `.nk` layout, offsets, hex inspection |
@@ -34,7 +35,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
 | **[API Parity Policy](docs/API_PARITY.md)** | C ↔ C++ symbol map and contribution rules |
 | **[MNIST MLP Test](docs/MNIST.md)** | Trained 784→128→10 MLP on handwritten digits |
-| **[MNIST CNN Test](docs/MNIST_CNN.md)** | Tutorial-style conv+pool CNN on MNIST |
+| **[MNIST CNN Test](docs/MNIST_CNN.md)** | Tutorial CNN + depthwise-separable peer on MNIST |
 | **[ResNet-18](docs/RESNET18.md)** | Fused BasicBlock + full ResNet-18 backbone fixture |
 | **[ConvNeXt V2](docs/CONVNEXTV2.md)** | Fused block + LayerNorm2d + full Atto backbone fixture |
 | **[MobileNetV4](docs/MOBILENETV4.md)** | Fused UIB block + full MNv4-Conv-Small backbone fixture |
@@ -61,9 +62,9 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **Regression tests** — 88 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
 - **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
-- **Float32 inference** — default path; all tensors, weights, and math use IEEE-754 single precision (`float`)
-- **Int8 MNIST CNN** — post-training quant export (`make export-mnist-cnn-int8`), CMSIS-NN kernels on MCU, interpreter embed (~95 ms / 10×10 on NUCLEO-F446RE)
-- **Optional CMSIS backends** — CMSIS-NN (MCU + Cortex-M): conv, depthwise, pool, FC, BN, activations, GELU; CMSIS-DSP: MatMul, add/mul, dot/copy/argmax via `cmsis_dsp_util`, LayerNorm, GRN; reference fallback always linked ([KERNELS.md](docs/KERNELS.md))
+- **Float32 inference** — complete default path on cpu / MCU / MPU
+- **Int8 inference** — complete end-to-end int8 I/O (MNIST CNN/MLP MCU CMSIS-NN; host/MPU XNNPACK qs8 or QuantOps; ImageNet MNv4 int8)
+- **Optional backends** — CMSIS-NN (Arm MCU); CMSIS-DSP (Arm helpers); XNNPACK (cpu + any MPU, forbidden on MCU); RISC MCU uses fast generic kernels ([STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md))
 
 ## Quick start
 
@@ -185,14 +186,15 @@ CMSIS backends are **opt-in** via `NETKIT_CMSIS_*=1` (or CMake `-DNETKIT_CMSIS_*
 
 | `NETKIT_TARGET` | Default CMSIS-DSP | Default CMSIS-NN | Default XNNPACK |
 |-----------------|-------------------|------------------|-----------------|
-| `cpu` | off (fewer host deps) | off | on |
-| `mcu_arm` | on (helpers; dots off unless `NETKIT_CMSIS_DSP_DOT=1`) | on (Cortex-M `NETKIT_ARCH`) | off |
+| `cpu` | off (fewer host deps) | off | on (any host ISA) |
+| `mcu_arm` | on (helpers; dots off unless `NETKIT_CMSIS_DSP_DOT=1`) | on (Cortex-M `NETKIT_ARCH`) | forbidden |
 | `mpu_arm` | on (helpers) | off | on |
-| `mcu_risc` / `mpu_risc` | off | off | off |
+| `mcu_risc` | off (forbidden) | off (forbidden) | forbidden |
+| `mpu_risc` | off (forbidden) | off (forbidden) | on |
 
 ```bash
 make cmsis-init
-make xnnpack-init                     # once, for cpu/mpu_arm LayerFast
+make xnnpack-init                     # once, for cpu / MPU LayerFast
 make test-cpp                         # cpu: XNNPACK preferred, DSP off
 make NETKIT_CMSIS_DSP=1 test-cpp      # optional portable DSP helpers on host
 make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib   # mcu_arm: CMSIS-DSP + CMSIS-NN
@@ -258,7 +260,7 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 ## Roadmap
 
-**Phase 1 (today):** Multi-modal **float32** and **int8** inference (image/vision fixtures today; voice on the roadmap) — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding, CMSIS-NN/DSP MCU benchmarks ([KERNELS.md](docs/KERNELS.md)).
+**Phase 1 (today):** Multi-modal **float32** and **int8** inference are **complete** for image/vision fixtures — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding. **Arm MCU** (CMSIS-NN/DSP) and **Arm MPU** / **cpu** (XNNPACK) are done; **RISC MPU** uses XNNPACK; **RISC MCU** uses fast generic kernels until ISA-tuned kernels exist — [STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md).
 
 **Phase 2 (planned):**
 

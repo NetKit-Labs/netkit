@@ -45,7 +45,23 @@ Part of `make test` / `./netkit test` — see [TESTING.md](TESTING.md).
 
 ## Benchmarks
 
-Same 10 TCAS vectors as the MLP suite; compared against TFLM in [benchmark/README.md](../benchmark/README.md). CNN invoke and per-op profile tables (Conv2D vs pool vs FC) are produced by `./benchmark/compare.sh`. On host builds both runtimes use reference conv kernels — CMSIS-NN applies only on MCU targets.
+Same 10 TCAS vectors as the MLP suite; compared against TFLM in [benchmark/README.md](../benchmark/README.md). CNN invoke and per-op profile tables (Conv2D vs pool vs FC) are produced by `./benchmark/compare.sh`. On host builds both runtimes use reference conv kernels in that script — CMSIS-NN applies only on Arm MCU targets.
+
+**Host XNNPACK peers** (LiteRT-matched flags): `make -C benchmark/netkit run-cnn-xnnpack` / `run-cnn-int8-xnnpack` vs `make -C benchmark/tflite run-cnn` / `run-cnn-int8`. Recent numbers: [STATUS.md](STATUS.md).
+
+### Depthwise-separable peer (host)
+
+Separable tutorial topology (PW→DW→Pool ×2 → Dense): `models/mnist_cnn_dw.nk` / `_int8.nk`.
+
+```bash
+python3 tools/export_mnist_cnn_dw.py
+python3 tools/export_mnist_cnn_dw_int8.py
+python3 tools/export_mnist_cnn_dw_assets.py
+make -C benchmark/netkit run-cnn-dw-xnnpack
+make -C benchmark/netkit run-cnn-dw-int8-xnnpack
+make -C benchmark/tflite run-cnn-dw
+make -C benchmark/tflite run-cnn-dw-int8
+```
 
 ### Int8 on-device (NUCLEO-F446RE)
 

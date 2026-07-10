@@ -39,14 +39,17 @@ Backend `.cpp` files **must** include `netkit_config.h` so `NETKIT_CMSIS_NN_ALLO
 
 ## Active backend aliases
 
-Selected in `active_kernel.hpp` from `NETKIT_USE_CMSIS_NN`, `NETKIT_USE_CMSIS_DSP`, and `NETKIT_CMSIS_NN_ALLOWED`:
+Selected in `active_kernel.hpp` from `NETKIT_USE_CMSIS_NN`, `NETKIT_USE_CMSIS_DSP`, `NETKIT_USE_XNNPACK`, and allow macros:
 
 | Build profile | `Kernels` alias |
 |---------------|-----------------|
-| Reference only | `ReferenceKernel` |
-| CMSIS-DSP only (desktop / MPU, or MCU without NN) | `ComposedKernel<CmsisDspKernel, ReferenceKernel>` |
-| CMSIS-NN only (MCU + Cortex-M) | `ComposedKernel<ReferenceKernel, CmsisNnKernel>` |
-| CMSIS-NN + CMSIS-DSP (MCU firmware) | `ComposedKernel<CmsisDspKernel, CmsisNnKernel>` |
+| Reference only (incl. **`mcu_risc`**) | `ReferenceKernel` — portable generic kernels; fast enough as the sole MCU-RISC path until ISA-tuned kernels exist ([STATUS.md](STATUS.md)) |
+| CMSIS-DSP only (desktop / Arm MPU, or MCU without NN) | `ComposedKernel<CmsisDspKernel, ReferenceKernel>` |
+| CMSIS-NN only (Arm MCU + Cortex-M) | `ComposedKernel<ReferenceKernel, CmsisNnKernel>` |
+| CMSIS-NN + CMSIS-DSP (Arm MCU firmware) | `ComposedKernel<CmsisDspKernel, CmsisNnKernel>` |
+| XNNPACK LayerFast (`cpu` / any MPU) | `XnnpackKernel` (+ optional CMSIS-DSP as VectorFast) |
+
+CMSIS-DSP/NN are **forbidden** on RISC targets. XNNPACK is **forbidden** on all MCU targets.
 
 ### Role split in `ComposedKernel<VectorFast, LayerFast>`
 

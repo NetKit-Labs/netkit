@@ -2,7 +2,7 @@
 
 netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. Models ship as single **`.nk`** files. You develop and validate on the desktop (**CPU** build), then link the lean runtime into firmware (**MCU** / **MPU** builds). The engine is written in **C++26** (modern patterns, type-safe primary API) with a **C23** mirror for C-only firmware.
 
-**Status:** Active development. **Float32** and **int8** inference work today ([DATATYPES.md](DATATYPES.md)); float16, int16, and int4 are on the roadmap. **Kalman estimation and tracking** are planned backend capabilities alongside neural inference.
+**Status:** Active development. **Float32** and **int8** inference are complete ([DATATYPES.md](DATATYPES.md), [STATUS.md](STATUS.md)). Arm MCU/MPU and host cpu paths are done; RISC MPU uses XNNPACK; RISC MCU runs on fast generic kernels (no RISC-optimized microkernels yet). float16, int16, and int4 are on the roadmap. **Kalman estimation and tracking** are planned backend capabilities alongside neural inference.
 
 Companion project: [memkit](https://github.com/jameslavrenz/memkit) for general-purpose embedded memory management. netkit owns the **inference arena and tensor lifecycle** inside a caller-provided buffer.
 

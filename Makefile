@@ -6,8 +6,8 @@
 #   cpu       (default) — desktop: CLI, regression; arena defaults to heap
 #   mcu_arm             — Arm MCU lean runtime; CMSIS-DSP + CMSIS-NN defaults
 #   mpu_arm             — Arm MPU lean runtime; XNNPACK + CMSIS-DSP (helpers) defaults
-#   mcu_risc            — RISC-V MCU lean runtime (backends TBD)
-#   mpu_risc            — RISC-V MPU lean runtime (backends TBD)
+#   mcu_risc            — RISC-V MCU lean runtime (generic kernels; CMSIS + XNNPACK forbidden)
+#   mpu_risc            — RISC-V MPU lean runtime; XNNPACK on; CMSIS-DSP/NN forbidden
 #
 # Legacy NETKIT_TARGET=mcu|mpu is rejected — use mcu_arm / mpu_arm.
 #
@@ -23,15 +23,16 @@
 #
 # Optional backends (profile defaults below; override on command line):
 #   NETKIT_CMSIS_NN=1      — Arm MCU only (NETKIT_TARGET=mcu_arm + NETKIT_ARCH=CM4|M33|...)
-#   NETKIT_CMSIS_DSP=1     — CMSIS-DSP vector helpers (not hot float dots by default)
+#   NETKIT_CMSIS_DSP=1     — CMSIS-DSP vector helpers (Arm ISA / host cpu; forbidden on RISC)
 #   NETKIT_CMSIS_DSP_DOT=1 — optional: route DotProductF32 through arm_dot_prod_f32
-#   NETKIT_XNNPACK=1       — Google XNNPACK (cpu / mpu_arm; run ./tools/fetch_xnnpack.sh)
+#   NETKIT_XNNPACK=1       — Google XNNPACK (cpu + any MPU; forbidden on MCU; ./tools/fetch_xnnpack.sh)
 #
 # Profile defaults:
-#   cpu      — XNNPACK on, CMSIS-DSP off, CMSIS-NN off
-#   mcu_arm  — CMSIS-DSP + CMSIS-NN on, XNNPACK off
+#   cpu      — XNNPACK on (any host ISA), CMSIS-DSP/NN off
+#   mcu_arm  — CMSIS-DSP + CMSIS-NN on, XNNPACK forbidden
 #   mpu_arm  — XNNPACK + CMSIS-DSP on (helpers), CMSIS-NN off
-#   mcu_risc / mpu_risc — all backends off (placeholders)
+#   mcu_risc — generic kernels only (CMSIS-DSP/NN + XNNPACK forbidden)
+#   mpu_risc — XNNPACK on; CMSIS-DSP/NN forbidden
 #
 # Optional reference-kernel loop unroll (netkit code only; not CMSIS):
 # NETKIT_IM2COL=0|1|2 — Conv2D strategy (float + int8 QuantOps): 0 direct (default), 1 partial, 2 full im2col+GEMM.
@@ -78,7 +79,7 @@ else ifeq ($(NETKIT_TARGET),mcu_risc)
 else ifeq ($(NETKIT_TARGET),mpu_risc)
   NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
-  NETKIT_XNNPACK ?= 0
+  NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu)
   $(error NETKIT_TARGET=mcu is removed — use NETKIT_TARGET=mcu_arm)
 else ifeq ($(NETKIT_TARGET),mpu)
@@ -138,6 +139,17 @@ CMSIS_NN_OBJECTS =
 NETKIT_CMSIS_NN_EFFECTIVE := 0
 CMSIS_SOFTMAX_OBJECTS =
 CMSIS_NN_DIR ?= third_party/CMSIS-NN
+# RISC targets: CMSIS-DSP and CMSIS-NN are never allowed (generic kernels only for those).
+ifneq ($(filter $(NETKIT_TARGET),mcu_risc mpu_risc),)
+  ifeq ($(NETKIT_CMSIS_DSP),1)
+    $(warning NETKIT_CMSIS_DSP=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-DSP is forbidden on RISC)
+  endif
+  ifeq ($(NETKIT_CMSIS_NN),1)
+    $(warning NETKIT_CMSIS_NN=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-NN is forbidden on RISC)
+  endif
+  override NETKIT_CMSIS_DSP := 0
+  override NETKIT_CMSIS_NN := 0
+endif
 ifneq ($(wildcard $(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c),)
   CMSIS_SOFTMAX_CFLAGS = -std=c11 -O2 -I$(CMSIS_NN_DIR)/Include
   CMSIS_SOFTMAX_SOURCES = \
@@ -168,12 +180,6 @@ endif
 
 CMSIS_DSP_OBJECTS =
 ifeq ($(NETKIT_CMSIS_DSP),1)
-  ifneq ($(filter $(NETKIT_TARGET),mcu_risc mpu_risc),)
-    $(warning NETKIT_CMSIS_DSP=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-DSP is Arm ISA only)
-    override NETKIT_CMSIS_DSP := 0
-  endif
-endif
-ifeq ($(NETKIT_CMSIS_DSP),1)
   CMSIS_DSP_DIR ?= third_party/CMSIS-DSP
   ifeq ($(wildcard $(CMSIS_DSP_DIR)/Include/arm_math.h),)
     $(error NETKIT_CMSIS_DSP=1 requires CMSIS-DSP at $(CMSIS_DSP_DIR) — run ./tools/fetch_cmsis_dsp.sh)
@@ -183,21 +189,19 @@ ifeq ($(NETKIT_CMSIS_DSP),1)
   RUNTIME_SOURCES += src/cmsis_dsp_backend.cpp
 endif
 
-# XNNPACK: cpu / mpu_arm LayerFast accelerator. Always forced off on MCU.
+# XNNPACK: default LayerFast on cpu + any MPU. Always forced off on MCU.
 XNNPACK_DIR ?= third_party/XNNPACK
 XNNPACK_LIB_DIR ?= $(XNNPACK_DIR)/netkit_lib
 XNNPACK_LDFLAGS :=
 NETKIT_XNNPACK_EFFECTIVE := 0
 ifneq ($(filter $(NETKIT_TARGET),mcu_arm mcu_risc),)
   ifeq ($(NETKIT_XNNPACK),1)
-    $(warning NETKIT_XNNPACK=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — XNNPACK is never enabled on MCU)
+    $(warning NETKIT_XNNPACK=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — XNNPACK is forbidden on MCU)
   endif
   override NETKIT_XNNPACK := 0
 endif
 ifeq ($(NETKIT_XNNPACK),1)
-  ifneq ($(filter $(NETKIT_TARGET),mpu_risc),)
-    $(warning NETKIT_XNNPACK=1 ignored on NETKIT_TARGET=$(NETKIT_TARGET) — XNNPACK is cpu/mpu_arm only)
-  else ifeq ($(wildcard $(XNNPACK_DIR)/include/xnnpack.h),)
+  ifeq ($(wildcard $(XNNPACK_DIR)/include/xnnpack.h),)
     $(warning NETKIT_XNNPACK=1 but XNNPACK headers missing — run ./tools/fetch_xnnpack.sh; using reference kernels)
   else ifeq ($(wildcard $(XNNPACK_LIB_DIR)/libXNNPACK.a),)
     $(warning NETKIT_XNNPACK=1 but libXNNPACK.a missing — run ./tools/fetch_xnnpack.sh; using reference kernels)

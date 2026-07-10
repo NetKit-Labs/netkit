@@ -102,7 +102,7 @@ python3 tools/write_mobilenetv4_imagenet_int8.py   # → models/mobilenetv4_imag
 Host ImageNet benches (10 images × 5 loops, 256 MiB arena). Float and int8 I/O stay typed end-to-end — **no C++ float↔int8**; prequantized fixtures come from Python export (`--quant-source nk` for netkit, TFLite scales for TFLM/TF Lite).
 
 ```bash
-./tools/fetch_xnnpack.sh   # once (cpu/mpu XNNPACK)
+./tools/fetch_xnnpack.sh   # once (cpu / any MPU XNNPACK)
 # float32
 make -C benchmark/netkit run-mobilenetv4-imagenet-xnnpack
 make -C benchmark/tflm run-mobilenetv4-imagenet
@@ -112,6 +112,8 @@ make -C benchmark/netkit run-mobilenetv4-imagenet-int8
 make -C benchmark/tflm run-mobilenetv4-imagenet-int8
 make -C benchmark/tflite run-mobilenetv4-imagenet-int8
 ```
+
+Order-averaged peer results (XNNPACK ON/OFF): [STATUS.md](STATUS.md).
 
 Parity: `python/tests/test_torch_backbone_pack.py` and `test_torch_backbone_runtime_parity.py` — see [TESTING.md](TESTING.md).
 

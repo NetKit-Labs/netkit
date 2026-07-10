@@ -11,7 +11,7 @@ When `NETKIT_ARCH` is set and `third_party/CMSIS-Core/CMSIS/Core/Include` exists
 [ARM CMSIS-NN](https://github.com/ARM-software/CMSIS-NN) is Apache-2.0 licensed and provides
 optimized neural-network kernels for Arm Cortex-M (with portable scalar fallbacks for host builds).
 
-When enabled on **`NETKIT_TARGET=mcu_arm`** with a **Cortex-M `NETKIT_ARCH`**, netkit uses CMSIS-NN for conv, pool, batch norm, FC, and activations. On **cpu** or **mpu**, `NETKIT_CMSIS_NN=1` is ignored (build warning) and reference kernels are used.
+When enabled on **`NETKIT_TARGET=mcu_arm`** with a **Cortex-M `NETKIT_ARCH`**, netkit uses CMSIS-NN for conv, pool, batch norm, FC, and activations. On **cpu** or **mpu_arm**, `NETKIT_CMSIS_NN=1` is ignored (build warning) and reference / XNNPACK kernels are used. On **RISC** targets CMSIS-NN is **forbidden**.
 
 - Conv2d (with symmetric padding), max-pool, avg-pool, batch norm, fully-connected (dense weights in `[out, in]` layout)
 - Activations (ReLU, sigmoid, tanh, leaky ReLU, ReLU6) and softmax
@@ -29,18 +29,18 @@ When enabled (`NETKIT_CMSIS_DSP=1` / `-DNETKIT_CMSIS_DSP=ON`), netkit uses CMSIS
 - Fully-connected fallback via `arm_mat_vec_mult_f32` (desktop, or MCU/MPU when CMSIS-NN is off)
 - Batch-norm fallback via `arm_mult_f32` + `arm_add_f32` (same gating as FC)
 
-On **MCU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then generic reference. On **desktop and MPU**, `NETKIT_CMSIS_NN=1` is ignored — use CMSIS-DSP for vector/math acceleration and (when enabled) **XNNPACK** for layer ops.
+On **MCU with both CMSIS-NN and CMSIS-DSP**, overlapping ops prefer NN then generic reference. On **desktop and Arm MPU**, `NETKIT_CMSIS_NN=1` is ignored — use CMSIS-DSP for vector/math helpers and (when enabled) **XNNPACK** for layer ops. CMSIS-DSP/NN are **forbidden** on RISC targets.
 
 ## XNNPACK (optional)
 
 [Google XNNPACK](https://github.com/google/XNNPACK) is BSD-3 licensed and provides highly optimized neural-network operators for desktop/server CPUs and Cortex-A (x86 AVX, Arm NEON, WASM SIMD, …).
 
-When enabled (`NETKIT_XNNPACK=1`, default on **cpu** and **mpu**), netkit uses XNNPACK for:
+When enabled (`NETKIT_XNNPACK=1`, default on **cpu** and **any MPU**), netkit uses XNNPACK for:
 
 - **float32** `LayerFast`: conv2d, depthwise conv, max/avg pool, fully-connected (ReLU/ReLU6 clamp)
 - **int8 (qs8)**: same ops via `XnnpackQuant` in the quantized plan / `QuantOps` path (tried before CMSIS-NN / reference)
 
-MCU builds default to `NETKIT_XNNPACK=0`. Forcing `=1` on MCU is ignored.
+MCU builds force `NETKIT_XNNPACK=0`. Forcing `=1` on MCU is rejected (Make override / compile error).
 
 ## Fetching
 
@@ -71,12 +71,14 @@ Leave `NETKIT_ARCH` unset for native desktop builds (`__GNUC_PYTHON__` host path
 |------|------|
 | `third_party/cmsis_nn.mk` | Minimal CMSIS-NN source set linked into `libnetkit.a` |
 | `third_party/cmsis_dsp.mk` | Minimal CMSIS-DSP source set |
+| `third_party/xnnpack.mk` | XNNPACK link flags for cpu / MPU |
 | `third_party/netkit_arch.mk` | `NETKIT_ARCH` → `ARM_MATH_*` flags + CMSIS-Core include (Make) |
 | `cmake/netkit_cmsis.cmake` | CMSIS object libraries + target flags (CMake) |
+| `cmake/netkit_xnnpack.cmake` | XNNPACK fetch/link (CMake) |
 | `cmake/netkit_arch.cmake` | `NETKIT_ARCH` resolver (CMake) |
 
-See [docs/BUILD_TARGETS.md](../docs/BUILD_TARGETS.md#cmsis-backends).
+See [docs/BUILD_TARGETS.md](../docs/BUILD_TARGETS.md#cmsis-backends) and [docs/STATUS.md](../docs/STATUS.md).
 
 ## Host embedded smoke
 
-`make test-embedded-smoke-matrix` (or `./tools/run_embedded_smoke.sh`) rebuilds `libnetkit.a` for seven MCU/MPU profiles and runs `tests/embedded_smoke` against `test_mlp.nk` and `cnn_4x4_single.nk`. CMSIS profiles pass `NETKIT_HOST_SMOKE=1` so object code compiles on Linux/macOS hosts without CMSIS-Core.
+`make test-embedded-smoke-matrix` (or `./tools/run_embedded_smoke.sh`) rebuilds `libnetkit.a` for Arm + RISC MCU/MPU profiles and runs `tests/embedded_smoke` against `test_mlp.nk` and `cnn_4x4_single.nk`. CMSIS profiles pass `NETKIT_HOST_SMOKE=1` so object code compiles on Linux/macOS hosts without CMSIS-Core.

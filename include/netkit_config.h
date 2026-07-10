@@ -13,10 +13,13 @@
  *   NETKIT_ISA_ARM / NETKIT_ISA_RISC    — instruction-set family (backend policy)
  *
  * Backend profile defaults (Makefile / CMake; override with NETKIT_CMSIS_*=0|1):
- *   cpu       — XNNPACK on, CMSIS-DSP off, CMSIS-NN off
- *   mcu_arm   — CMSIS-DSP + CMSIS-NN on, XNNPACK off
- *   mpu_arm   — XNNPACK + CMSIS-DSP on (DSP = vector helpers only), CMSIS-NN off
- *   mcu_risc / mpu_risc — no Arm backends yet (all off)
+ *   cpu       — XNNPACK on (any host ISA), CMSIS-DSP/NN off
+ *   mcu_arm   — CMSIS-DSP + CMSIS-NN on, XNNPACK forbidden
+ *   mpu_arm   — XNNPACK on + CMSIS-DSP helpers, CMSIS-NN off
+ *   mcu_risc  — generic kernels only (CMSIS-DSP/NN + XNNPACK forbidden)
+ *   mpu_risc  — XNNPACK on (default); CMSIS-DSP/NN forbidden
+ *
+ * XNNPACK policy: default ON for cpu and all MPU targets; never allowed on MCU.
  *
  * CMSIS-DSP policy: when enabled, DSP accelerates vector helpers (copy, argmax,
  * add/mul/scale, MatMul/FC/BN/LN/GRN Try*). Hot float inner products stay on the
@@ -148,7 +151,18 @@
 #error "NETKIT_CMSIS_DSP_DOT must be 0 or 1"
 #endif
 
-/* CMSIS-NN: Arm MCU (Cortex-M) only — never cpu / mpu (override not allowed). */
+/* CMSIS-DSP: Arm ISA (+ optional host cpu). Forbidden on RISC targets. */
+#if defined(NETKIT_ISA_RISC)
+#define NETKIT_CMSIS_DSP_ALLOWED 0
+#else
+#define NETKIT_CMSIS_DSP_ALLOWED 1
+#endif
+
+#if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP && !NETKIT_CMSIS_DSP_ALLOWED
+#error "NETKIT_USE_CMSIS_DSP is forbidden on RISC targets (mcu_risc / mpu_risc); use generic kernels"
+#endif
+
+/* CMSIS-NN: Arm MCU (Cortex-M) only — never cpu / mpu / RISC (override not allowed). */
 #if defined(NETKIT_TARGET_MCU_ARM) &&                                                              \
     (defined(ARM_MATH_CM0) || defined(ARM_MATH_CM0PLUS) || defined(ARM_MATH_CM3) ||               \
      defined(ARM_MATH_CM4) || defined(ARM_MATH_CM7) || defined(ARM_MATH_ARMV8MBL) ||               \
@@ -160,20 +174,22 @@
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && !NETKIT_CMSIS_NN_ALLOWED
 #error "NETKIT_USE_CMSIS_NN requires NETKIT_TARGET_MCU_ARM with a Cortex-M NETKIT_ARCH "         \
-       "(CM4/M33/...); CMSIS-NN is not available on cpu or mpu targets"
+       "(CM4/M33/...); forbidden on cpu, mpu, and RISC targets"
 #endif
 
 /*
- * XNNPACK LayerFast: desktop CPU and Arm MPU only — never MCU (override not allowed).
+ * XNNPACK LayerFast: default for cpu + any MPU (Arm or RISC). Forbidden on MCU
+ * (override not allowed) — XNNPACK can run on many ISAs, but MCU flash/RAM
+ * budgets make it a poor fit; use CMSIS-NN / reference there instead.
  */
-#if defined(NETKIT_TARGET_CPU) || defined(NETKIT_TARGET_MPU_ARM)
-#define NETKIT_XNNPACK_ALLOWED 1
-#else
+#if defined(NETKIT_CLASS_MCU)
 #define NETKIT_XNNPACK_ALLOWED 0
+#else
+#define NETKIT_XNNPACK_ALLOWED 1
 #endif
 
 #if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && !NETKIT_XNNPACK_ALLOWED
-#error "NETKIT_USE_XNNPACK is not available on MCU targets (cpu/mpu_arm only)"
+#error "NETKIT_USE_XNNPACK is forbidden on MCU targets (cpu and MPU only)"
 #endif
 
 /*

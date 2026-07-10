@@ -3,7 +3,7 @@
 #include "kernel_activation.hpp"
 #include "tensor.hpp"
 
-// XNNPACK LayerFast backend (float32). Used on cpu/mpu when NETKIT_XNNPACK=1.
+// XNNPACK LayerFast backend (float32). Used on cpu/MPU when NETKIT_XNNPACK=1.
 // MCU builds leave this off (NETKIT_XNNPACK_ALLOWED=0).
 struct XnnpackKernel
 {
