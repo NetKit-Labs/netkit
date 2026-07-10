@@ -3,15 +3,15 @@
 # Distinct from tflm_host_flags.mk, which mirrors TFLM Micro (-O2 +
 # TF_LITE_DISABLE_X86_NEON) for MNIST/TFLM apples-to-apples runs.
 #
-# LiteRT pip wheels (ai_edge_litert) are built with Bazel roughly as:
+# Matched to LiteRT pip wheels (ai_edge_litert), built roughly as:
 #   bazel build -c opt --copt=-O3 --cxxopt=-std=gnu++17 ...
-#   (see LiteRT ci/build_pip_package_with_bazel.sh; Darwin adds --config=macos_wheel)
-# That means: host Apple/Linux clang or gcc, -O3 -DNDEBUG, SIMD on, exceptions/RTTI
-# left at toolchain defaults (LiteRT's libLiteRt.dylib references __cxa_throw).
+#   + --config=macos_wheel on Darwin
+#   + --linkopt=-ld_classic on Darwin arm64
+#   + --cxxopt=-fpermissive on macos/linux
+# (see LiteRT ci/build_pip_package_with_bazel.sh and .bazelrc)
 #
-# Policy: mimic those flags; add netkit-only options only when required.
-# Variable names reuse the TFLM_* namespace so bench.mk can switch profiles
-# without duplicating recipes.
+# Policy: same compiler/linker drivers and shared flags as LiteRT; add
+# netkit-only options only when required (C++20, NETKIT_* defines).
 #
 # Include from benchmark/netkit/bench.mk when BENCH_FLAG_PROFILE=tflite.
 
@@ -24,13 +24,33 @@ TFLM_HOST_AR := ar
 # Do NOT add: -fno-rtti, -fno-exceptions, -fno-threadsafe-statics,
 # -ffunction-sections, -fdata-sections, TF_LITE_STATIC_MEMORY,
 # TF_LITE_DISABLE_X86_NEON, or TFLM's warning laundry list.
-TFLM_CXXFLAGS := -std=c++20
+#
+# Dialect: LiteRT uses -std=gnu++17. netkit needs C++20 (std::span, etc.), so
+# use gnu++20 — same GNU dialect, newer language mode.
+TFLM_CXXFLAGS := -std=gnu++20
 
-# Bazel -c opt is -O2 -DNDEBUG; LiteRT opt wheels also pass --copt=-O3.
+# LiteRT .bazelrc: build:macos/linux --cxxopt=-fpermissive
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  TFLM_CXXFLAGS += -fpermissive
+else ifeq ($(UNAME_S),Linux)
+  TFLM_CXXFLAGS += -fpermissive
+endif
+
+# Bazel -c opt implies -O2 -DNDEBUG; LiteRT opt wheels also pass --copt=-O3.
 TFLM_CORE_OPT := -O3 -DNDEBUG
 TFLM_KERNEL_OPT := -O3 -DNDEBUG
 
 TFLM_LDFLAGS := -lm
+
+# LiteRT Darwin arm64 wheels pass --linkopt=-ld_classic (deprecated but still
+# what ai_edge_litert 2.1.6 ships with). Keep for peer parity on Apple Silicon.
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_S),Darwin)
+  ifeq ($(UNAME_M),arm64)
+    TFLM_LDFLAGS += -ld_classic
+  endif
+endif
 
 # --- netkit-only (required for this runtime / fair file-load path) ---
 NETKIT_IM2COL ?= 0

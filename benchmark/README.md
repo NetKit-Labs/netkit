@@ -35,9 +35,12 @@ LiteRT-matched profile (ImageNet):
 |---------|--------|-----|
 | Compiler / linker | host `cc` / `c++` | Same drivers as LiteRT Darwin wheels (Apple clang) |
 | Opt | `-O3 -DNDEBUG` | LiteRT `ci/build_pip_package_with_bazel.sh` passes `--copt=-O3` on top of `-c opt` |
+| C++ dialect | `-std=gnu++20` | LiteRT uses `gnu++17`; netkit needs C++20 (`std::span`) so keep GNU dialect at C++20 |
+| Permissive | `-fpermissive` (Darwin/Linux) | LiteRT `.bazelrc` `build:macos` / `build:linux` |
+| Darwin arm64 link | `-ld_classic` | LiteRT wheel script `--linkopt=-ld_classic` on `arm64` |
 | Exceptions / RTTI | toolchain default (on) | LiteRT `libLiteRt.dylib` uses exceptions; do not force `-fno-*` |
 | SIMD | enabled | No `TF_LITE_DISABLE_X86_NEON` |
-| netkit-only | `-std=c++20`, `-DNETKIT_*` | `std::span` + mmap/target/im2col knobs |
+| netkit-only | `-DNETKIT_*` | mmap/target/im2col knobs |
 
 XNNPACK itself is built once via `./tools/fetch_xnnpack.sh` as CMake **Release** (`-O3 -DNDEBUG`, same host `c++`), pinned to the **same commit** LiteRT 2.1.6 embeds (`c2e81f01…`; override with `NETKIT_XNNPACK_PIN`).
 

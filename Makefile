@@ -199,7 +199,7 @@ ifeq ($(NETKIT_XNNPACK),1)
 endif
 ifeq ($(NETKIT_XNNPACK_EFFECTIVE),1)
   TARGET_CPPFLAGS += -DNETKIT_USE_XNNPACK=1 -I$(XNNPACK_DIR)/include -I$(XNNPACK_DIR)/netkit_include
-  RUNTIME_SOURCES += src/xnnpack_backend.cpp
+  RUNTIME_SOURCES += src/xnnpack_backend.cpp src/xnnpack_float_backend.cpp
   # macOS needs force_load so microkernel registrars are not stripped.
   UNAME_S := $(shell uname -s)
   ifeq ($(UNAME_S),Darwin)

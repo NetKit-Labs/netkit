@@ -156,6 +156,11 @@ namespace CmsisQuantPlan
 struct Runtime;
 }
 
+namespace XnnpackFloat
+{
+struct Runtime;
+}
+
 class CNNNetwork
 {
 private:
@@ -175,6 +180,8 @@ private:
     int8_t* ping_i8_a{};
     int8_t* ping_i8_b{};
     CmsisQuantPlan::Runtime* quant_runtime_{};
+    // Persistent float32 XNNPACK full-network subgraph (cpu/mpu, when enabled).
+    XnnpackFloat::Runtime* xnn_float_runtime_{};
 
     Tensor& forward_quantized(const Tensor& input);
 

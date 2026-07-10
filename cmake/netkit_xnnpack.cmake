@@ -23,6 +23,7 @@ function(netkit_add_xnnpack target)
 
     target_sources(${target} PRIVATE
         "${CMAKE_SOURCE_DIR}/src/xnnpack_backend.cpp"
+        "${CMAKE_SOURCE_DIR}/src/xnnpack_float_backend.cpp"
         "${CMAKE_SOURCE_DIR}/src/xnnpack_quant_backend.cpp")
     target_include_directories(${target} PUBLIC
         "${XNNPACK_DIR}/include"

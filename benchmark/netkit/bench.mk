@@ -126,7 +126,7 @@ ifeq ($(XNNPACK),1)
   ifeq ($(wildcard $(XNNPACK_LIB_DIR)/libXNNPACK.a),)
     $(error libXNNPACK.a missing — run ./tools/fetch_xnnpack.sh)
   endif
-  BENCH_RUNTIME_SOURCES += src/xnnpack_backend.cpp
+  BENCH_RUNTIME_SOURCES += src/xnnpack_backend.cpp src/xnnpack_float_backend.cpp
   NETKIT_BENCH_VARIANT_CPPFLAGS += -DNETKIT_USE_XNNPACK=1 -I$(XNNPACK_DIR)/include -I$(XNNPACK_DIR)/netkit_include
   UNAME_S := $(shell uname -s)
   ifeq ($(UNAME_S),Darwin)

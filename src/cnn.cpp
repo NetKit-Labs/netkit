@@ -6,6 +6,7 @@
 #include "cmsis_buffer_size.hpp"
 #include "ops_resolver.hpp"
 #include "tensor_factory.hpp"
+#include "xnnpack_float.hpp"
 #include <array>
 #include <chrono>
 #include <cstring>
@@ -117,6 +118,14 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
     max_activation_elements = 0;
     layer_output_views_ = nullptr;
     output_cache_ = {};
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+    if (xnn_float_runtime_)
+    {
+        XnnpackFloat::DestroyRuntime(*xnn_float_runtime_);
+        delete xnn_float_runtime_;
+        xnn_float_runtime_ = nullptr;
+    }
+#endif
 
     if (!blocks || num_layers == 0)
         return blocks != nullptr;
@@ -198,6 +207,22 @@ bool CNNNetwork::InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_
         current_input = layer_output_views_[i];
         current_input.data = nullptr;
     }
+
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+    // Prefer a persistent full-network f32 subgraph (TF Lite XNNPACK parity).
+    // On failure, keep the layer-loop path (ephemeral per-op XNNPACK / reference).
+    XnnpackFloat::Runtime* float_rt = nullptr;
+    if (XnnpackFloat::BuildNetworkRuntime(*this, arena, in_h, in_w, in_c, float_rt) &&
+        float_rt && float_rt->xnn_network_ready)
+    {
+        xnn_float_runtime_ = float_rt;
+    }
+    else if (float_rt)
+    {
+        XnnpackFloat::DestroyRuntime(*float_rt);
+        delete float_rt;
+    }
+#endif
 
     return true;
 }
@@ -596,6 +621,21 @@ Tensor& CNNNetwork::forward(const Tensor& input, Arena& /*arena*/)
 #if defined(NETKIT_MCU_QUANT_ONLY) && NETKIT_MCU_QUANT_ONLY
     return empty;
 #else
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+    if (xnn_float_runtime_ && xnn_float_runtime_->xnn_network_ready && input.data && ping_a)
+    {
+        const float* in_ptr = static_cast<const float*>(input.data);
+        if (XnnpackFloat::InvokeNetwork(*xnn_float_runtime_, in_ptr, ping_a))
+        {
+            const uint32_t out_n = xnn_float_runtime_->out_elements != 0
+                                       ? xnn_float_runtime_->out_elements
+                                       : max_activation_elements;
+            output_cache_ = View2D(ping_a, 1, out_n);
+            return output_cache_;
+        }
+        // Fall through to layer loop if invoke fails.
+    }
+#endif
     KernelWorkspace workspace{kernel_workspace_, kernel_workspace_bytes_};
     KernelWorkspaceScope workspace_scope(&workspace);
 
