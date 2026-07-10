@@ -15,7 +15,7 @@ Both APIs share:
 - **`.nk`** single-file model loading
 - **MLP** and **CNN** forward-only inference (conv with symmetric padding, max/avg pool, batch norm, flatten, dense)
 - **NHWC** tensor layout for convolutions
-- **Float32 only (today)** — float16, int16, int8, int4 planned ([DATATYPES.md](DATATYPES.md))
+- **Float32 and int8** today — float16, int16, int4 planned ([DATATYPES.md](DATATYPES.md)); C uses `nk_model_run` vs `nk_model_run_int8`
 
 Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (network introspection, op trimming, detailed header dumps) remain C++-only.
 
@@ -28,7 +28,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 | [BUILD_TARGETS.md](BUILD_TARGETS.md) | `NETKIT_TARGET=cpu\|mcu\|mpu`, arena flags, defaults |
 | [CLI.md](CLI.md) | `netkit test`, `run`, `inspect`, help |
 | [ARENA.md](ARENA.md) | Bump allocator, sizing, alignment |
-| [DATATYPES.md](DATATYPES.md) | Float32 today; float16/int roadmap |
+| [DATATYPES.md](DATATYPES.md) | Float32 + int8 today; float16/int16/int4 roadmap |
 | [NK_FORMAT.md](NK_FORMAT.md) | `.nk` overview + embedded tests |
 | [NK_FILE_SPECIFICATION.md](NK_FILE_SPECIFICATION.md) | Byte-level `.nk` specification and inspection |
 | [TESTING.md](TESTING.md) | Regression suites, Make targets, manual CI |

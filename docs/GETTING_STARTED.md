@@ -21,7 +21,7 @@ This guide takes you from clone to your first inference in a few minutes.
 | Build | GNU **Make** (primary); **CMake** 3.16+ optional |
 | Python packager (optional) | Python 3 + numpy + onnx — `pip install -e python`; training/backbone pack also need `pip install -e "python[train]"` (torch + timm) |
 
-Inference is **float32-only** today. float16, int16, int8, and int4 are on the roadmap — [DATATYPES.md](DATATYPES.md).
+Inference supports **float32** and **int8** today (`nk_model_run` / `nk_model_run_int8`). float16, int16, and int4 are on the roadmap — [DATATYPES.md](DATATYPES.md).
 
 ---
 

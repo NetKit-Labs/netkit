@@ -18,6 +18,10 @@
 #include <cstdio>
 #include <cstring>
 
+#if NETKIT_XNNPACK_PLAN_HOIST
+#include <xnnpack.h>
+#endif
+
 namespace
 {
     using namespace TensorFactory;
@@ -339,14 +343,6 @@ namespace
         }
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
-        const std::size_t kernel_area =
-            static_cast<std::size_t>(dw.kernel_h) * static_cast<std::size_t>(dw.kernel_w) *
-            static_cast<std::size_t>(dw.channels);
-        plan.weights_hwc = static_cast<int8_t*>(arena.alloc(kernel_area, alignof(int8_t)));
-        if (!plan.weights_hwc || !weights_chw)
-            return false;
-        RepackDepthwiseChwToHwc(weights_chw, plan.weights_hwc, dw.kernel_h, dw.kernel_w, dw.channels);
-
         plan.workspace_bytes = static_cast<int32_t>(CmsisDepthwiseConv2dS8WorkspaceBytes(
             in_h,
             in_w,
@@ -357,9 +353,19 @@ namespace
             dw.pad_w,
             dw.channels));
 #else
-        plan.weights_hwc = nullptr;
         plan.workspace_bytes = 0;
 #endif
+        // Always repack CHW → HWC for XNNPACK (operator DW flag + subgraph [1,Kh,Kw,C]).
+        {
+            const std::size_t kernel_area =
+                static_cast<std::size_t>(dw.kernel_h) * static_cast<std::size_t>(dw.kernel_w) *
+                static_cast<std::size_t>(dw.channels);
+            plan.weights_hwc = static_cast<int8_t*>(arena.alloc(kernel_area, alignof(int8_t)));
+            if (!plan.weights_hwc || !weights_chw)
+                return false;
+            RepackDepthwiseChwToHwc(
+                weights_chw, plan.weights_hwc, dw.kernel_h, dw.kernel_w, dw.channels);
+        }
         plan.ready = true;
         CmsisNnQuant::FinalizeDepthwiseConv2DPlan(plan);
         return true;
@@ -669,6 +675,135 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
                 up.has_residual = uib.has_residual();
                 up.scratch = uib.scratch_i8;
                 up.scratch_bytes = static_cast<int32_t>(uib.scratch_i8_bytes);
+
+                uint32_t cur_h = in_h_layer;
+                uint32_t cur_w = in_w_layer;
+                uint32_t cur_c = in_c_layer;
+                const uint32_t expand_c = uib.expanded_channels();
+
+                if (up.has_start_dw)
+                {
+                    const int pad = (uib.start_dw_kernel - 1) / 2;
+                    DepthwiseConv2D dw{};
+                    dw.kernel_h = uib.start_dw_kernel;
+                    dw.kernel_w = uib.start_dw_kernel;
+                    dw.stride = static_cast<int>(uib.start_dw_stride());
+                    dw.pad_h = pad;
+                    dw.pad_w = pad;
+                    dw.pad_h_end = pad;
+                    dw.pad_w_end = pad;
+                    dw.channels = static_cast<int>(cur_c);
+                    dw.weights_q = uib.start_dw_weights_q;
+                    dw.bias_q = uib.start_dw_bias_q;
+                    if (!BuildDepthwisePlan(up.start_dw,
+                                            dw,
+                                            uib.start_dw_quant,
+                                            QuantInteger::QuantClamp::None,
+                                            cur_h,
+                                            cur_w,
+                                            cur_c,
+                                            uib.start_dw_weights_q,
+                                            arena))
+                    {
+                        std::fprintf(stderr,
+                                     "BuildRuntime: UIB start_dw plan failed layer %u\n",
+                                     i);
+                        return false;
+                    }
+                    cur_h = static_cast<uint32_t>(up.start_dw.out_h);
+                    cur_w = static_cast<uint32_t>(up.start_dw.out_w);
+                }
+
+                {
+                    Conv2D expand{};
+                    expand.kernel_size = 1;
+                    expand.stride = 1;
+                    expand.pad_h = 0;
+                    expand.pad_w = 0;
+                    expand.pad_h_end = 0;
+                    expand.pad_w_end = 0;
+                    expand.in_channels = static_cast<int>(cur_c);
+                    expand.out_channels = static_cast<int>(expand_c);
+                    expand.weights_q = uib.expand_weights_q;
+                    expand.bias_q = uib.expand_bias_q;
+                    if (!BuildConvPlan(up.expand,
+                                       expand,
+                                       uib.expand_quant,
+                                       QuantInteger::QuantClamp::ReLU,
+                                       cur_h,
+                                       cur_w,
+                                       cur_c,
+                                       arena))
+                    {
+                        std::fprintf(stderr,
+                                     "BuildRuntime: UIB expand plan failed layer %u\n",
+                                     i);
+                        return false;
+                    }
+                    cur_c = expand_c;
+                }
+
+                if (up.has_middle_dw)
+                {
+                    const int pad = (uib.middle_dw_kernel - 1) / 2;
+                    DepthwiseConv2D dw{};
+                    dw.kernel_h = uib.middle_dw_kernel;
+                    dw.kernel_w = uib.middle_dw_kernel;
+                    dw.stride = static_cast<int>(uib.middle_dw_stride());
+                    dw.pad_h = pad;
+                    dw.pad_w = pad;
+                    dw.pad_h_end = pad;
+                    dw.pad_w_end = pad;
+                    dw.channels = static_cast<int>(cur_c);
+                    dw.weights_q = uib.middle_dw_weights_q;
+                    dw.bias_q = uib.middle_dw_bias_q;
+                    if (!BuildDepthwisePlan(up.middle_dw,
+                                            dw,
+                                            uib.middle_dw_quant,
+                                            QuantInteger::QuantClamp::ReLU,
+                                            cur_h,
+                                            cur_w,
+                                            cur_c,
+                                            uib.middle_dw_weights_q,
+                                            arena))
+                    {
+                        std::fprintf(stderr,
+                                     "BuildRuntime: UIB middle_dw plan failed layer %u\n",
+                                     i);
+                        return false;
+                    }
+                    cur_h = static_cast<uint32_t>(up.middle_dw.out_h);
+                    cur_w = static_cast<uint32_t>(up.middle_dw.out_w);
+                }
+
+                {
+                    Conv2D proj{};
+                    proj.kernel_size = 1;
+                    proj.stride = 1;
+                    proj.pad_h = 0;
+                    proj.pad_w = 0;
+                    proj.pad_h_end = 0;
+                    proj.pad_w_end = 0;
+                    proj.in_channels = static_cast<int>(cur_c);
+                    proj.out_channels = uib.out_channels;
+                    proj.weights_q = uib.proj_weights_q;
+                    proj.bias_q = uib.proj_bias_q;
+                    if (!BuildConvPlan(up.proj,
+                                       proj,
+                                       uib.proj_quant,
+                                       QuantInteger::QuantClamp::None,
+                                       cur_h,
+                                       cur_w,
+                                       cur_c,
+                                       arena))
+                    {
+                        std::fprintf(stderr,
+                                     "BuildRuntime: UIB proj plan failed layer %u\n",
+                                     i);
+                        return false;
+                    }
+                }
+
                 up.ready = true;
                 activation_scale = uib.proj_quant.output_scale;
                 activation_zero_point = uib.proj_quant.output_zero_point;
@@ -802,6 +937,283 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
         runtime->workspace_bytes = workspace_bytes;
     }
 
+#if NETKIT_XNNPACK_PLAN_HOIST
+    // Create persistent XNNPACK ops after activation/workspace arena allocs so
+    // qs8 workspaces use remaining arena capacity (else heap via Create*).
+    // Shared weights cache packs kernels once and reuses across operators.
+    // Shared xnn_workspace matches TF Lite XNNPACK delegate (one workspace per
+    // delegate / runtime group).
+    if (xnn_initialize(/*allocator=*/nullptr) == xnn_status_success)
+    {
+        // Prefer a large initial capacity so packing for ImageNet-scale models
+        // does not grow/relocate the cache during create (helps cold BuildRuntime).
+        // XNNPACK's public API is in-memory only; TF Lite's file-backed mmap
+        // weight cache lives in the LiteRT delegate, not in libXNNPACK.
+        constexpr size_t kWeightsCacheBytes = 16u * 1024u * 1024u;
+        xnn_weights_cache_t cache = nullptr;
+        if (xnn_create_weights_cache_with_size(kWeightsCacheBytes, &cache) ==
+                xnn_status_success ||
+            xnn_create_weights_cache(&cache) == xnn_status_success)
+            runtime->xnn_weights_cache = cache;
+        xnn_workspace_t ws = nullptr;
+        if (xnn_create_workspace(&ws) == xnn_status_success)
+            runtime->xnn_workspace = ws;
+    }
+    void* weights_cache = runtime->xnn_weights_cache;
+    void* xnn_ws = runtime->xnn_workspace;
+
+    // Prefer a single full-network qs8 subgraph (MobileNetV4 ImageNet, etc.).
+    const bool network_created =
+        XnnpackQuant::CreateNetworkSubgraph(*runtime, network, weights_cache);
+
+    if (!runtime->xnn_network_runtime)
+    {
+        for (uint32_t i = 0; i < n; ++i)
+        {
+            LayerPlan& lp = runtime->layers[i];
+            CnnBlock& block = network.GetBlock(i);
+            switch (lp.kind)
+            {
+                case LayerKind::Conv2D:
+                    (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                        lp.conv, block.conv.conv.weights_q, block.conv.conv.bias_q, &arena,
+                        weights_cache);
+                    break;
+                case LayerKind::DepthwiseConv2D:
+                    (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                        lp.depthwise,
+                        block.depthwise_conv.depthwise.weights_q,
+                        block.depthwise_conv.depthwise.bias_q,
+                        &arena,
+                        weights_cache);
+                    break;
+                case LayerKind::MaxPool2D:
+                    (void)XnnpackQuant::CreateMaxPool2dNhwcQuantPlan(lp.pool, &arena);
+                    break;
+                case LayerKind::Dense:
+                case LayerKind::DenseSoftmax:
+                {
+                    const int8_t* weights =
+                        static_cast<const int8_t*>(block.dense.weights.data);
+                    const int32_t* bias = static_cast<const int32_t*>(block.dense.bias.data);
+                    (void)XnnpackQuant::CreateFullyConnectedQuantPlan(
+                        lp.fc, weights, bias, &arena, weights_cache);
+                    break;
+                }
+                case LayerKind::MobilenetV4Uib:
+                {
+                    MobileNetV4Uib& uib = block.mobilenetv4_uib.block;
+                    MobilenetV4UibPlan& up = lp.uib;
+                    // Prefer fused UIB subgraph; fall back to per-op hoists on failure.
+                    if (XnnpackQuant::CreateUibSubgraph(up, uib, weights_cache, xnn_ws))
+                        break;
+                    if (up.has_start_dw)
+                        (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                            up.start_dw, uib.start_dw_weights_q, uib.start_dw_bias_q, &arena,
+                            weights_cache);
+                    (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                        up.expand, uib.expand_weights_q, uib.expand_bias_q, &arena,
+                        weights_cache);
+                    if (up.has_middle_dw)
+                        (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                            up.middle_dw, uib.middle_dw_weights_q, uib.middle_dw_bias_q, &arena,
+                            weights_cache);
+                    (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                        up.proj, uib.proj_weights_q, uib.proj_bias_q, &arena, weights_cache);
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
+
+    if (runtime->xnn_weights_cache)
+    {
+        auto* cache = static_cast<xnn_weights_cache_t>(runtime->xnn_weights_cache);
+        // Hard finalize: trim to page boundary and mark read-only. Soft leaves
+        // spare capacity for late inserts; we never insert after BuildRuntime.
+        if (xnn_finalize_weights_cache(cache, xnn_weights_cache_finalization_kind_hard) !=
+            xnn_status_success)
+        {
+            (void)xnn_finalize_weights_cache(cache, xnn_weights_cache_finalization_kind_soft);
+        }
+    }
+
+    if (runtime->xnn_network_runtime)
+    {
+        XnnpackQuant::FinishNetworkAfterWeightsCache(*runtime);
+        if (runtime->xnn_network_ready)
+        {
+            std::fprintf(stderr, "BuildRuntime: network xnn_subgraph ready\n");
+        }
+        else
+        {
+            std::fprintf(stderr,
+                         "BuildRuntime: network xnn_subgraph failed, using per-layer path\n");
+            XnnpackQuant::DestroyNetworkSubgraph(*runtime);
+            // Fall through to per-layer create below (cache already finalized — create
+            // without cache / with nullptr so reshape is immediate).
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                LayerPlan& lp = runtime->layers[i];
+                CnnBlock& block = network.GetBlock(i);
+                switch (lp.kind)
+                {
+                    case LayerKind::Conv2D:
+                        (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                            lp.conv,
+                            block.conv.conv.weights_q,
+                            block.conv.conv.bias_q,
+                            &arena,
+                            /*weights_cache=*/nullptr);
+                        break;
+                    case LayerKind::DepthwiseConv2D:
+                        (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                            lp.depthwise,
+                            block.depthwise_conv.depthwise.weights_q,
+                            block.depthwise_conv.depthwise.bias_q,
+                            &arena,
+                            /*weights_cache=*/nullptr);
+                        break;
+                    case LayerKind::MaxPool2D:
+                        (void)XnnpackQuant::CreateMaxPool2dNhwcQuantPlan(lp.pool, &arena);
+                        break;
+                    case LayerKind::Dense:
+                    case LayerKind::DenseSoftmax:
+                    {
+                        const int8_t* weights =
+                            static_cast<const int8_t*>(block.dense.weights.data);
+                        const int32_t* bias =
+                            static_cast<const int32_t*>(block.dense.bias.data);
+                        (void)XnnpackQuant::CreateFullyConnectedQuantPlan(
+                            lp.fc, weights, bias, &arena, /*weights_cache=*/nullptr);
+                        break;
+                    }
+                    case LayerKind::MobilenetV4Uib:
+                    {
+                        MobileNetV4Uib& uib = block.mobilenetv4_uib.block;
+                        MobilenetV4UibPlan& up = lp.uib;
+                        if (XnnpackQuant::CreateUibSubgraph(up, uib, /*weights_cache=*/nullptr,
+                                                            xnn_ws))
+                            break;
+                        if (up.has_start_dw)
+                            (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                                up.start_dw,
+                                uib.start_dw_weights_q,
+                                uib.start_dw_bias_q,
+                                &arena,
+                                /*weights_cache=*/nullptr);
+                        (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                            up.expand,
+                            uib.expand_weights_q,
+                            uib.expand_bias_q,
+                            &arena,
+                            /*weights_cache=*/nullptr);
+                        if (up.has_middle_dw)
+                            (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                                up.middle_dw,
+                                uib.middle_dw_weights_q,
+                                uib.middle_dw_bias_q,
+                                &arena,
+                                /*weights_cache=*/nullptr);
+                        (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                            up.proj,
+                            uib.proj_weights_q,
+                            uib.proj_bias_q,
+                            &arena,
+                            /*weights_cache=*/nullptr);
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+    else
+    {
+        (void)network_created;
+        std::fprintf(stderr,
+                     "BuildRuntime: network xnn_subgraph failed, using per-layer path\n");
+
+        // Reshape after finalize so packed-weight absolute pointers are stable.
+        uint32_t uib_subgraph_ok = 0;
+        uint32_t uib_total = 0;
+        for (uint32_t i = 0; i < n; ++i)
+        {
+            LayerPlan& lp = runtime->layers[i];
+            switch (lp.kind)
+            {
+                case LayerKind::Conv2D:
+                    (void)XnnpackQuant::FinishConvAfterWeightsCache(lp.conv.xnn, &arena);
+                    break;
+                case LayerKind::DepthwiseConv2D:
+                    (void)XnnpackQuant::FinishConvAfterWeightsCache(lp.depthwise.xnn, &arena);
+                    break;
+                case LayerKind::Dense:
+                case LayerKind::DenseSoftmax:
+                    (void)XnnpackQuant::FinishFullyConnectedAfterWeightsCache(lp.fc.xnn);
+                    break;
+                case LayerKind::MobilenetV4Uib:
+                {
+                    ++uib_total;
+                    MobilenetV4UibPlan& up = lp.uib;
+                    CnnBlock& block = network.GetBlock(i);
+                    MobileNetV4Uib& uib = block.mobilenetv4_uib.block;
+                    if (up.xnn_runtime)
+                    {
+                        if (XnnpackQuant::FinishUibAfterWeightsCache(up))
+                        {
+                            ++uib_subgraph_ok;
+                            break;
+                        }
+                    }
+                    if (!up.xnn_subgraph_ready)
+                    {
+                        if (up.has_start_dw)
+                            (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                                up.start_dw,
+                                uib.start_dw_weights_q,
+                                uib.start_dw_bias_q,
+                                &arena,
+                                /*weights_cache=*/nullptr);
+                        (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                            up.expand,
+                            uib.expand_weights_q,
+                            uib.expand_bias_q,
+                            &arena,
+                            /*weights_cache=*/nullptr);
+                        if (up.has_middle_dw)
+                            (void)XnnpackQuant::CreateDepthwiseConv2dNhwcQuantPlan(
+                                up.middle_dw,
+                                uib.middle_dw_weights_q,
+                                uib.middle_dw_bias_q,
+                                &arena,
+                                /*weights_cache=*/nullptr);
+                        (void)XnnpackQuant::CreateConv2dNhwcQuantPlan(
+                            up.proj,
+                            uib.proj_weights_q,
+                            uib.proj_bias_q,
+                            &arena,
+                            /*weights_cache=*/nullptr);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        if (uib_total > 0)
+        {
+            std::fprintf(stderr,
+                         "BuildRuntime: UIB xnn_subgraph ready %u/%u\n",
+                         uib_subgraph_ok,
+                         uib_total);
+        }
+    }
+#endif
+
     network.SetQuantRuntime(runtime);
     QuantTrace::RecordKernelPlan(static_cast<uint32_t>(workspace_bytes),
                                  static_cast<uint32_t>(runtime->act_a_bytes + runtime->act_b_bytes));
@@ -810,6 +1222,52 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
 
 void DestroyRuntime(Runtime& runtime)
 {
+#if NETKIT_XNNPACK_PLAN_HOIST
+    XnnpackQuant::DestroyNetworkSubgraph(runtime);
+    if (runtime.layers)
+    {
+        for (uint32_t i = 0; i < runtime.num_layers; ++i)
+        {
+            LayerPlan& lp = runtime.layers[i];
+            switch (lp.kind)
+            {
+                case LayerKind::Conv2D:
+                    XnnpackQuant::DestroyXnnpackOp(lp.conv.xnn);
+                    break;
+                case LayerKind::DepthwiseConv2D:
+                    XnnpackQuant::DestroyXnnpackOp(lp.depthwise.xnn);
+                    break;
+                case LayerKind::MaxPool2D:
+                    XnnpackQuant::DestroyXnnpackOp(lp.pool.xnn);
+                    break;
+                case LayerKind::Dense:
+                case LayerKind::DenseSoftmax:
+                    XnnpackQuant::DestroyXnnpackOp(lp.fc.xnn);
+                    break;
+                case LayerKind::MobilenetV4Uib:
+                    XnnpackQuant::DestroyUibSubgraph(lp.uib);
+                    XnnpackQuant::DestroyXnnpackOp(lp.uib.start_dw.xnn);
+                    XnnpackQuant::DestroyXnnpackOp(lp.uib.expand.xnn);
+                    XnnpackQuant::DestroyXnnpackOp(lp.uib.middle_dw.xnn);
+                    XnnpackQuant::DestroyXnnpackOp(lp.uib.proj.xnn);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    // Ops must be deleted before the shared weights cache / workspace.
+    if (runtime.xnn_weights_cache)
+    {
+        (void)xnn_delete_weights_cache(static_cast<xnn_weights_cache_t>(runtime.xnn_weights_cache));
+        runtime.xnn_weights_cache = nullptr;
+    }
+    if (runtime.xnn_workspace)
+    {
+        (void)xnn_release_workspace(static_cast<xnn_workspace_t>(runtime.xnn_workspace));
+        runtime.xnn_workspace = nullptr;
+    }
+#endif
     runtime = {};
 }
 
@@ -824,6 +1282,32 @@ namespace
     {
         if (!runtime.layers || runtime.num_layers == 0 || !current)
             return false;
+
+#if NETKIT_XNNPACK_PLAN_HOIST
+        if (runtime.xnn_network_ready)
+        {
+            const LayerPlan& last = runtime.layers[runtime.num_layers - 1];
+            int8_t* dest = output_dest;
+            if (!dest)
+            {
+                if (runtime.act_a && runtime.act_a_bytes >= last.output_elements)
+                    dest = runtime.act_a;
+                else if (runtime.act_b && runtime.act_b_bytes >= last.output_elements)
+                    dest = runtime.act_b;
+                else if (runtime.logits && runtime.logits_elements >= last.output_elements)
+                    dest = runtime.logits;
+                else
+                    return false;
+            }
+            if (!XnnpackQuant::InvokeNetworkSubgraph(runtime, current, dest))
+                return false;
+            if (output_dest != nullptr)
+                return true;
+            (void)output_format;
+            output_cache = View2DInt8(dest, 1, last.output_elements);
+            return true;
+        }
+#endif
 
         KernelWorkspace workspace{runtime.workspace, runtime.workspace_bytes};
         KernelWorkspaceScope workspace_scope(&workspace);
@@ -975,10 +1459,183 @@ namespace
                 case LayerKind::MobilenetV4Uib:
                 {
                     MobileNetV4Uib& uib = block.mobilenetv4_uib.block;
-                    uib.forward_quant(current,
-                                      out,
-                                      static_cast<uint32_t>(lp.uib.in_h),
-                                      static_cast<uint32_t>(lp.uib.in_w));
+                    MobilenetV4UibPlan& up = runtime.layers[i].uib;
+                    bool ran_plans = false;
+
+#if NETKIT_XNNPACK_PLAN_HOIST
+                    // Fused UIB subgraph only exists when XNNPACK plan hoist is on (CI forces
+                    // NETKIT_XNNPACK=0 and compiles reference / Try* fallbacks instead).
+                    if (up.xnn_subgraph_ready)
+                    {
+                        int8_t* residual_buf = nullptr;
+                        if (up.has_residual && !up.xnn_subgraph_includes_residual && up.scratch)
+                        {
+                            const uint32_t expand_c = uib.expanded_channels();
+                            const uint32_t max_spatial =
+                                static_cast<uint32_t>(up.in_h) * static_cast<uint32_t>(up.in_w);
+                            int8_t* work_a = up.scratch;
+                            int8_t* work_b =
+                                work_a + static_cast<std::size_t>(max_spatial) * expand_c;
+                            residual_buf =
+                                work_b + static_cast<std::size_t>(max_spatial) * expand_c;
+                            std::memcpy(residual_buf,
+                                        current,
+                                        static_cast<std::size_t>(up.in_h) * up.in_w * up.in_c);
+                        }
+
+                        if (XnnpackQuant::InvokeUibSubgraph(up, current, out))
+                        {
+                            if (up.has_residual && !up.xnn_subgraph_includes_residual &&
+                                residual_buf)
+                            {
+                                const uint32_t count = static_cast<uint32_t>(up.out_h) *
+                                                       static_cast<uint32_t>(up.out_w) *
+                                                       static_cast<uint32_t>(up.out_c);
+                                QuantOps::ElementwiseAddS8(out,
+                                                           residual_buf,
+                                                           count,
+                                                           uib.proj_quant.output_scale,
+                                                           uib.proj_quant.output_zero_point,
+                                                           uib.block_input_scale,
+                                                           uib.block_input_zero_point,
+                                                           uib.proj_quant.output_scale,
+                                                           uib.proj_quant.output_zero_point,
+                                                           out);
+                            }
+                            ran_plans = true;
+                        }
+                    }
+#endif
+
+                    if (!ran_plans && up.ready && up.scratch)
+                    {
+                        const uint32_t in_h = static_cast<uint32_t>(up.in_h);
+                        const uint32_t in_w = static_cast<uint32_t>(up.in_w);
+                        const uint32_t in_c = static_cast<uint32_t>(up.in_c);
+                        const uint32_t expand_c = uib.expanded_channels();
+                        const uint32_t max_spatial = in_h * in_w;
+                        int8_t* work_a = up.scratch;
+                        int8_t* work_b =
+                            up.scratch + static_cast<std::size_t>(max_spatial) * expand_c;
+                        int8_t* residual_buf =
+                            work_b + static_cast<std::size_t>(max_spatial) * expand_c;
+
+                        if (up.has_residual)
+                            std::memcpy(residual_buf,
+                                        current,
+                                        static_cast<std::size_t>(in_h) * in_w * in_c);
+
+                        const int8_t* cur_data = current;
+                        int8_t* next_data = work_a;
+                        bool cur_in_work = false;
+                        bool ok = true;
+
+                        if (up.has_start_dw)
+                        {
+                            ok = XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                     up.start_dw,
+                                     cur_data,
+                                     uib.start_dw_weights_q,
+                                     uib.start_dw_bias_q,
+                                     next_data) ||
+                                 CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                     up.start_dw,
+                                     cur_data,
+                                     up.start_dw.weights_hwc ? up.start_dw.weights_hwc
+                                                             : uib.start_dw_weights_q,
+                                     uib.start_dw_bias_q,
+                                     next_data);
+                            if (ok)
+                            {
+                                cur_data = next_data;
+                                cur_in_work = true;
+                            }
+                        }
+
+                        if (ok)
+                        {
+                            int8_t* expand_out = cur_in_work ? work_b : work_a;
+                            ok = XnnpackQuant::TryConv2dNhwcQuantPlan(
+                                     up.expand,
+                                     cur_data,
+                                     uib.expand_weights_q,
+                                     uib.expand_bias_q,
+                                     expand_out) ||
+                                 CmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                     up.expand,
+                                     cur_data,
+                                     uib.expand_weights_q,
+                                     uib.expand_bias_q,
+                                     expand_out);
+                            if (ok)
+                            {
+                                cur_data = expand_out;
+                                cur_in_work = expand_out == work_a;
+                            }
+                        }
+
+                        if (ok && up.has_middle_dw)
+                        {
+                            int8_t* middle_out = cur_in_work ? work_b : work_a;
+                            ok = XnnpackQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                     up.middle_dw,
+                                     cur_data,
+                                     uib.middle_dw_weights_q,
+                                     uib.middle_dw_bias_q,
+                                     middle_out) ||
+                                 CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                     up.middle_dw,
+                                     cur_data,
+                                     up.middle_dw.weights_hwc ? up.middle_dw.weights_hwc
+                                                              : uib.middle_dw_weights_q,
+                                     uib.middle_dw_bias_q,
+                                     middle_out);
+                            if (ok)
+                                cur_data = middle_out;
+                        }
+
+                        if (ok)
+                        {
+                            ok = XnnpackQuant::TryConv2dNhwcQuantPlan(
+                                     up.proj,
+                                     cur_data,
+                                     uib.proj_weights_q,
+                                     uib.proj_bias_q,
+                                     out) ||
+                                 CmsisNnQuant::TryConv2dNhwcQuantPlan(
+                                     up.proj,
+                                     cur_data,
+                                     uib.proj_weights_q,
+                                     uib.proj_bias_q,
+                                     out);
+                        }
+
+                        if (ok && up.has_residual)
+                        {
+                            const uint32_t count = static_cast<uint32_t>(up.out_h) *
+                                                   static_cast<uint32_t>(up.out_w) *
+                                                   static_cast<uint32_t>(up.out_c);
+                            QuantOps::ElementwiseAddS8(out,
+                                                       residual_buf,
+                                                       count,
+                                                       uib.proj_quant.output_scale,
+                                                       uib.proj_quant.output_zero_point,
+                                                       uib.block_input_scale,
+                                                       uib.block_input_zero_point,
+                                                       uib.proj_quant.output_scale,
+                                                       uib.proj_quant.output_zero_point,
+                                                       out);
+                        }
+
+                        ran_plans = ok;
+                    }
+                    if (!ran_plans)
+                    {
+                        uib.forward_quant(current,
+                                          out,
+                                          static_cast<uint32_t>(lp.uib.in_h),
+                                          static_cast<uint32_t>(lp.uib.in_w));
+                    }
                     break;
                 }
                 case LayerKind::Dense:

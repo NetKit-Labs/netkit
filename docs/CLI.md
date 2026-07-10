@@ -72,6 +72,8 @@ Load a model and run one forward pass.
 |--------|------|-------------|
 | `--input` | `--input 1,2,3` or `--input=1,2,3` | Comma- or space-separated float32 values |
 
+**Note:** `run` accepts **float32** models only. Quantized (int8) `.nk` files are rejected with a message to use `nk_model_run_int8` / prequantized fixtures — the CLI does not take int8 `--input`. Use `test` (embedded `TCAS` cases may include int8) or library/benchmark binaries for int8 inference.
+
 **Examples:**
 
 ```bash

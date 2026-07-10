@@ -114,7 +114,7 @@ run-mobilenetv4-int8-xnnpack:
 	  run-mobilenetv4-int8
 
 # Pretrained ImageNet MobileNetV4-Conv-Small (224x224x3, 1000 classes).
-# Uses BENCH_FLAG_PROFILE=tflite (-O3, SIMD on) to match TF Lite / LiteRT MPU builds,
+# Uses BENCH_FLAG_PROFILE=tflite (LiteRT-matched -O3 -DNDEBUG, host cc/c++) —
 # not the TFLM Micro host profile used by MNIST compare.sh.
 run-mobilenetv4-imagenet:
 	$(MAKE) -f bench.mk BACKEND=reference CMSIS_DSP=0 XNNPACK=0 NETKIT_LOOP_UNROLL=0 \

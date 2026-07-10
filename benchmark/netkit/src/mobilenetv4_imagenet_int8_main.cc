@@ -144,6 +144,8 @@ int RunBenchmark(const char* model_path)
     {
         for (int i = 0; i < num_images; ++i)
         {
+            // Copy into a heap buffer before timing (outside the timed window).
+            // Feeding .rodata fixtures directly can hurt XNNPACK input locality.
             std::memcpy(input_buf.data(),
                         kImagenetMnv4Int8BenchmarkImages[i].pixels,
                         static_cast<size_t>(kImagenetMnv4Int8BenchmarkInputSize));

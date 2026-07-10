@@ -237,6 +237,10 @@ nk_status_t nk_tensor_create_nd(nk_arena_t* arena,
                                 const uint32_t* shape,
                                 nk_tensor_t* out);
 void nk_tensor_view_2d(float* data, uint32_t rows, uint32_t cols, nk_tensor_t* out);
+/** Int8 MLP-style view: rank-2 `[rows, cols]` (no ownership). */
+void nk_tensor_view_2d_int8(int8_t* data, uint32_t rows, uint32_t cols, nk_tensor_t* out);
+/** Int8 NHWC view: rank-3 `[h, w, c]` (no ownership). */
+void nk_tensor_view_3d_int8(int8_t* data, uint32_t h, uint32_t w, uint32_t c, nk_tensor_t* out);
 nk_status_t nk_tensor_fill(nk_tensor_t* tensor, const float* values, uint32_t count);
 void nk_tensor_print(const nk_tensor_t* tensor);
 void nk_tensor_print_labeled(const char* label, const nk_tensor_t* tensor);
@@ -246,7 +250,11 @@ void nk_tensor_print_labeled(const char* label, const nk_tensor_t* tensor);
 /* -------------------------------------------------------------------------- */
 
 float* nk_tensor_data_f32(nk_tensor_t* tensor);
+/** Returns nullptr if tensor is null or dtype is not `NK_DTYPE_FLOAT32`. */
 const float* nk_tensor_data_f32_const(const nk_tensor_t* tensor);
+/** Returns nullptr if tensor is null or dtype is not `NK_DTYPE_INT8`. */
+int8_t* nk_tensor_data_i8(nk_tensor_t* tensor);
+const int8_t* nk_tensor_data_i8_const(const nk_tensor_t* tensor);
 uint32_t nk_tensor_index_nhwc(const nk_tensor_t* tensor, uint32_t h, uint32_t w, uint32_t c);
 
 /* -------------------------------------------------------------------------- */
@@ -294,6 +302,12 @@ nk_status_t nk_mlp_init_layer(nk_mlp_t* mlp,
                             float leaky_alpha);
 nk_status_t nk_mlp_init_activation_buffers(nk_mlp_t* mlp, nk_arena_t* arena, uint32_t batch_rows);
 bool nk_mlp_has_activation_buffers(const nk_mlp_t* mlp);
+/**
+ * Classification knob: when true, a final Dense Softmax is skipped and logits
+ * are written (`argmax(logits) == argmax(softmax(logits))`).
+ */
+void nk_mlp_set_omit_final_softmax(nk_mlp_t* mlp, bool omit);
+bool nk_mlp_omit_final_softmax(const nk_mlp_t* mlp);
 nk_status_t nk_mlp_forward(nk_mlp_t* mlp,
                            nk_arena_t* arena,
                            const nk_tensor_t* input,
@@ -537,6 +551,9 @@ uint32_t nk_model_input_count(const nk_model_t* model);
 uint32_t nk_model_output_count(const nk_model_t* model);
 nk_network_kind_t nk_model_kind(const nk_model_t* model);
 bool nk_model_is_quantized(const nk_model_t* model);
+/** See `nk_mlp_set_omit_final_softmax`. For quantized CNN, updates the quant plan. */
+void nk_model_set_omit_final_softmax(nk_model_t* model, bool omit);
+bool nk_model_omit_final_softmax(const nk_model_t* model);
 nk_status_t nk_model_run(const nk_model_t* model,
                          nk_arena_t* arena,
                          const float* input,
@@ -544,7 +561,10 @@ nk_status_t nk_model_run(const nk_model_t* model,
                          float* output,
                          uint32_t output_capacity,
                          uint32_t* output_count);
-/** Int8 models only: prequantized int8 input → int8 output (no float quant/dequant). */
+/**
+ * Int8 models only: prequantized int8 input → int8 output (no float quant/dequant).
+ * Float32 models must use `nk_model_run` (and vice versa).
+ */
 nk_status_t nk_model_run_int8(const nk_model_t* model,
                               nk_arena_t* arena,
                               const int8_t* input,

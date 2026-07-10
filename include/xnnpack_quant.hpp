@@ -6,6 +6,15 @@
 
 #include <cstdint>
 
+struct Arena;  // defined in arena.hpp
+struct MobileNetV4Uib;  // defined in mobilenetv4_uib.hpp
+class CNNNetwork;
+
+namespace CmsisQuantPlan
+{
+struct Runtime;
+}
+
 // XNNPACK int8 (qs8) adapters for netkit quantized conv / depthwise / pool / FC.
 // Used on cpu/mpu when NETKIT_XNNPACK=1 (same flag as float32 LayerFast).
 namespace XnnpackQuant
@@ -14,6 +23,54 @@ namespace XnnpackQuant
 constexpr bool kEnabled = true;
 #else
 constexpr bool kEnabled = false;
+#endif
+
+// Create persistent XNNPACK ops (create + reshape + workspace). Prefer Arena*
+// for workspace; if arena is null or alloc fails, heap-owns workspace.
+#if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK && NETKIT_XNNPACK_ALLOWED
+bool CreateConv2dNhwcQuantPlan(CmsisQuantPlan::Conv2DPlan& plan,
+                               const int8_t* weights,
+                               const int32_t* bias,
+                               Arena* arena,
+                               void* weights_cache = nullptr);
+bool CreateDepthwiseConv2dNhwcQuantPlan(CmsisQuantPlan::DepthwiseConv2DPlan& plan,
+                                        const int8_t* weights_chw,
+                                        const int32_t* bias,
+                                        Arena* arena,
+                                        void* weights_cache = nullptr);
+bool CreateMaxPool2dNhwcQuantPlan(CmsisQuantPlan::Pool2DPlan& plan, Arena* arena);
+bool CreateFullyConnectedQuantPlan(CmsisQuantPlan::FcPlan& plan,
+                                   const int8_t* weights,
+                                   const int32_t* bias,
+                                   Arena* arena,
+                                   void* weights_cache = nullptr);
+
+void DestroyXnnpackOp(CmsisQuantPlan::XnnpackOpHoist& hoist);
+// After xnn_finalize_weights_cache: reshape + workspace for ops created with a cache.
+bool FinishConvAfterWeightsCache(CmsisQuantPlan::XnnpackOpHoist& hoist, Arena* arena);
+bool FinishFullyConnectedAfterWeightsCache(CmsisQuantPlan::XnnpackOpHoist& hoist);
+
+// Fused MobileNetV4 UIB subgraph: start_dw? → expand → middle_dw? → proj.
+// When plan.has_residual, residual add is inside the subgraph (xnn_binary_add).
+bool CreateUibSubgraph(CmsisQuantPlan::MobilenetV4UibPlan& plan,
+                       const MobileNetV4Uib& uib,
+                       void* weights_cache = nullptr,
+                       void* workspace = nullptr);
+bool FinishUibAfterWeightsCache(CmsisQuantPlan::MobilenetV4UibPlan& plan);
+void DestroyUibSubgraph(CmsisQuantPlan::MobilenetV4UibPlan& plan);
+bool InvokeUibSubgraph(CmsisQuantPlan::MobilenetV4UibPlan& plan,
+                       const int8_t* input,
+                       int8_t* output);
+
+// Full-network qs8 subgraph (external in → all layers → external out).
+bool CreateNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
+                           CNNNetwork& network,
+                           void* weights_cache);
+void FinishNetworkAfterWeightsCache(CmsisQuantPlan::Runtime& runtime);
+void DestroyNetworkSubgraph(CmsisQuantPlan::Runtime& runtime);
+bool InvokeNetworkSubgraph(CmsisQuantPlan::Runtime& runtime,
+                           const int8_t* input,
+                           int8_t* output);
 #endif
 
 bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,

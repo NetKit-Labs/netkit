@@ -24,22 +24,34 @@ Profile builds use `forward_timed()` (NETKIT) or TFLM `MicroProfiler` (TFLM) to 
 
 Benchmarks use **two** host flag profiles, selected by peer:
 
-| Peer | Profile file | Opt | SIMD / NEON |
-|------|--------------|-----|-------------|
-| **TFLM Micro** (MNIST `compare.sh`) | `benchmark/common/tflm_host_flags.mk` | `-O2` | `TF_LITE_DISABLE_X86_NEON` (TFLM host default) |
-| **TF Lite / LiteRT** (ImageNet MPU) | `benchmark/common/tflite_host_flags.mk` | `-O3 -DNDEBUG` | enabled (matches LiteRT `darwin_*-opt` / XNNPACK Release) |
+| Peer | Profile file | Opt | Notes |
+|------|--------------|-----|-------|
+| **TFLM Micro** (MNIST `compare.sh`) | `benchmark/common/tflm_host_flags.mk` | `-O2` | Mirrors TFLM Micro host: `TF_LITE_DISABLE_X86_NEON`, `-fno-exceptions` / `-fno-rtti`, section GC, TFLM warnings |
+| **TF Lite / LiteRT** (ImageNet MPU) | `benchmark/common/tflite_host_flags.mk` | `-O3 -DNDEBUG` | Mimics LiteRT pip opt (`bazel -c opt --copt=-O3`); SIMD on; **no** TFLM Micro extras |
 
-Shared across both profiles:
+LiteRT-matched profile (ImageNet):
 
-| Setting | Value |
-|---------|--------|
-| Compiler | host `c++` / `cc` (Apple Clang or GCC) |
-| Link | `-lm` (+ XNNPACK libs when enabled) |
-| Exceptions / RTTI | `-fno-exceptions -fno-rtti` |
+| Setting | Value | Why |
+|---------|--------|-----|
+| Compiler / linker | host `cc` / `c++` | Same drivers as LiteRT Darwin wheels (Apple clang) |
+| Opt | `-O3 -DNDEBUG` | LiteRT `ci/build_pip_package_with_bazel.sh` passes `--copt=-O3` on top of `-c opt` |
+| Exceptions / RTTI | toolchain default (on) | LiteRT `libLiteRt.dylib` uses exceptions; do not force `-fno-*` |
+| SIMD | enabled | No `TF_LITE_DISABLE_X86_NEON` |
+| netkit-only | `-std=c++20`, `-DNETKIT_*` | `std::span` + mmap/target/im2col knobs |
 
-ImageNet targets pass `BENCH_FLAG_PROFILE=tflite` so netkit is not accidentally compared under TFLM's `-O2` + disabled-NEON settings. MNIST / `compare.sh` keep the TFLM profile.
+XNNPACK itself is built once via `./tools/fetch_xnnpack.sh` as CMake **Release** (`-O3 -DNDEBUG`, same host `c++`), pinned to the **same commit** LiteRT 2.1.6 embeds (`c2e81f01…`; override with `NETKIT_XNNPACK_PIN`).
 
-The only intentional C++ dialect deviation is `-std=c++20` instead of TFLM's `-std=c++17`, because netkit's runtime API uses `std::span`.
+ImageNet int8 XNNPACK runtime also mirrors the LiteRT delegate defaults used by the peer bench (`num_threads=1`):
+
+| Setting | Value | TF Lite source |
+|---------|--------|----------------|
+| Head reduce | `xnn_define_static_reduce_v2` (MEAN, KEEP_DIMS) | int8 model uses `MEAN`; `AVERAGE_POOL_2D` is float-only in the delegate |
+| Runtime flags | `XNN_FLAG_DONT_SPIN_WORKERS` | always set in `xnnpack_delegate.cc` |
+| Workspace | shared `xnn_create_workspace` | delegate creates one workspace per instance |
+| Threadpool | `nullptr` | delegate only creates a pool when `num_threads > 1` |
+| Weights cache finalize | soft, then hard fallback | same as `TfLiteXNNPackDelegateFinalizeWeightsCache` |
+
+ImageNet targets pass `BENCH_FLAG_PROFILE=tflite` so netkit is not accidentally compared under TFLM's Micro flags. MNIST / `compare.sh` keep the TFLM profile.
 
 The main repo `libnetkit.a` (clang, debug) is **not** used by these benchmarks.
 
@@ -121,7 +133,7 @@ This benchmark is **not** part of `compare.sh` / `run-all` (separate MobileNetV4
 
 Pretrained `mobilenetv4_conv_small` (224×224×3, 1000 classes) compared across netkit, TFLM, and TF Lite / LiteRT on the same 10 ImageNet images.
 
-**Compiler policy:** netkit ImageNet targets use `BENCH_FLAG_PROFILE=tflite` (`-O3 -DNDEBUG`, SIMD enabled) to match LiteRT's opt build — **not** the TFLM Micro `-O2` + `TF_LITE_DISABLE_X86_NEON` profile.
+**Compiler policy:** netkit ImageNet targets use `BENCH_FLAG_PROFILE=tflite` to mimic LiteRT's opt wheel (`-O3 -DNDEBUG`, host `cc`/`c++`, no TFLM Micro `-fno-exceptions` / disabled-NEON flags).
 
 ```bash
 ./tools/fetch_xnnpack.sh   # once

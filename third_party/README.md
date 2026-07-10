@@ -56,6 +56,8 @@ make xnnpack-init
 
 CMSIS packages are **git submodule pins**. XNNPACK is fetched + CMake-built into `third_party/XNNPACK/` (gitignored build tree) with a stable `netkit_lib/libXNNPACK.a` for linking.
 
+**Peer-bench pin:** `tools/fetch_xnnpack.sh` defaults to the same XNNPACK commit LiteRT embeds (`ai_edge_litert` 2.1.6 → TF `b8a17154` → `c2e81f01…`). Override with `NETKIT_XNNPACK_PIN=<sha>` when bumping the LiteRT wheel.
+
 ## Architecture flags (`NETKIT_ARCH`)
 
 `third_party/netkit_arch.mk` (Make) and `cmake/netkit_arch.cmake` (CMake) map `NETKIT_ARCH`

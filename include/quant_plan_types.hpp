@@ -3,6 +3,7 @@
 #include "cmsis_hoisted_plan.hpp"
 #include "quant_integer.hpp"
 #include "quant_output.hpp"
+#include "xnnpack_hoisted_plan.hpp"
 
 #include <cstdint>
 
@@ -51,6 +52,9 @@ struct Conv2DPlan
 #if NETKIT_CMSIS_PLAN_HOIST
     Conv2DCmsisHoist cmsis{};
 #endif
+#if NETKIT_XNNPACK_PLAN_HOIST
+    XnnpackOpHoist xnn{};
+#endif
     bool ready = false;
 };
 
@@ -82,6 +86,9 @@ struct DepthwiseConv2DPlan
 #if NETKIT_CMSIS_PLAN_HOIST
     DepthwiseConv2DCmsisHoist cmsis{};
 #endif
+#if NETKIT_XNNPACK_PLAN_HOIST
+    XnnpackOpHoist xnn{};
+#endif
     bool ready = false;
 };
 
@@ -105,6 +112,9 @@ struct Pool2DPlan
 #if NETKIT_CMSIS_PLAN_HOIST
     Pool2DCmsisHoist cmsis{};
 #endif
+#if NETKIT_XNNPACK_PLAN_HOIST
+    XnnpackOpHoist xnn{};
+#endif
     bool ready = false;
 };
 
@@ -126,7 +136,7 @@ struct ElementwiseAddPlan
 
 struct MobilenetV4UibPlan
 {
-    Conv2DPlan start_dw{};
+    DepthwiseConv2DPlan start_dw{};
     Conv2DPlan expand{};
     DepthwiseConv2DPlan middle_dw{};
     Conv2DPlan proj{};
@@ -142,6 +152,18 @@ struct MobilenetV4UibPlan
     int32_t out_h = 0;
     int32_t out_w = 0;
     int32_t out_c = 0;
+    // Optional fused XNNPACK subgraph for the UIB body (residual via xnn_binary_add).
+    void* xnn_subgraph = nullptr;  // transient; deleted after runtime create
+    void* xnn_runtime = nullptr;   // xnn_runtime_t
+    uint32_t xnn_ext_input_id = 0;
+    uint32_t xnn_ext_output_id = 1;
+    bool xnn_subgraph_ready = false;
+    bool xnn_subgraph_includes_residual = false;
+    // Per-channel bias scales for subgraph tensors (heap; freed in DestroyUibSubgraph).
+    float* xnn_start_dw_bias_scales = nullptr;
+    float* xnn_expand_bias_scales = nullptr;
+    float* xnn_middle_dw_bias_scales = nullptr;
+    float* xnn_proj_bias_scales = nullptr;
     bool ready = false;
 };
 
@@ -168,6 +190,9 @@ struct FcPlan
     int32_t* kernel_sums = nullptr;
 #if NETKIT_CMSIS_PLAN_HOIST
     FcCmsisHoist cmsis{};
+#endif
+#if NETKIT_XNNPACK_PLAN_HOIST
+    XnnpackOpHoist xnn{};
 #endif
     bool ready = false;
 };

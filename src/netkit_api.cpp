@@ -491,6 +491,20 @@ void nk_tensor_view_2d(float* data, uint32_t rows, uint32_t cols, nk_tensor_t* o
     ToNkTensor(TensorFactory::View2D(data, rows, cols), out);
 }
 
+void nk_tensor_view_2d_int8(int8_t* data, uint32_t rows, uint32_t cols, nk_tensor_t* out)
+{
+    if (!out)
+        return;
+    ToNkTensor(TensorFactory::View2DInt8(data, rows, cols), out);
+}
+
+void nk_tensor_view_3d_int8(int8_t* data, uint32_t h, uint32_t w, uint32_t c, nk_tensor_t* out)
+{
+    if (!out)
+        return;
+    ToNkTensor(TensorFactory::View3DInt8(data, h, w, c), out);
+}
+
 nk_status_t nk_tensor_fill(nk_tensor_t* tensor, const float* values, uint32_t count)
 {
     if (!tensor || !values || count == 0)
@@ -521,6 +535,16 @@ float* nk_tensor_data_f32(nk_tensor_t* tensor)
 const float* nk_tensor_data_f32_const(const nk_tensor_t* tensor)
 {
     return tensor ? tensor_data_f32(*AsTensor(tensor)) : nullptr;
+}
+
+int8_t* nk_tensor_data_i8(nk_tensor_t* tensor)
+{
+    return tensor ? tensor_data_i8(*AsTensor(tensor)) : nullptr;
+}
+
+const int8_t* nk_tensor_data_i8_const(const nk_tensor_t* tensor)
+{
+    return tensor ? tensor_data_i8(*AsTensor(tensor)) : nullptr;
 }
 
 uint32_t nk_tensor_index_nhwc(const nk_tensor_t* tensor, uint32_t h, uint32_t w, uint32_t c)
@@ -697,6 +721,17 @@ nk_status_t nk_mlp_init_activation_buffers(nk_mlp_t* mlp, nk_arena_t* arena, uin
 bool nk_mlp_has_activation_buffers(const nk_mlp_t* mlp)
 {
     return mlp && MlpPtr(mlp)->net && MlpPtr(mlp)->net->HasActivationBuffers();
+}
+
+void nk_mlp_set_omit_final_softmax(nk_mlp_t* mlp, bool omit)
+{
+    if (mlp && MlpPtr(mlp)->net)
+        MlpPtr(mlp)->net->SetOmitFinalSoftmax(omit);
+}
+
+bool nk_mlp_omit_final_softmax(const nk_mlp_t* mlp)
+{
+    return mlp && MlpPtr(mlp)->net && MlpPtr(mlp)->net->OmitFinalSoftmax();
 }
 
 nk_status_t nk_mlp_forward(nk_mlp_t* mlp,
@@ -1533,6 +1568,36 @@ bool nk_model_is_quantized(const nk_model_t* model)
         return state->mlp && state->mlp->IsQuantized();
     if (state->kind == NK_NETWORK_CNN)
         return state->cnn && state->cnn->IsQuantized();
+    return false;
+}
+
+void nk_model_set_omit_final_softmax(nk_model_t* model, bool omit)
+{
+    if (!model || !ModelPtr(model)->loaded)
+        return;
+    ModelState* state = ModelPtr(model);
+    if (state->kind == NK_NETWORK_MLP && state->mlp)
+        state->mlp->SetOmitFinalSoftmax(omit);
+    else if (state->kind == NK_NETWORK_CNN && state->cnn)
+    {
+        CmsisQuantPlan::Runtime* runtime = state->cnn->quant_runtime();
+        if (runtime)
+            runtime->omit_final_softmax = omit;
+    }
+}
+
+bool nk_model_omit_final_softmax(const nk_model_t* model)
+{
+    if (!model || !ModelPtr(model)->loaded)
+        return false;
+    const ModelState* state = ModelPtr(model);
+    if (state->kind == NK_NETWORK_MLP && state->mlp)
+        return state->mlp->OmitFinalSoftmax();
+    if (state->kind == NK_NETWORK_CNN && state->cnn)
+    {
+        const CmsisQuantPlan::Runtime* runtime = state->cnn->quant_runtime();
+        return runtime && runtime->omit_final_softmax;
+    }
     return false;
 }
 

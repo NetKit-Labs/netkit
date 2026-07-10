@@ -4,8 +4,8 @@
 #
 # Fair comparison with netkit ImageNet benches:
 #   make -C benchmark/netkit run-mobilenetv4-imagenet-xnnpack
-# uses BENCH_FLAG_PROFILE=tflite (-O3 -DNDEBUG, SIMD on) from
-# benchmark/common/tflite_host_flags.mk — not the TFLM Micro -O2 profile.
+# uses BENCH_FLAG_PROFILE=tflite from benchmark/common/tflite_host_flags.mk
+# (LiteRT opt: -O3 -DNDEBUG, host cc/c++, no TFLM Micro extras).
 
 BENCH_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 ROOT := $(abspath $(BENCH_DIR)/../..)

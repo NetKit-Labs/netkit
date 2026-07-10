@@ -4,7 +4,7 @@ Headers live in [`include/`](../include/). Configuration: [`include/netkit_confi
 
 **New users:** [GETTING_STARTED.md](GETTING_STARTED.md) · **Philosophy:** [PHILOSOPHY.md](PHILOSOPHY.md)
 
-**Numeric type:** inference uses **float32 only** today — see [DATATYPES.md](DATATYPES.md) for the quantized-type roadmap (float16, int16, int8, int4 planned).
+**Numeric types:** **float32** and **int8** inference today (int8 I/O end-to-end; no C++ float↔int8). float16, int16, and int4 are on the roadmap — [DATATYPES.md](DATATYPES.md).
 
 ## Build configuration
 
@@ -200,6 +200,10 @@ public:
 
     void InitLayer(uint32_t layer_idx, const Tensor& weights, const Tensor& bias,
                    ActivationType activation, float leaky_alpha = 0.01f);
+
+    /** Skip final Softmax and write logits (`argmax` unchanged for classification). */
+    void SetOmitFinalSoftmax(bool omit);
+    bool OmitFinalSoftmax() const;
 
     // Hidden layers use ping-pong buffers allocated at load; final layer writes to output
     void forward(const Tensor& input, Tensor& output, Arena& arena);
@@ -444,9 +448,9 @@ LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
 }
 ```
 
-**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_mlp_load_memory` / `nk_cnn_load_memory`, or `nk_model_load_memory` for the combined handle). `IsQuantized()` → `nk_mlp_is_quantized` / `nk_cnn_is_quantized` / `nk_model_is_quantized`.
+**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_mlp_load_memory` / `nk_cnn_load_memory`, or `nk_model_load_memory` for the combined handle). `IsQuantized()` → `nk_mlp_is_quantized` / `nk_cnn_is_quantized` / `nk_model_is_quantized`. Int8 run → `nk_model_run_int8`; int8 views → `nk_tensor_view_2d_int8` / `nk_tensor_view_3d_int8`; omit Softmax → `nk_model_set_omit_final_softmax`.
 
-**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` as a convenience wrapper, plus typed `nk_mlp_load_memory` / `nk_cnn_load_memory` — see [c-api.md](c-api.md).
+**High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` (float32) / `nk_model_run_int8` (int8) as convenience wrappers, plus typed `nk_mlp_load_memory` / `nk_cnn_load_memory` — see [c-api.md](c-api.md).
 
 **Compiled firmware:** `python -m netkit aot` generates C++26 or C23 sources. Default **C++ lowered** output is a static `Kernels::` call chain (`kLowered = true`) with coefs in flash `.rodata`. **C AOT** embeds the `.nk` blob and uses `nk_model_load_memory`. See [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [API_PARITY.md](API_PARITY.md), and [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
@@ -519,4 +523,4 @@ Exclude `main.cpp`, `cli.cpp`, and `test.cpp` from your link if you provide your
 - No heap allocation in `MLPNetwork` / `CNNNetwork` layer paths
 - Conv and pool layers support independent `pad_h` / `pad_w` per axis (`.nk` v3+); depthwise conv supports non-square `kernel_h` × `kernel_w`
 
-See the [roadmap](../README.md#roadmap) for planned work (quantized types, broader ONNX import).
+See [DATATYPES.md](DATATYPES.md) for float32/int8 I/O rules and the [roadmap](../README.md#roadmap) for remaining types and broader ONNX import.
