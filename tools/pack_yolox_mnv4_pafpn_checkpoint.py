@@ -80,11 +80,15 @@ def pack_neck(neck: nn.Module) -> list[np.ndarray]:
 
 
 def pack_backbone_blocks(full_model: nn.Module) -> np.ndarray:
+    """Pack stem+UIB blocks only (no ImageNet head) for the detector .nk."""
     parts: list[np.ndarray] = []
     modules = _flatten_mobilenetv4_small_modules(full_model)
     for spec, mod in zip(MOBILENETV4_CONV_SMALL_BLOCKS, modules):
         if spec[0] == "conv_bn":
-            conv, bn = mod  # type: ignore[misc]
+            if isinstance(mod, tuple):
+                conv, bn = mod
+            else:
+                conv, bn = mod.conv, mod.bn1  # timm ConvBnAct
             parts.extend(pack_conv_bn_folded_tensors(conv, bn))
         else:
             parts.extend(pack_mobilenetv4_uib_tensors(mod))  # type: ignore[arg-type]

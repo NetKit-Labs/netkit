@@ -344,14 +344,15 @@ def assign_targets(
     """Center-assign each box to one grid cell on one stride (by box size).
 
     Returns per-scale (reg, obj, cls) targets shaped [C,H,W] / [1,H,W] / [80,H,W].
+    Allocates on CPU then moves once to avoid MPS graph-cache blowups.
     """
     targets = []
     for stride in STRIDES:
         gh = size // stride
         gw = size // stride
-        reg = torch.zeros(4, gh, gw, device=device)
-        obj = torch.zeros(1, gh, gw, device=device)
-        cls = torch.zeros(NUM_CLASSES, gh, gw, device=device)
+        reg = torch.zeros(4, gh, gw)
+        obj = torch.zeros(1, gh, gw)
+        cls = torch.zeros(NUM_CLASSES, gh, gw)
         targets.append((reg, obj, cls, gh, gw, stride))
 
     for cls_id, x1, y1, x2, y2 in boxes:
@@ -382,7 +383,7 @@ def assign_targets(
         if 0 <= cls_id < NUM_CLASSES:
             cls[cls_id, gy, gx] = 1.0
 
-    return [(reg, obj, cls) for reg, obj, cls, *_ in targets]
+    return [(reg.to(device), obj.to(device), cls.to(device)) for reg, obj, cls, *_ in targets]
 
 
 def detection_loss(
@@ -451,13 +452,21 @@ def draw_dets(rgb: np.ndarray, dets, path: Path, max_dets: int = 20) -> None:
     img = Image.fromarray(rgb)
     draw = ImageDraw.Draw(img)
     for det in dets[:max_dets]:
-        draw.rectangle([det.x1, det.y1, det.x2, det.y2], outline=(0, 255, 0), width=2)
-        draw.text((det.x1, max(0, det.y1 - 10)), f"{det.class_id}:{det.score:.2f}", fill=(0, 255, 0))
+        x1, x2 = sorted((float(det.x1), float(det.x2)))
+        y1, y2 = sorted((float(det.y1), float(det.y2)))
+        if x2 - x1 < 1 or y2 - y1 < 1:
+            continue
+        draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0), width=2)
+        draw.text((x1, max(0, y1 - 10)), f"{det.class_id}:{det.score:.2f}", fill=(0, 255, 0))
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path)
 
 
 def pick_device() -> torch.device:
+    # Prefer MPS but allow forcing CPU via NETKIT_TRAIN_DEVICE=cpu (MPS can OOM on long runs).
+    forced = __import__("os").environ.get("NETKIT_TRAIN_DEVICE", "").strip().lower()
+    if forced in ("cpu", "mps", "cuda"):
+        return torch.device(forced)
     if torch.backends.mps.is_available():
         return torch.device("mps")
     if torch.cuda.is_available():
@@ -570,9 +579,11 @@ def main() -> None:
         loss.backward()
         opt.step()
         losses.append(float(loss.item()))
+        if device.type == "mps" and step % 100 == 0:
+            torch.mps.empty_cache()
         if step % 50 == 0 or step == total_steps - 1:
             tag = "frozen" if frozen else "unfrozen"
-            print(f"step {step:5d}  loss={losses[-1]:.4f}  ({tag})")
+            print(f"step {step:5d}  loss={losses[-1]:.4f}  ({tag})", flush=True)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     meta = {
