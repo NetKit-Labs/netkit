@@ -12,7 +12,7 @@ Runs the **same MNIST CNN benchmark** as `benchmark/netkit/` and `benchmark/tflm
 |---------|--------|
 | Target | `NETKIT_TARGET_MCU_ARM` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F) |
-| CMSIS | **CMSIS-NN** + **CMSIS-DSP** (q7 copy/max utils; layer kernels are CMSIS-NN) |
+| CMSIS | **CMSIS-NN** (layer kernels); portable `NetkitUtil` helpers |
 | Weights | **Flash** — embedded `.nk` blob in `.rodata` |
 | Deployment | **Interpreter embed** — `NkLoader` + `NkOpsResolver` (same class as TFLM blob + interpreter) |
 | Dtype | int8 weights / activations; prequantized int8 test inputs; output = logits (Softmax omitted) |
@@ -122,7 +122,7 @@ make flash-mnist-cnn-int8
 
 Compiler/linker flags match TFLM kernel speed via `boards/nucleo-f446re/mcu_tflm_toolchain.mk` (CORE / KERNEL / THIRD_PARTY all `-O2`, `-flto` link with `--gc-sections`). `NETKIT_CPPFLAGS` is passed on the final link so CMSIS macros survive LTO.
 
-**CMSIS always on for this board:** the Makefile uses `override NETKIT_CMSIS_DSP := 1` and `override NETKIT_CMSIS_NN := 1` so host/CI env vars (`NETKIT_CMSIS_NN=0`, `GITHUB_ACTIONS=true`, etc.) cannot accidentally link CMSIS **stub** kernels that fail forward at runtime.
+**CMSIS-NN always on for this board:** the Makefile uses `override NETKIT_CMSIS_NN := 1` so host/CI env vars (`NETKIT_CMSIS_NN=0`, `GITHUB_ACTIONS=true`, etc.) cannot accidentally link CMSIS **stub** kernels that fail forward at runtime. CMSIS-DSP is not used.
 
 **Optional kernel trace (bring-up only):** `make NETKIT_QUANT_TRACE=1` links `quant_trace.cpp` and prints a CMSIS vs reference summary over UART after the probe forward. Default `make` uses zero-cost inline stubs — no trace overhead on the hot path.
 
@@ -135,12 +135,11 @@ rm -f generated/.embed_stamp && make NETKIT_LOWERED=1   # lowered
 
 ## Example UART output (interpreter embed)
 
-Default CMSIS-NN + CMSIS-DSP build. With `NETKIT_CMSIS_DSP=0` the backend line
-omits `+ cmsis-dsp utils`.
+Default CMSIS-NN build.
 
 ```
 netkit NUCLEO-F446RE MNIST CNN int8 benchmark
-  backend:     cmsis-nn int8 + cmsis-dsp utils (MCU CM4, .nk loader)
+  backend:     cmsis-nn int8 (MCU CM4, .nk loader)
   weights:     flash (embedded .nk blob)
   dtype:       int8 end-to-end (weights, activations, inputs; logits out)
   arena bytes: 65536

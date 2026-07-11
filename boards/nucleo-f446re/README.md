@@ -14,7 +14,7 @@ Runs the **same MNIST MLP benchmark** as `benchmark/netkit/`:
 |---------|--------|
 | Target | `NETKIT_TARGET_MCU_ARM` |
 | Arch | `NETKIT_ARCH=CM4` (Cortex-M4F + hard float) |
-| CMSIS | **CMSIS-DSP** enabled (`NETKIT_USE_CMSIS_DSP=1`); inputs staged in SRAM before timed invoke |
+| CMSIS | **CMSIS-NN** when enabled; float32 uses reference kernels; inputs staged in SRAM before timed invoke |
 | Weights | **Flash** — lowered AOT embeds coef arrays in `.rodata` (no SRAM copy) |
 | Deployment | **Lowered AOT** — static `Kernels::` FC chain (no runtime `.nk` loader) |
 
@@ -100,7 +100,7 @@ On Linux, set `PORT=/dev/ttyACM0` if auto-detect fails. On macOS, look for `/dev
 
 ```
 netkit NUCLEO-F446RE MNIST MLP benchmark
-  backend:     cmsis-dsp (MCU CM4, lowered AOT)
+  backend:     cmsis-nn (MCU CM4, lowered AOT)
   weights:     flash (embedded coef arrays)
   images:      10 per run
   runs:        100 (discard first invoke each run)
@@ -108,12 +108,12 @@ netkit NUCLEO-F446RE MNIST MLP benchmark
   sysclk:      180000000 Hz
   accuracy:    10/10 on final run
 
-netkit MNIST mlp benchmark summary (cmsis-dsp)
+netkit MNIST mlp benchmark summary (cmsis-nn)
   method:      100 runs x 10 images, discard first invoke each run
   per-run avg: avg of images 1-9 (us)
 
   mean:  10684.683 us (10.685 ms)
-BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-dsp mean_us=10684.683 runs=100
+BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-nn mean_us=10684.683 runs=100
 
 DONE
 ```

@@ -14,13 +14,13 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 
 | Target | Role | Kernels | Maturity |
 |--------|------|---------|----------|
-| **cpu** | Desktop / CI / peer benches | XNNPACK (default) + optional CMSIS-DSP helpers; reference fallback | **Done** — float32 + int8 |
-| **mcu_arm** | Arm Cortex-M firmware | CMSIS-NN + CMSIS-DSP; XNNPACK **forbidden** | **Done** — float32 + int8 (NUCLEO-F446RE) |
-| **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default) + CMSIS-DSP helpers; CMSIS-NN off | **Done** — float32 + int8 |
-| **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-DSP/NN **forbidden** | **Mostly done** — same portable XNNPACK + generic path as other MPUs |
+| **cpu** | Desktop / CI / peer benches | XNNPACK (default); reference fallback | **Done** — float32 + int8 |
+| **mcu_arm** | Arm Cortex-M firmware | CMSIS-NN (int8 production); float32 via reference; XNNPACK **forbidden** | **Done** — float32 + int8 (NUCLEO-F446RE) |
+| **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default); CMSIS-NN off | **Done** — float32 + int8 |
+| **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Mostly done** — same portable XNNPACK + generic path as other MPUs |
 | **mcu_risc** | RISC-V MCU | Generic / reference kernels only; CMSIS + XNNPACK **forbidden** | **Works today** — no RISC-specific optimized kernels yet; **generic fallbacks are fast** and suitable until ISA-tuned kernels land |
 
-**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only. CMSIS-DSP is Arm ISA (and optional host cpu), never on RISC.
+**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). CMSIS-DSP is not used. Float32 on MCU uses reference kernels only (no optimized float32 MCU plan).
 
 ## Host file mmap
 

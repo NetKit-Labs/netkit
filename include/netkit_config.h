@@ -12,18 +12,17 @@
  *   NETKIT_CLASS_MCU / NETKIT_CLASS_MPU — firmware class (arena / lean API)
  *   NETKIT_ISA_ARM / NETKIT_ISA_RISC    — instruction-set family (backend policy)
  *
- * Backend profile defaults (Makefile / CMake; override with NETKIT_CMSIS_*=0|1):
- *   cpu       — XNNPACK on (any host ISA), CMSIS-DSP/NN off
- *   mcu_arm   — CMSIS-DSP + CMSIS-NN on, XNNPACK forbidden
- *   mpu_arm   — XNNPACK on + CMSIS-DSP helpers, CMSIS-NN off
- *   mcu_risc  — generic kernels only (CMSIS-DSP/NN + XNNPACK forbidden)
- *   mpu_risc  — XNNPACK on (default); CMSIS-DSP/NN forbidden
+ * Backend profile defaults (Makefile / CMake; override with NETKIT_CMSIS_NN=0|1):
+ *   cpu       — XNNPACK on (any host ISA), CMSIS-NN off
+ *   mcu_arm   — CMSIS-NN on (int8 production), XNNPACK forbidden; float32 uses reference
+ *   mpu_arm   — XNNPACK on, CMSIS-NN off
+ *   mcu_risc  — generic kernels only (CMSIS-NN + XNNPACK forbidden)
+ *   mpu_risc  — XNNPACK on (default); CMSIS-NN forbidden
  *
  * XNNPACK policy: default ON for cpu and all MPU targets; never allowed on MCU.
  *
- * CMSIS-DSP policy: when enabled, DSP accelerates vector helpers (copy, argmax,
- * add/mul/scale, MatMul/FC/BN/LN/GRN Try*). Hot float inner products stay on the
- * inlined reference 4-accumulator path unless NETKIT_CMSIS_DSP_DOT=1.
+ * CMSIS-DSP is not used or linked. Float32 on MCU is supported via portable/reference
+ * kernels only; there is no plan for an optimized float32 MCU build.
  *
  * Arena static defaults (NK_ARENA_DEFAULT_CAPACITY / Arena::kDefaultCapacity):
  *   CLASS_MCU — 64 KiB   CPU and CLASS_MPU — 64 MiB
@@ -140,26 +139,6 @@
 
 #if NETKIT_LOOP_UNROLL != 0 && NETKIT_LOOP_UNROLL != 1
 #error "NETKIT_LOOP_UNROLL must be 0 or 1"
-#endif
-
-/* CMSIS-DSP hot float dots: off by default (helpers-only policy). */
-#ifndef NETKIT_CMSIS_DSP_DOT
-#define NETKIT_CMSIS_DSP_DOT 0
-#endif
-
-#if NETKIT_CMSIS_DSP_DOT != 0 && NETKIT_CMSIS_DSP_DOT != 1
-#error "NETKIT_CMSIS_DSP_DOT must be 0 or 1"
-#endif
-
-/* CMSIS-DSP: Arm ISA (+ optional host cpu). Forbidden on RISC targets. */
-#if defined(NETKIT_ISA_RISC)
-#define NETKIT_CMSIS_DSP_ALLOWED 0
-#else
-#define NETKIT_CMSIS_DSP_ALLOWED 1
-#endif
-
-#if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP && !NETKIT_CMSIS_DSP_ALLOWED
-#error "NETKIT_USE_CMSIS_DSP is forbidden on RISC targets (mcu_risc / mpu_risc); use generic kernels"
 #endif
 
 /* CMSIS-NN: Arm MCU (Cortex-M) only — never cpu / mpu / RISC (override not allowed). */

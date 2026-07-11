@@ -1,6 +1,6 @@
 #include "im2col_partial.hpp"
 
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "kernel_activation.hpp"
 #include "netkit_config.h"
 
@@ -112,7 +112,7 @@ bool ConvPartialIm2ColForward(const float* in,
                 const float* wt_row = weights_oki + static_cast<uint32_t>(oc) * patch_elems;
                 const float b = bias ? bias[oc] : 0.0f;
                 const float sum =
-                    b + CmsisDspUtil::DotProductF32(wt_row, patch_workspace, patch_elems);
+                    b + NetkitUtil::DotProductF32(wt_row, patch_workspace, patch_elems);
                 out[spatial_idx * out_ch + static_cast<uint32_t>(oc)] =
                     ConvOutputValue(sum, fuse_activation);
             }

@@ -9,7 +9,7 @@
 # Optimization (match TFLM kernel speed — never -Os):
 #   CORE_OPTIMIZATION_LEVEL              -O2  board glue + runtime
 #   KERNEL_OPTIMIZATION_LEVEL            -O2  hot inference C++
-#   THIRD_PARTY_KERNEL_OPTIMIZATION_LEVEL -O2 CMSIS-NN / CMSIS-DSP kernels
+#   THIRD_PARTY_KERNEL_OPTIMIZATION_LEVEL -O2 CMSIS-NN kernels
 
 include $(dir $(lastword $(MAKEFILE_LIST)))mcu_gcc_toolchain.mk
 

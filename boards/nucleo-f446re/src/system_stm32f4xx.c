@@ -56,7 +56,7 @@ static void EnablePllAndSwitchSysclk(void)
 
 void SystemInit(void)
 {
-    /* Enable CP10/CP11 (FPU) — required for -mfloat-abi=hard / CMSIS-DSP. */
+    /* Enable CP10/CP11 (FPU) — required for -mfloat-abi=hard. */
     SCB->CPACR |= (3u << (10u * 2u)) | (3u << (11u * 2u));
 
     /* Scale 1 regulator + flash wait states before raising SYSCLK to 180 MHz. */

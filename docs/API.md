@@ -147,11 +147,10 @@ Backends are **not** inferred from `NETKIT_ARCH` alone — set flags explicitly 
 | Backend | When enabled | Targets |
 |---------|----------------|---------|
 | **CMSIS-NN** | `NETKIT_CMSIS_NN=1` + `NETKIT_TARGET=mcu_arm` + Cortex-M `NETKIT_ARCH` | Arm MCU firmware (CM4, M33, …) |
-| **CMSIS-DSP** | `NETKIT_CMSIS_DSP=1` | Arm ISA (`mcu_arm` / `mpu_arm`; optional on `cpu`) — **helpers only** by default; **forbidden on RISC** |
 | **XNNPACK** | `NETKIT_XNNPACK=1` | `cpu` + any MPU LayerFast (**forbidden on MCU**) |
 | **Generic / reference** | always linked | Fallback everywhere; **sole** LayerFast path on `mcu_risc` (fast portable kernels) |
 
-On **cpu** or **mpu_arm**, `NETKIT_CMSIS_NN=1` is ignored (Make warning). CMSIS-DSP vector helpers use `cmsis_dsp_util`; hot float dots stay on the inlined reference path unless `NETKIT_CMSIS_DSP_DOT=1`. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
+On **cpu** or **mpu_arm**, `NETKIT_CMSIS_NN=1` is ignored (Make warning). CMSIS-DSP is not used. Backend selection is compile-time CRTP — see [KERNELS.md](KERNELS.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md#cmsis-backends).
 
 ## Testing
 

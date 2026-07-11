@@ -1,8 +1,7 @@
 # Parameterized netkit MNIST benchmark build (included from Makefile).
 #
 # Required variables from caller:
-#   BACKEND          — "reference", "loop-unroll", "cmsis-dsp", or "xnnpack" (summary label)
-#   CMSIS_DSP        — 0 or 1
+#   BACKEND          — "reference", "loop-unroll", or "xnnpack" (summary label)
 #   XNNPACK          — 0 or 1 (cpu/mpu LayerFast; requires ./tools/fetch_xnnpack.sh)
 #   NETKIT_LOOP_UNROLL — 0 or 1 (reference kernels only; set via tflm_host_flags.mk)
 #   BENCH_OBJDIR     — object directory for this variant
@@ -26,7 +25,6 @@ else
   include ../common/tflm_host_flags.mk
 endif
 
-CMSIS_DSP_DIR := $(ROOT)/third_party/CMSIS-DSP
 CMSIS_NN_DIR := $(ROOT)/third_party/CMSIS-NN
 XNNPACK_DIR := $(ROOT)/third_party/XNNPACK
 XNNPACK_LIB_DIR := $(XNNPACK_DIR)/netkit_lib
@@ -40,7 +38,7 @@ BENCH_RUNTIME_SOURCES := \
   src/tensor_access.cpp \
   src/reference_kernel.cpp \
   src/kernel_workspace.cpp \
-  src/cmsis_dsp_util.cpp \
+  src/netkit_util.cpp \
   src/cmsis_buffer_size.cpp \
   src/ops.cpp \
   src/conv2d.cpp \
@@ -84,42 +82,7 @@ BENCH_RUNTIME_SOURCES := \
   src/cnn_quant.cpp \
   src/xnnpack_quant_backend.cpp
 
-ifeq ($(CMSIS_DSP),1)
-  ifeq ($(wildcard $(CMSIS_DSP_DIR)/Include/arm_math.h),)
-    $(error CMSIS-DSP not found at $(CMSIS_DSP_DIR) — run ./tools/fetch_cmsis_dsp.sh)
-  endif
-  BENCH_RUNTIME_SOURCES += src/cmsis_dsp_backend.cpp
-  NETKIT_BENCH_VARIANT_CPPFLAGS := \
-    -DNETKIT_USE_CMSIS_DSP=1 \
-    -D__GNUC_PYTHON__ \
-    -DARM_MATH_LOOPUNROLL
-  CMSIS_DSP_SOURCES := \
-    $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
-    $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_mult_f32.c \
-    $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_f32.c \
-    $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_scale_f32.c \
-    $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_offset_f32.c \
-    $(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_clip_f32.c \
-    $(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_mean_f32.c \
-    $(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_var_f32.c \
-    $(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_f32.c \
-    $(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_q7.c \
-    $(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_init_f32.c \
-    $(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_vec_mult_f32.c \
-    $(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_mult_f32.c \
-    $(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_f32.c \
-    $(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_q7.c
-  CMSIS_DSP_OBJS := $(patsubst $(CMSIS_DSP_DIR)/%.c,$(BENCH_OBJDIR)/cmsis_dsp/%.o,$(CMSIS_DSP_SOURCES))
-  CMSIS_DSP_CFLAGS := -std=c11 $(TFLM_KERNEL_OPT) \
-    -I$(CMSIS_DSP_DIR)/Include \
-    -I$(CMSIS_DSP_DIR)/PrivateInclude \
-    $(NETKIT_BENCH_VARIANT_CPPFLAGS)
-  CMSIS_DSP_INCLUDES := -I$(CMSIS_DSP_DIR)/Include -I$(CMSIS_DSP_DIR)/PrivateInclude
-else
-  NETKIT_BENCH_VARIANT_CPPFLAGS :=
-  CMSIS_DSP_OBJS :=
-  CMSIS_DSP_INCLUDES :=
-endif
+NETKIT_BENCH_VARIANT_CPPFLAGS :=
 
 CMSIS_NN_OBJS :=
 CMSIS_NN_INCLUDES :=
@@ -166,7 +129,7 @@ ifeq ($(XNNPACK),1)
 endif
 
 BENCH_KERNEL_CPPFLAGS := $(NETKIT_BENCH_CPPFLAGS) $(NETKIT_BENCH_VARIANT_CPPFLAGS)
-BENCH_KERNEL_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_KERNEL_OPT) $(BENCH_KERNEL_CPPFLAGS) $(CMSIS_DSP_INCLUDES) $(CMSIS_NN_INCLUDES) -I$(ROOT)/include
+BENCH_KERNEL_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_KERNEL_OPT) $(BENCH_KERNEL_CPPFLAGS) $(CMSIS_NN_INCLUDES) -I$(ROOT)/include
 # Optional: prepend include dirs (e.g. depthwise MNIST image headers under generated/cnn_dw/).
 EXTRA_BENCH_INCLUDES ?=
 BENCH_CORE_CXXFLAGS := $(TFLM_CXXFLAGS) $(TFLM_CORE_OPT) $(BENCH_KERNEL_CPPFLAGS) $(EXTRA_BENCH_INCLUDES) $(TFLM_BENCH_INCLUDES)
@@ -261,15 +224,11 @@ $(BENCH_OBJDIR)/%.o: $(ROOT)/%.cpp
 	@mkdir -p $(dir $@)
 	$(TFLM_HOST_CXX) $(BENCH_KERNEL_CXXFLAGS) -c $< -o $@
 
-$(BENCH_OBJDIR)/cmsis_dsp/%.o: $(CMSIS_DSP_DIR)/%.c
-	@mkdir -p $(dir $@)
-	$(TFLM_HOST_CC) $(CMSIS_DSP_CFLAGS) -c $< -o $@
-
 $(BENCH_OBJDIR)/cmsis_nn/%.o: $(CMSIS_NN_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(TFLM_HOST_CC) $(CMSIS_NN_CFLAGS) -c $< -o $@
 
-$(BENCH_LIB): $(BENCH_LIB_OBJS) $(CMSIS_DSP_OBJS) $(CMSIS_NN_OBJS)
+$(BENCH_LIB): $(BENCH_LIB_OBJS) $(CMSIS_NN_OBJS)
 	$(TFLM_HOST_AR) rcs $@ $^
 
 # Link with the same opt tier as compile (LTO-free; keeps profile consistent).

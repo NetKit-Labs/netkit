@@ -19,7 +19,7 @@ make clean        # remove objects and binaries
 make rebuild      # clean + make
 
 # Optional CMSIS backend parity (after make cmsis-init)
-make NETKIT_CMSIS_DSP=1 test-cpp
+make test-cpp
 make test-embedded-smoke-matrix   # Arm + RISC MCU/MPU profiles (local only)
 
 # Optional CMake build + test
@@ -99,14 +99,14 @@ For **`mlp_hand.nk`** and **`cnn_hand.nk`**, use **`make test`** (embedded TCAS 
 
 ```bash
 make cmsis-init   # required for CMSIS profiles
-make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 embedded-smoke
 ./tests/embedded_smoke
 
 # Full matrix (Arm + RISC MCU/MPU; CMSIS Arm profiles; RISC generic / XNNPACK)
 make test-embedded-smoke-matrix
 ```
 
-Host execution exercises linking and inference paths before on-device bring-up. Smoke loads two bundled models: tiny MLP and CNN hand fixtures. Profiles include `mcu_arm`, `mpu_arm`, `mcu_risc`, `mpu_risc`, plus Arm CMSIS variants. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-DSP uses the portable `__GNUC_PYTHON__` path on the host (no CMSIS-Core headers). On hardware, link with your toolchain `-mcpu` flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
+Host execution exercises linking and inference paths before on-device bring-up. Smoke loads two bundled models: tiny MLP and CNN hand fixtures. Profiles include `mcu_arm`, `mpu_arm`, `mcu_risc`, `mpu_risc`, plus Arm CMSIS variants. The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN uses the portable `__GNUC_PYTHON__` path on the host (no CMSIS-Core headers). On hardware, link with your toolchain `-mcpu` flags and `NETKIT_ARCH=...` without `NETKIT_HOST_SMOKE`.
 
 | Doc | Contents |
 |-----|----------|
@@ -210,14 +210,14 @@ Re-run the fast workflow manually if needed:
 gh workflow run ci.yml
 ```
 
-The **`build-and-test`** job on `ubuntu-latest` uses **host Clang**. The checkout fetches the CMSIS submodules (`submodules: recursive`). Default `cpu` has CMSIS-DSP **off**; CI explicitly rebuilds with helpers on. CMSIS-NN stays off — it is Cortex-M (`mcu_arm`) only and cannot link on the host `cpu` target:
+The **`build-and-test`** job on `ubuntu-latest` uses **host Clang**. The checkout fetches the CMSIS submodules (`submodules: recursive`). Default `cpu` has CMSIS-NN **off**. CMSIS-NN is Cortex-M (`mcu_arm`) only and cannot link on the host `cpu` target:
 
 1. `make` — initial build (cpu profile: XNNPACK preferred, DSP off; CI forces XNNPACK off)
-2. `make NETKIT_CMSIS_DSP=1 rebuild test` — C++ embedded + C API + fast Python suite with portable CMSIS-DSP helpers
+2. `make rebuild test` — C++ embedded + C API + fast Python suite
 3. Example and CLI smoke tests
-4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release, `-DNETKIT_CMSIS_DSP=OFF -DNETKIT_XNNPACK=OFF`) — cross-checks the **reference-kernel** path in the same run
+4. CMake configure + build smoke test (`./cmake-build/netkit test`, Release, `-DNETKIT_CMSIS_NN=OFF -DNETKIT_XNNPACK=OFF`) — cross-checks the **reference-kernel** path in the same run
 
-The **`Test full`** workflow uses the same setup (`submodules: recursive`, `make NETKIT_CMSIS_DSP=1 rebuild test-full`). CMSIS-NN and on-device paths are still validated **locally only** (`make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 ...`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
+The **`Test full`** workflow uses the same setup (`submodules: recursive`, `make rebuild test-full`). CMSIS-NN and on-device paths are still validated **locally only** (`make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 ...`, `make test-embedded-smoke-matrix`, NUCLEO CNN int8 flash + UART capture) — not in CI.
 
 **CI build notes**
 

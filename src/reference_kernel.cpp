@@ -1,5 +1,5 @@
 #include "reference_kernel.hpp"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "conv_dispatch.hpp"
 #include "conv_depthwise_kernel.hpp"
 #include "kernel_activation.hpp"
@@ -69,7 +69,7 @@ namespace
                 // DotProductF32 is header-inline: the reference build inlines the 4-accumulator
                 // dot_contiguous here (no cross-TU call, no LTO needed); CMSIS uses arm_dot_prod_f32.
                 const float sum =
-                    CmsisDspUtil::DotProductF32(in_row, wt + oc * in_features, in_features);
+                    NetkitUtil::DotProductF32(in_row, wt + oc * in_features, in_features);
                 const float value = ApplyKernelActivation(sum + bias[oc], fuse_activation);
                 out_row[oc] = value;
             }
@@ -126,7 +126,7 @@ namespace
 
 void ReferenceKernel::MulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    CmsisDspUtil::MulF32(static_cast<const float*>(a.data),
+    NetkitUtil::MulF32(static_cast<const float*>(a.data),
                          static_cast<const float*>(b.data),
                          static_cast<float*>(c.data),
                          a.num_elements);
@@ -134,7 +134,7 @@ void ReferenceKernel::MulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
 void ReferenceKernel::MulScalarImpl(const Tensor& a, float scalar, Tensor& c)
 {
-    CmsisDspUtil::MulScalarF32(static_cast<const float*>(a.data),
+    NetkitUtil::MulScalarF32(static_cast<const float*>(a.data),
                                scalar,
                                static_cast<float*>(c.data),
                                a.num_elements);
@@ -152,7 +152,7 @@ void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
     if (a.stride[0] == cols && a.stride[1] == 1 && b.stride[0] == cols && b.stride[1] == 1 &&
         c.stride[0] == cols && c.stride[1] == 1)
     {
-        CmsisDspUtil::AddF32(a_data, b_data, c_data, rows * cols);
+        NetkitUtil::AddF32(a_data, b_data, c_data, rows * cols);
         return;
     }
 
@@ -170,7 +170,7 @@ void ReferenceKernel::MatAddImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
 void ReferenceKernel::MatAddNDImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    CmsisDspUtil::AddF32(static_cast<const float*>(a.data),
+    NetkitUtil::AddF32(static_cast<const float*>(a.data),
                          static_cast<const float*>(b.data),
                          static_cast<float*>(c.data),
                          a.num_elements);
@@ -200,7 +200,7 @@ void ReferenceKernel::MatMulImpl(const Tensor& a, const Tensor& b, Tensor& c)
 
 void ReferenceKernel::MulNDImpl(const Tensor& a, const Tensor& b, Tensor& c)
 {
-    CmsisDspUtil::MulF32(static_cast<const float*>(a.data),
+    NetkitUtil::MulF32(static_cast<const float*>(a.data),
                          static_cast<const float*>(b.data),
                          static_cast<float*>(c.data),
                          a.num_elements);
@@ -345,7 +345,7 @@ void ReferenceKernel::SoftmaxImpl(const Tensor& a, Tensor& c)
         sum += e;
     });
 
-    CmsisDspUtil::ScaleF32(c_data, 1.0f / sum, n);
+    NetkitUtil::ScaleF32(c_data, 1.0f / sum, n);
 }
 
 namespace

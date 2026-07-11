@@ -10,11 +10,11 @@ Headers live in [`include/`](../include/). Configuration: [`include/netkit_confi
 
 | Makefile | Macro | Outputs | Default backends |
 |----------|-------|---------|------------------|
-| `NETKIT_TARGET=cpu` | `NETKIT_TARGET_CPU`, `NETKIT_DESKTOP` | `netkit` CLI + full `libnetkit.a` | XNNPACK on (any host ISA); CMSIS-DSP/NN off |
-| `NETKIT_TARGET=mcu_arm` | `NETKIT_TARGET_MCU_ARM` | Lean `libnetkit.a` only | CMSIS-DSP + CMSIS-NN; XNNPACK forbidden |
-| `NETKIT_TARGET=mpu_arm` | `NETKIT_TARGET_MPU_ARM` | Lean `libnetkit.a` only | XNNPACK + CMSIS-DSP helpers |
+| `NETKIT_TARGET=cpu` | `NETKIT_TARGET_CPU`, `NETKIT_DESKTOP` | `netkit` CLI + full `libnetkit.a` | XNNPACK on (any host ISA); CMSIS-NN off |
+| `NETKIT_TARGET=mcu_arm` | `NETKIT_TARGET_MCU_ARM` | Lean `libnetkit.a` only | CMSIS-NN (int8); float32 reference; XNNPACK forbidden |
+| `NETKIT_TARGET=mpu_arm` | `NETKIT_TARGET_MPU_ARM` | Lean `libnetkit.a` only | XNNPACK |
 | `NETKIT_TARGET=mcu_risc` | `NETKIT_TARGET_MCU_RISC` | Lean `libnetkit.a` only | generic only (CMSIS + XNNPACK forbidden) |
-| `NETKIT_TARGET=mpu_risc` | `NETKIT_TARGET_MPU_RISC` | Lean `libnetkit.a` only | XNNPACK on; CMSIS-DSP/NN forbidden |
+| `NETKIT_TARGET=mpu_risc` | `NETKIT_TARGET_MPU_RISC` | Lean `libnetkit.a` only | XNNPACK on; CMSIS-NN forbidden |
 
 Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU`, `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC`.
 
@@ -23,7 +23,6 @@ Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NET
 | CPU default | `NETKIT_ARENA_HEAP` | Heap API; CLI uses model-sized allocation |
 | `NETKIT_GLOBAL_ARENA=1` | `NETKIT_GLOBAL_ARENA` | Static buffer on CPU |
 | `NETKIT_HEAP_ARENA=1` (MCU/MPU class) | `NETKIT_ARENA_HEAP` | Optional heap on embedded |
-| `NETKIT_CMSIS_DSP=1` | `NETKIT_USE_CMSIS_DSP` | Vector helpers (Arm); hot dots stay reference unless `NETKIT_CMSIS_DSP_DOT=1` |
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
 | `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` + any MPU LayerFast; forbidden on MCU |
 

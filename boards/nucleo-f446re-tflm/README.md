@@ -43,5 +43,5 @@ BENCHMARK_SUMMARY runtime=tflm model=mlp backend=reference mean_us=... runs=100
 vs netkit:
 
 ```text
-BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-dsp mean_us=... runs=100
+BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-nn mean_us=... runs=100
 ```

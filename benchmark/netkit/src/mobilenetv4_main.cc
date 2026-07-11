@@ -10,7 +10,7 @@
 #include "arena.hpp"
 #include "arena_util.hpp"
 #include "cnn.hpp"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "mnist_cnn_test_images.h"
 #include "mobilenetv4_netkit_int8_test_images.h"
 #include "nk_loader.hpp"

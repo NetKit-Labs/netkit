@@ -34,10 +34,6 @@ trap 'rm -f "$TMP"' EXIT
   echo "---"
   run_netkit run-cnn
   echo "---"
-  run_netkit run-mlp-cmsis
-  echo "---"
-  run_netkit run-cnn-cmsis
-  echo "---"
   run_tflm run-mlp
   echo "---"
   run_tflm run-cnn
@@ -76,17 +72,15 @@ load_result() {
 }
 
 load_result nk_ref_mlp netkit mlp reference || true
-load_result nk_dsp_mlp netkit mlp cmsis-dsp || true
 load_result tf_ref_mlp tflm mlp reference || true
 
 load_result nk_ref_cnn netkit cnn reference || true
-load_result nk_dsp_cnn netkit cnn cmsis-dsp || true
 load_result tf_ref_cnn tflm cnn reference || true
 
 print_table() {
   python3 - \
-    "$nk_ref_mlp_mean" "$nk_dsp_mlp_mean" "$tf_ref_mlp_mean" \
-    "$nk_ref_cnn_mean" "$nk_dsp_cnn_mean" "$tf_ref_cnn_mean" <<'PY'
+    "$nk_ref_mlp_mean" "$tf_ref_mlp_mean" \
+    "$nk_ref_cnn_mean" "$tf_ref_cnn_mean" <<'PY'
 import sys
 
 def fval(s):
@@ -111,13 +105,12 @@ def fmt_delta(nk, tf):
 
 args = sys.argv[1:]
 (
-    nk_ref_mlp, nk_dsp_mlp, tf_mlp,
-    nk_ref_cnn, nk_dsp_cnn, tf_cnn,
+    nk_ref_mlp, tf_mlp,
+    nk_ref_cnn, tf_cnn,
 ) = [fval(a) for a in args]
 
 nk_variants = [
-    ("NETKIT (with CMSIS-DSP)", nk_dsp_mlp, nk_dsp_cnn),
-    ("NETKIT (without CMSIS-DSP)", nk_ref_mlp, nk_ref_cnn),
+    ("NETKIT (reference)", nk_ref_mlp, nk_ref_cnn),
 ]
 
 def print_model_table(title, tf_baseline, nk_idx):

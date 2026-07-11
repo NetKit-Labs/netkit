@@ -1,8 +1,8 @@
 // NUCLEO-F446RE MNIST MLP invoke benchmark — same 10 images as benchmark/netkit.
-// Lowered AOT (static Kernels:: FC chain), CMSIS-DSP, flash-backed weights by default.
+// Lowered AOT (static Kernels:: FC chain), CMSIS-NN + reference float, flash-backed weights.
 
 #include "dwt_time.h"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "mnist_mlp_aot.hpp"
 #include "mnist_test_images.h"
 #include "netkit_config.h"
@@ -12,16 +12,9 @@
 #include <array>
 #include <cstring>
 
-// Backend label reflects the CMSIS kernels actually compiled in. For this FC MLP
-// the composed dispatch runs fully-connected/activation/softmax on CMSIS-NN
-// (LayerFast) and element-wise vector ops on CMSIS-DSP (VectorFast).
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN &&                     \
-    defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
-#define NK_BACKEND_LABEL "cmsis-dsp+cmsis-nn"
-#elif defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
+// Backend label reflects the CMSIS-NN kernels actually compiled in.
+#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN
 #define NK_BACKEND_LABEL "cmsis-nn"
-#elif defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
-#define NK_BACKEND_LABEL "cmsis-dsp"
 #else
 #define NK_BACKEND_LABEL "reference"
 #endif
@@ -40,12 +33,12 @@ alignas(std::max_align_t) static float g_input_staging[kInputSize];
 
 int ArgMax10(const float* values)
 {
-    return static_cast<int>(CmsisDspUtil::ArgMaxF32(values, 10));
+    return static_cast<int>(NetkitUtil::ArgMaxF32(values, 10));
 }
 
 void CopyInputF32(float* dst, const float* src)
 {
-    CmsisDspUtil::CopyF32(src, dst, static_cast<uint32_t>(kInputSize));
+    NetkitUtil::CopyF32(src, dst, static_cast<uint32_t>(kInputSize));
 }
 
 }  // namespace

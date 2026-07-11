@@ -240,20 +240,14 @@ def render_profile_table(
 def build_latency_rows(summaries: dict[tuple[str, str, str], float]) -> list[tuple[str, str, float, float]]:
     tf_mlp = summaries.get(("tflm", "mlp", "reference"))
     tf_cnn = summaries.get(("tflm", "cnn", "reference"))
-    nk_dsp_mlp = summaries.get(("netkit", "mlp", "cmsis-dsp"))
     nk_ref_mlp = summaries.get(("netkit", "mlp", "reference"))
-    nk_dsp_cnn = summaries.get(("netkit", "cnn", "cmsis-dsp"))
     nk_ref_cnn = summaries.get(("netkit", "cnn", "reference"))
 
     rows: list[tuple[str, str, float, float]] = []
-    if nk_dsp_mlp is not None and tf_mlp is not None:
-        rows.append(("MLP", "NETKIT (with CMSIS-DSP)", nk_dsp_mlp, tf_mlp))
     if nk_ref_mlp is not None and tf_mlp is not None:
-        rows.append(("MLP", "NETKIT (without CMSIS-DSP)", nk_ref_mlp, tf_mlp))
-    if nk_dsp_cnn is not None and tf_cnn is not None:
-        rows.append(("CNN", "NETKIT (with CMSIS-DSP)", nk_dsp_cnn, tf_cnn))
+        rows.append(("MLP", "NETKIT (reference)", nk_ref_mlp, tf_mlp))
     if nk_ref_cnn is not None and tf_cnn is not None:
-        rows.append(("CNN", "NETKIT (without CMSIS-DSP)", nk_ref_cnn, tf_cnn))
+        rows.append(("CNN", "NETKIT (reference)", nk_ref_cnn, tf_cnn))
     return rows
 
 

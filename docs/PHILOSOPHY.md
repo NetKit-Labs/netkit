@@ -37,7 +37,7 @@ For production firmware with a **fixed model**, compile as much work as possible
 | Graph optimize | `convert` (default) or `aot --optimize` | BN fold, conv+BN fusion, dense merge, composite block fuse — **fewer layer dispatches** at runtime; each pass verified numerically |
 | AOT embed | `python -m netkit aot` | Bake `.nk` into flash `.rodata`; emit arena sizing constants and thin load/run wrappers |
 | Lean link | `NkOpList` + trimmed `libnetkit.a` | Only op TUs and kernels your model uses |
-| Kernel backends | `NETKIT_CMSIS_NN` / `NETKIT_CMSIS_DSP` | Hardware-accelerated matmul, conv, pool, FC where available |
+| Kernel backends | `NETKIT_CMSIS_NN` / `NETKIT_XNNPACK` | Hardware-accelerated matmul, conv, pool, FC where available |
 
 **Best for:** shipping firmware — minimum RAM, predictable latency, no filesystem, coefs in flash.
 
@@ -71,7 +71,7 @@ The C++ engine described above is an **interpreter-style forward executor** (see
 
 1. Load a `.nk` file (architecture descriptor + float32 or int8 weights).
 2. Walk the layer list at runtime (Dense, Conv2D, MaxPool2D, AvgPool2D, BatchNorm2d, Flatten, activations).
-3. Execute kernel ops via the compile-time `Kernels` facade (`MatMul`, `Conv2D`, pool, activations) — reference implementations with optional CMSIS-NN / CMSIS-DSP backends ([KERNELS.md](KERNELS.md)).
+3. Execute kernel ops via the compile-time `Kernels` facade (`MatMul`, `Conv2D`, pool, activations) — reference implementations with optional CMSIS-NN / XNNPACK backends ([KERNELS.md](KERNELS.md)).
 4. Allocate weights and **ping-pong activation buffers** from a bump arena.
 
 **Goals:** correctness, predictable memory, small firmware surface, dual C/C++ API, desktop CLI for debug and regression.

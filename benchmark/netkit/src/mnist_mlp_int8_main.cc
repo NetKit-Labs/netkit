@@ -6,7 +6,7 @@
 #include "arena.hpp"
 #include "arena_util.hpp"
 #include "benchmark_stats.hpp"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "mlp.hpp"
 #include "mnist_mlp_int8_test_images.h"
 #include "nk_loader.hpp"

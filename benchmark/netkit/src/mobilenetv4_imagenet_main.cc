@@ -141,7 +141,7 @@ int RunBenchmark(const char* model_path)
     std::printf("  method:      %d images x %d loops = %d invokes (all timed)\n", num_images,
                 kLoops, num_images * kLoops);
 #if defined(NETKIT_USE_XNNPACK) && NETKIT_USE_XNNPACK
-    std::printf("  note:        XNNPACK LayerFast + CMSIS-DSP VectorFast; flags=tflite (-O3)\n");
+    std::printf("  note:        XNNPACK LayerFast (or reference); flags=tflite (-O3)\n");
 #else
     std::printf("  note:        flags=tflite (-O3, SIMD on) to match TF Lite / LiteRT MPU\n");
 #endif

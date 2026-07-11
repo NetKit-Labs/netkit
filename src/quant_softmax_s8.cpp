@@ -1,7 +1,7 @@
 #include "quant_output.hpp"
 
 #include "cmsis_nn_quant.hpp"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "quant_trace.hpp"
 
 #include <algorithm>

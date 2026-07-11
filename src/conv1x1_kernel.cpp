@@ -1,6 +1,6 @@
 #include "conv1x1_kernel.hpp"
 
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "kernel_activation.hpp"
 
 #include <cstddef>
@@ -39,7 +39,7 @@ bool Conv1x1Forward(const float* in,
             {
                 const float* wt_row = weights_oki + static_cast<uint32_t>(oc) * in_ch;
                 const float b = bias ? bias[oc] : 0.0f;
-                const float sum = b + CmsisDspUtil::DotProductF32(in + in_base, wt_row, in_ch);
+                const float sum = b + NetkitUtil::DotProductF32(in + in_base, wt_row, in_ch);
                 out[out_spatial_base + static_cast<uint32_t>(oc)] =
                     ConvOutputValue(sum, fuse_activation);
             }

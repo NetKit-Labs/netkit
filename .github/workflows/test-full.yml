@@ -35,4 +35,4 @@ jobs:
       - name: Run full regression
         env:
           GITHUB_ACTIONS: true
-        run: make NETKIT_CMSIS_DSP=1 rebuild test-full
+        run: make rebuild test-full

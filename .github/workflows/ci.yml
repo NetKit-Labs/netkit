@@ -41,12 +41,12 @@ jobs:
       - name: Run C++, C API, and Python tests
         env:
           GITHUB_ACTIONS: true
-        run: make NETKIT_CMSIS_DSP=1 rebuild test
+        run: make rebuild test
 
       - name: CMake configure and build
         run: |
           cmake -B cmake-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-            -DNETKIT_CMSIS_DSP=OFF -DNETKIT_CMSIS_NN=OFF -DNETKIT_XNNPACK=OFF
+            -DNETKIT_CMSIS_NN=OFF -DNETKIT_XNNPACK=OFF
           cmake --build cmake-build
           ./cmake-build/netkit test
 

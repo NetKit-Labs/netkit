@@ -81,7 +81,7 @@ Select target with **`NETKIT_TARGET`**:
 | Target | Command | What you get |
 |--------|---------|--------------|
 | **CPU** (default) | `make` | CLI + full library + tests (XNNPACK on) |
-| **MCU Arm** | `make NETKIT_TARGET=mcu_arm lib` | Lean runtime; CMSIS-DSP + CMSIS-NN |
+| **MCU Arm** | `make NETKIT_TARGET=mcu_arm lib` | Lean runtime; CMSIS-NN (int8); float32 via reference |
 | **MPU Arm** | `make NETKIT_TARGET=mpu_arm lib` | Lean runtime; XNNPACK on |
 | **MCU RISC** | `make NETKIT_TARGET=mcu_risc lib` | Lean runtime; generic kernels only |
 | **MPU RISC** | `make NETKIT_TARGET=mpu_risc lib` | Lean runtime; XNNPACK on |
@@ -118,10 +118,10 @@ make
 
 # Cortex-M4 firmware library with CMSIS backends
 make cmsis-init
-make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+make NETKIT_ARCH=CM4 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 lib
 
 # Cortex-M33 (adds __DSP_PRESENT=1)
-make NETKIT_ARCH=M33 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 lib
+make NETKIT_ARCH=M33 NETKIT_TARGET=mcu_arm NETKIT_CMSIS_NN=1 lib
 ```
 
 | Core | `NETKIT_ARCH` | Extra CMSIS flags |
@@ -135,24 +135,23 @@ See the full core table in [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architectu
 
 ### Optional CMSIS backends
 
-`make cmsis-init` fetches **CMSIS-Core** (device headers for MCU cross-builds), **CMSIS-NN**, and **CMSIS-DSP** as git submodules. Backends are **opt-in** at compile time (`NETKIT_CMSIS_*=1`) — not inferred from `NETKIT_ARCH` alone.
+`make cmsis-init` fetches **CMSIS-Core** (device headers for MCU cross-builds) and **CMSIS-NN** as git submodules. CMSIS-DSP is not used. CMSIS-NN is **opt-in** at compile time (`NETKIT_CMSIS_NN=1`) — not inferred from `NETKIT_ARCH` alone.
 
 **Profile defaults** (after `cmsis-init` / `xnnpack-init` as needed):
 
-| `NETKIT_TARGET` | CMSIS-DSP | CMSIS-NN | XNNPACK |
-|-----------------|-----------|----------|---------|
-| `cpu` | off | off | on |
-| `mcu_arm` | on | on (needs Cortex-M `NETKIT_ARCH`) | forbidden |
-| `mpu_arm` | on (helpers) | off | on |
-| `mcu_risc` | forbidden | forbidden | forbidden |
-| `mpu_risc` | forbidden | forbidden | on |
+| `NETKIT_TARGET` | CMSIS-NN | XNNPACK |
+|-----------------|----------|---------|
+| `cpu` | off | on |
+| `mcu_arm` | on (needs Cortex-M `NETKIT_ARCH`) | forbidden |
+| `mpu_arm` | off | on |
+| `mcu_risc` | forbidden | forbidden |
+| `mpu_risc` | forbidden | on |
 
 ```bash
 make cmsis-init
-make test-cpp                                    # cpu: XNNPACK on, CMSIS-DSP off by default
-make NETKIT_CMSIS_DSP=1 test-cpp                 # optional portable DSP helpers on host
-make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib       # Arm MCU firmware: DSP + NN
-make NETKIT_CMSIS_DSP=0 NETKIT_CMSIS_NN=0 test   # reference kernels only (CI)
+make test-cpp                                    # cpu: XNNPACK on, CMSIS-NN off by default
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib       # Arm MCU firmware: CMSIS-NN
+make NETKIT_CMSIS_NN=0 NETKIT_XNNPACK=0 test     # reference kernels only (CI)
 ```
 
 ### Embedded smoke (MCU/MPU bring-up)
@@ -167,11 +166,11 @@ make test-embedded-smoke-matrix   # mcu_arm/mpu_arm/mcu_risc/mpu_risc + CMSIS Ar
 Single profile:
 
 ```bash
-make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 NETKIT_CMSIS_DSP=1 embedded-smoke
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_CMSIS_NN=1 embedded-smoke
 ./tests/embedded_smoke
 ```
 
-The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-DSP uses the portable host path without CMSIS-Core headers. On hardware, omit `NETKIT_HOST_SMOKE` and use your toolchain `-mcpu` flags. Details: [TESTING.md](TESTING.md#embedded-smoke-mcupu).
+The matrix sets `NETKIT_HOST_SMOKE=1` so CMSIS-NN uses the portable host path without CMSIS-Core headers. On hardware, omit `NETKIT_HOST_SMOKE` and use your toolchain `-mcpu` flags. Details: [TESTING.md](TESTING.md#embedded-smoke-mcupu).
 
 ### CMake alternative
 
@@ -181,7 +180,7 @@ cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu_arm` for Arm MCU firmware (CMake defaults: CMSIS-DSP + CMSIS-NN on for `mcu_arm`; XNNPACK on for `cpu` / `mpu_arm` / `mpu_risc`; generic only for `mcu_risc`). Override with `-DNETKIT_CMSIS_DSP=OFF` / `-DNETKIT_CMSIS_NN=OFF` / `-DNETKIT_XNNPACK=OFF`.
+Use `-DNETKIT_ARCH=CM4`, `-DNETKIT_TARGET=mcu_arm` for Arm MCU firmware (CMake defaults: CMSIS-NN on for `mcu_arm`; XNNPACK on for `cpu` / `mpu_arm` / `mpu_risc`; generic only for `mcu_risc`). Override with `-DNETKIT_CMSIS_NN=OFF` / `-DNETKIT_XNNPACK=OFF`. CMSIS-DSP is not used; float32 on MCU is reference-only.
 
 ### Size a buffer for your model
 
@@ -238,7 +237,7 @@ python -m netkit aot models/test_mlp.nk -o build/aot --main
 python -m netkit aot models/cnn_extended_ops.nk -o build/aot --optimize
 ```
 
-**Lowered C++ AOT** (default for `--language cpp`) emits a static `Kernels::` call chain — no runtime `.nk` loader. **C AOT** always embeds the `.nk` blob and calls `nk_model_load_memory`. See [boards/nucleo-f446re/README.md](../boards/nucleo-f446re/README.md) for an MCU firmware example (MNIST MLP, flash weights, CMSIS-DSP).
+**Lowered C++ AOT** (default for `--language cpp`) emits a static `Kernels::` call chain — no runtime `.nk` loader. **C AOT** always embeds the `.nk` blob and calls `nk_model_load_memory`. See [boards/nucleo-f446re/README.md](../boards/nucleo-f446re/README.md) for an MCU firmware example (MNIST MLP float32, flash weights, CMSIS-NN / reference).
 
 Generated headers expose measured arena usage for static buffer allocation:
 

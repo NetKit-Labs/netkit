@@ -1,4 +1,5 @@
-# Minimal CMSIS-NN / CMSIS-DSP integration for netkit (mirrors third_party/cmsis_*.mk).
+# Minimal CMSIS-NN integration for netkit (mirrors third_party/cmsis_nn.mk).
+# CMSIS-DSP is not used as a netkit backend.
 
 function(netkit_apply_cmsis_target_flags cmsis_target)
     if(HOST)
@@ -7,10 +8,6 @@ function(netkit_apply_cmsis_target_flags cmsis_target)
 
     if(NETKIT_ENV_ARM_MATH_NEON)
         target_compile_definitions(${cmsis_target} PRIVATE ARM_MATH_NEON)
-        if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/CMSIS-DSP/ComputeLibrary/Include")
-            target_include_directories(${cmsis_target} PRIVATE
-                "${CMAKE_SOURCE_DIR}/third_party/CMSIS-DSP/ComputeLibrary/Include")
-        endif()
     endif()
 
     if(NETKIT_ENV_ARM_MATH_LOOPUNROLL)
@@ -25,7 +22,7 @@ function(netkit_apply_cmsis_target_flags cmsis_target)
         target_include_directories(${cmsis_target} PRIVATE "${CMSISCORE}")
     endif()
 
-    # Helium (MVE) builds may need relaxed vector conversions (matches CMSIS-DSP CMake).
+    # Helium (MVE) builds may need relaxed vector conversions (matches CMSIS-NN CMake).
     if(NETKIT_ENV_ARM_MATH_MVE)
         target_compile_options(${cmsis_target} PRIVATE
             $<$<C_COMPILER_ID:GNU>:-flax-vector-conversions>
@@ -105,55 +102,6 @@ function(netkit_add_cmsis_nn target)
     target_compile_definitions(${target} PUBLIC NETKIT_USE_CMSIS_NN=1 ARM_NN_ENABLE_F32=1)
     target_include_directories(${target} PUBLIC "${CMSIS_NN_DIR}/Include")
     target_link_libraries(${target} PUBLIC netkit_cmsis_nn)
-endfunction()
-
-function(netkit_add_cmsis_dsp target)
-    set(CMSIS_DSP_DIR "${CMAKE_SOURCE_DIR}/third_party/CMSIS-DSP")
-    if(NOT EXISTS "${CMSIS_DSP_DIR}/Include/arm_math.h")
-        message(FATAL_ERROR "NETKIT_CMSIS_DSP=ON requires CMSIS-DSP at ${CMSIS_DSP_DIR} — run ./tools/fetch_cmsis_dsp.sh")
-    endif()
-
-    set(CMSIS_DSP_SOURCES
-        Source/BasicMathFunctions/arm_add_f32.c
-        Source/BasicMathFunctions/arm_mult_f32.c
-        Source/BasicMathFunctions/arm_dot_prod_f32.c
-        Source/BasicMathFunctions/arm_scale_f32.c
-        Source/BasicMathFunctions/arm_offset_f32.c
-        Source/BasicMathFunctions/arm_clip_f32.c
-        Source/StatisticsFunctions/arm_mean_f32.c
-        Source/StatisticsFunctions/arm_var_f32.c
-        Source/MatrixFunctions/arm_mat_init_f32.c
-        Source/MatrixFunctions/arm_mat_vec_mult_f32.c
-        Source/MatrixFunctions/arm_mat_mult_f32.c
-        Source/SupportFunctions/arm_copy_q7.c
-        Source/SupportFunctions/arm_copy_f32.c
-        Source/StatisticsFunctions/arm_max_q7.c
-        Source/StatisticsFunctions/arm_max_f32.c
-    )
-
-    foreach(src ${CMSIS_DSP_SOURCES})
-        list(APPEND cmsis_dsp_objects "${CMSIS_DSP_DIR}/${src}")
-    endforeach()
-
-    add_library(netkit_cmsis_dsp OBJECT ${cmsis_dsp_objects})
-    target_include_directories(netkit_cmsis_dsp PUBLIC
-        "${CMSIS_DSP_DIR}/Include"
-        "${CMSIS_DSP_DIR}/PrivateInclude"
-    )
-    target_compile_options(netkit_cmsis_dsp PRIVATE -std=c11 -O2)
-    netkit_apply_cmsis_target_flags(netkit_cmsis_dsp)
-
-    if(NEON AND NOT NETKIT_ENV_ARM_MATH_NEON)
-        message(STATUS "NEON enabled; CMSIS-DSP minimal subset stays scalar (expand sources for NEON matmul)")
-    endif()
-
-    target_sources(${target} PRIVATE src/cmsis_dsp_backend.cpp)
-    target_compile_definitions(${target} PUBLIC NETKIT_USE_CMSIS_DSP=1)
-    target_include_directories(${target} PUBLIC
-        "${CMSIS_DSP_DIR}/Include"
-        "${CMSIS_DSP_DIR}/PrivateInclude"
-    )
-    target_link_libraries(${target} PUBLIC netkit_cmsis_dsp)
 endfunction()
 
 function(netkit_add_cmsis_softmax_s8 target)

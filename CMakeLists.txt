@@ -9,39 +9,32 @@ set(NETKIT_TARGET "${_netkit_target_default}" CACHE STRING
     "Build profile: cpu, mcu_arm, mpu_arm, mcu_risc, or mpu_risc")
 set_property(CACHE NETKIT_TARGET PROPERTY STRINGS cpu mcu_arm mpu_arm mcu_risc mpu_risc)
 
-# CMSIS / XNNPACK defaults follow NETKIT_TARGET profile; override on the cmake command line.
+# CMSIS-NN / XNNPACK defaults follow NETKIT_TARGET profile; override on the cmake command line.
+# CMSIS-DSP is not used as a netkit backend.
 if(NETKIT_TARGET STREQUAL "cpu")
-    set(_netkit_cmsis_dsp_default OFF)
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_xnnpack_default ON)
 elseif(NETKIT_TARGET STREQUAL "mcu_arm")
-    set(_netkit_cmsis_dsp_default ON)
     set(_netkit_cmsis_nn_default ON)
     set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mpu_arm")
-    set(_netkit_cmsis_dsp_default ON)
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_xnnpack_default ON)
 elseif(NETKIT_TARGET STREQUAL "mcu_risc")
-    set(_netkit_cmsis_dsp_default OFF)
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mpu_risc")
-    set(_netkit_cmsis_dsp_default OFF)
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_xnnpack_default ON)
 elseif(NETKIT_TARGET STREQUAL "mcu" OR NETKIT_TARGET STREQUAL "mpu")
     message(FATAL_ERROR "NETKIT_TARGET=${NETKIT_TARGET} is removed — use mcu_arm or mpu_arm")
 else()
-    set(_netkit_cmsis_dsp_default OFF)
     set(_netkit_cmsis_nn_default OFF)
     set(_netkit_xnnpack_default OFF)
 endif()
 
-option(NETKIT_CMSIS_DSP "Use ARM CMSIS-DSP float32 vector helpers" ${_netkit_cmsis_dsp_default})
-option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN float32 backends (mcu_arm + Cortex-M)" ${_netkit_cmsis_nn_default})
+option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN backends (mcu_arm + Cortex-M)" ${_netkit_cmsis_nn_default})
 option(NETKIT_XNNPACK "Use Google XNNPACK LayerFast backends (cpu + any MPU; forbidden on MCU)" ${_netkit_xnnpack_default})
-option(NETKIT_CMSIS_DSP_DOT "Route hot float dots through arm_dot_prod_f32 (off = helpers-only)" OFF)
 
 # Match Makefile: CI forces XNNPACK off so embedded TCAS stays on reference kernels.
 if(DEFINED ENV{GITHUB_ACTIONS} AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true" AND NETKIT_XNNPACK)
@@ -120,7 +113,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/mlp.cpp
     src/quant_ops.cpp
     src/quant_softmax_s8.cpp
-    src/cmsis_dsp_util.cpp
+    src/netkit_util.cpp
     src/quant_trace.cpp
     src/cmsis_nn_quant_backend.cpp
     src/cmsis_quant_plan.cpp
@@ -207,11 +200,6 @@ elseif(NETKIT_ARENA_KB AND NOT NETKIT_ARENA_KB STREQUAL "0")
     target_compile_definitions(netkit PUBLIC NK_ARENA_DEFAULT_CAPACITY=${_netkit_arena_bytes})
 endif()
 
-if(NETKIT_CMSIS_DSP_DOT)
-    target_compile_definitions(netkit PUBLIC NETKIT_CMSIS_DSP_DOT=1)
-else()
-    target_compile_definitions(netkit PUBLIC NETKIT_CMSIS_DSP_DOT=0)
-endif()
 
 if(NETKIT_MMAP)
     target_compile_definitions(netkit PUBLIC NETKIT_USE_MMAP=1)
@@ -223,11 +211,6 @@ if(NETKIT_LOOP_UNROLL)
     target_compile_definitions(netkit PUBLIC NETKIT_LOOP_UNROLL=1)
 else()
     target_compile_definitions(netkit PUBLIC NETKIT_LOOP_UNROLL=0)
-endif()
-
-if(NETKIT_CMSIS_DSP AND (NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mpu_risc"))
-    message(WARNING "NETKIT_CMSIS_DSP=ON forced off on ${NETKIT_TARGET} — CMSIS-DSP is forbidden on RISC")
-    set(NETKIT_CMSIS_DSP OFF)
 endif()
 
 if(NETKIT_CMSIS_NN AND (NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mpu_risc"))
@@ -243,10 +226,6 @@ include(cmake/netkit_xnnpack.cmake)
 
 netkit_add_cmsis_softmax_s8(netkit)
 
-if(NETKIT_CMSIS_DSP)
-    netkit_add_cmsis_dsp(netkit)
-endif()
-
 if(NETKIT_CMSIS_NN)
     netkit_add_cmsis_nn(netkit)
 endif()
@@ -255,7 +234,7 @@ if(NETKIT_XNNPACK)
     netkit_add_xnnpack(netkit)
 endif()
 
-if(NETKIT_CMSIS_DSP OR NETKIT_CMSIS_NN)
+if(NETKIT_CMSIS_NN)
     netkit_apply_cmsis_target_flags(netkit)
 endif()
 

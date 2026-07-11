@@ -7,7 +7,7 @@
 #include "arena_util.hpp"
 #include "benchmark_stats.hpp"
 #include "cnn.hpp"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "mnist_cnn_int8_test_images.h"
 #include "nk_loader.hpp"
 #include "tensor_factory.hpp"

@@ -278,7 +278,7 @@ void MobileNetV4Uib::forward(const Tensor& input, Tensor& output)
                                output);
     }
 
-    // Residual epilogue: MatAddND routes through CMSIS-DSP / CMSIS-NN / reference.
+    // Residual epilogue: MatAddND routes through CMSIS-NN / XNNPACK / reference.
     if (has_residual())
     {
         Tensor residual = fused_ops::NhwcView(residual_buf, in_h, in_w, in_c);

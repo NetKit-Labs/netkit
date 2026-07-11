@@ -19,7 +19,6 @@ BUILD_DIR := build
 GEN_DIR := generated
 LIB_DIR := $(BUILD_DIR)/lib
 CMSIS_NN_DIR := $(NETKIT_ROOT)/third_party/CMSIS-NN
-CMSIS_DSP_DIR := $(NETKIT_ROOT)/third_party/CMSIS-DSP
 
 TARGET := mnist_mlp_int8_nucleo_f446re
 ELF := $(BUILD_DIR)/$(TARGET).elf
@@ -32,14 +31,11 @@ INCLUDES := \
 	-I$(NETKIT_ROOT)/include \
 	-I$(GEN_DIR) \
 	-I$(NETKIT_ROOT)/benchmark/tflm/generated \
-	-I$(CMSIS_DSP_DIR)/Include \
-	-I$(CMSIS_DSP_DIR)/PrivateInclude \
 	-I$(CMSIS_NN_DIR)/Include \
 	-I$(NETKIT_ROOT)/third_party/CMSIS-Core/CMSIS/Core/Include
 
 NETKIT_REFERENCE_QUANT_LOOPS ?= 0
 
-override NETKIT_CMSIS_DSP := 1
 ifeq ($(NETKIT_REFERENCE_QUANT_LOOPS),1)
 override NETKIT_CMSIS_NN := 0
 else
@@ -50,7 +46,6 @@ NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU_ARM=1 \
 	-DNETKIT_MCU_QUANT_ONLY=1 \
 	-DNETKIT_KERNELS_OPTIMIZED_FOR_SPEED=1 \
-	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \
 	$(if $(filter 1,$(NETKIT_CMSIS_NN)),-DNETKIT_USE_CMSIS_NN=1,) \
 	-DNETKIT_QUANT_TRACE=0 \
 	-DNETKIT_LOOP_UNROLL=0 \
@@ -68,12 +63,11 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/cmsis_buffer_size.cpp \
 	$(NETKIT_ROOT)/src/reference_kernel.cpp \
 	$(NETKIT_ROOT)/src/ops.cpp \
-	$(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp \
 	$(NETKIT_ROOT)/src/cmsis_nn_backend.cpp \
 	$(NETKIT_ROOT)/src/im2col_quant.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp \
 	$(NETKIT_ROOT)/src/quant_softmax_s8.cpp \
-	$(NETKIT_ROOT)/src/cmsis_dsp_util.cpp \
+	$(NETKIT_ROOT)/src/netkit_util.cpp \
 	$(NETKIT_ROOT)/src/cmsis_nn_quant_backend.cpp \
 	$(NETKIT_ROOT)/src/mlp.cpp \
 	$(NETKIT_ROOT)/src/nk_format.cpp \
@@ -107,19 +101,6 @@ CMSIS_NN_SOURCES := \
 	$(CMSIS_NN_DIR)/Source/NNSupportFunctions/arm_nntables_flt.c
 endif
 
-CMSIS_DSP_SOURCES := \
-	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_q7.c \
-	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_f32.c \
-	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_q7.c \
-	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_q7.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_scale_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_offset_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_clip_f32.c \
-	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_init_f32.c \
-	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_vec_mult_f32.c
 
 CFLAGS := $(MCU_CORE_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
 CXXFLAGS := $(MCU_CORE_CXXFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS)
@@ -134,8 +115,6 @@ all: check-deps export-embed $(ELF) size
 
 check-deps:
 	$(MCU_ASSERT_GCC_TOOLCHAIN)
-	@test -f $(CMSIS_DSP_DIR)/Include/arm_math.h || \
-		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h || \
 		(echo "Run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(NETKIT_ROOT)/models/mnist_mlp_int8.nk || \
@@ -152,13 +131,9 @@ $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_mlp_int8.nk
 		--no-lower --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
 
-$(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_DSP_SOURCES) $(CMSIS_NN_SOURCES)
+$(LIBNETKIT): $(NETKIT_RUNTIME_SOURCES) $(CMSIS_NN_SOURCES)
 	@mkdir -p $(LIB_DIR)
 	@rm -f $(LIB_DIR)/*.o
-	@set -e; for src in $(CMSIS_DSP_SOURCES); do \
-		obj=$(LIB_DIR)/cmsis_dsp_$$(basename $$src .c).o; \
-		$(CC) $(MCU_THIRD_PARTY_KERNEL_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \
-	done
 	@set -e; for src in $(CMSIS_NN_SOURCES); do \
 		obj=$(LIB_DIR)/cmsis_nn_$$(basename $$src .c).o; \
 		$(CC) $(MCU_THIRD_PARTY_KERNEL_CFLAGS) $(MCU_DEBUG_FLAGS) -I$(CMSIS_NN_DIR)/Include $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \

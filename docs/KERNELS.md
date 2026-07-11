@@ -15,7 +15,7 @@ ops.cpp / conv2d.cpp / cnn.cpp / mlp.cpp
         │
    ┌────┴────┐
    ▼         ▼
-VectorFast  LayerFast        ← CmsisDspKernel, CmsisNnKernel, or ReferenceKernel
+VectorFast  LayerFast        ← ReferenceKernel, CmsisNnKernel, or XnnpackKernel
    │         │
    └────┬────┘
         ▼
@@ -28,7 +28,7 @@ VectorFast  LayerFast        ← CmsisDspKernel, CmsisNnKernel, or ReferenceKern
 | `kernel_activation.hpp` | `NetkitKernelActivation` enum for fused conv/FC activations |
 | `reference_kernel.hpp` / `reference_kernel.cpp` | Portable float32 implementations (`NETKIT_LOOP_UNROLL` optional 4× unroll, experimental) |
 | `netkit_loop_unroll.hpp` | Compile-time loop unroll helpers for reference kernels only |
-| `cmsis_dsp_kernel.hpp` / `cmsis_dsp_backend.cpp` | CMSIS-DSP `Try*` for vector ops (add, mul, matmul, clip, batch-norm fallback, LayerNorm2d, GRN) |
+| `netkit_util.hpp` / `netkit_util.cpp` | Portable vector helpers (`NetkitUtil::`; CMSIS-DSP is not used) |
 | `cmsis_nn_kernel.hpp` / `cmsis_nn_backend.cpp` | CMSIS-NN `Try*` for layer ops (conv, depthwise conv, pool, FC, batch norm, activations, GELU, softmax) |
 | `kernel_dispatch.hpp` | `ComposedKernel<VectorFast, LayerFast>` and `Try*` helpers |
 | `active_kernel.hpp` | `using Kernels = …` alias for the current build |
@@ -39,57 +39,50 @@ Backend `.cpp` files **must** include `netkit_config.h` so `NETKIT_CMSIS_NN_ALLO
 
 ## Active backend aliases
 
-Selected in `active_kernel.hpp` from `NETKIT_USE_CMSIS_NN`, `NETKIT_USE_CMSIS_DSP`, `NETKIT_USE_XNNPACK`, and allow macros:
+Selected in `active_kernel.hpp` from `NETKIT_USE_CMSIS_NN`, `NETKIT_USE_XNNPACK`, and allow macros:
 
 | Build profile | `Kernels` alias |
 |---------------|-----------------|
-| Reference only (incl. **`mcu_risc`**) | `ReferenceKernel` — portable generic kernels; fast enough as the sole MCU-RISC path until ISA-tuned kernels exist ([STATUS.md](STATUS.md)) |
-| CMSIS-DSP only (desktop / Arm MPU, or MCU without NN) | `ComposedKernel<CmsisDspKernel, ReferenceKernel>` |
-| CMSIS-NN only (Arm MCU + Cortex-M) | `ComposedKernel<ReferenceKernel, CmsisNnKernel>` |
-| CMSIS-NN + CMSIS-DSP (Arm MCU firmware) | `ComposedKernel<CmsisDspKernel, CmsisNnKernel>` |
-| XNNPACK LayerFast (`cpu` / any MPU) | `XnnpackKernel` (+ optional CMSIS-DSP as VectorFast) |
+| Reference only (incl. **`mcu_risc`**, float32 MCU) | `ReferenceKernel` — portable generic kernels |
+| CMSIS-NN (Arm MCU + Cortex-M, production int8) | `ComposedKernel<ReferenceKernel, CmsisNnKernel>` |
+| XNNPACK LayerFast (`cpu` / any MPU) | `XnnpackKernel` |
 
-CMSIS-DSP/NN are **forbidden** on RISC targets. XNNPACK is **forbidden** on all MCU targets.
+**CMSIS-DSP is not used.** CMSIS-NN is **forbidden** on RISC targets. XNNPACK is **forbidden** on all MCU targets.
 
 ### Role split in `ComposedKernel<VectorFast, LayerFast>`
 
 | Role | Typical backend | Ops |
 |------|-----------------|-----|
-| **VectorFast** | CMSIS-DSP when enabled | `Mul`, `MatMul`, `MulScalar`, `MatAdd`/`MatAddND`, `ReLU6` clip fallback, `BatchNorm2d` (desktop fallback), `LayerNorm2d`, `Grn2dForward` |
-| **LayerFast** | CMSIS-NN when enabled | `Conv2d`, depthwise conv, pool, batch norm, FC, NN activations, `Gelu`, softmax |
+| **VectorFast** | Reference (portable) | `Mul`, `MatMul`, `MulScalar`, `MatAdd`/`MatAddND`, clip, LayerNorm, GRN |
+| **LayerFast** | CMSIS-NN or XNNPACK when enabled | `Conv2d`, depthwise conv, pool, batch norm, FC, NN activations, softmax |
 | **Reference** | Always | Fallback when `Try*` returns false or backend is `ReferenceKernel` |
 
 **GEMM:** there is no separate `Gemm` symbol. General matrix multiply is `Kernels::MatMul` (`Ops::MatMul`); linear layers use `Kernels::FullyConnectedWithBias` (internally matmul + bias). ONNX `Gemm` is lowered to packed dense weights at export time.
 
-On **MCU with both CMSIS flags**, CMSIS-NN owns layer kernels; CMSIS-DSP accelerates vector ops and ops without NN float APIs (LayerNorm, GRN). They do not compete for the same op.
+On **MCU with CMSIS-NN**, CMSIS-NN owns layer kernels; vector ops and ops without NN float APIs use reference / `NetkitUtil`.
 
 ### Float32 op coverage
 
-| Op | Reference | CMSIS-NN | CMSIS-DSP |
-|----|-----------|----------|-----------|
-| Conv2D, depthwise conv, pool, batch norm, FC, activations, softmax | ✓ | ✓ (`Try*` + fallback) | FC/BN fallback on some builds |
-| MatMul, elementwise mul/add/scale | ✓ | add (elementwise) | ✓ |
-| LayerNorm2d | ✓ | — | ✓ |
-| GELU | ✓ | ✓ (tanh on inner polynomial) | — (falls back to reference) |
-| GRN | ✓ | — | ✓ (mean + vector mul/add per pixel) |
-| Residual / skip merge | ✓ | add (`MatAddND`) | add |
+| Op | Reference | CMSIS-NN | XNNPACK |
+|----|-----------|----------|---------|
+| Conv2D, depthwise conv, pool, batch norm, FC, activations, softmax | ✓ | ✓ (`Try*` + fallback) | ✓ (cpu/MPU) |
+| MatMul, elementwise mul/add/scale | ✓ | add (elementwise) | — |
+| LayerNorm2d | ✓ | — | — |
+| GELU | ✓ | ✓ (tanh on inner polynomial) | — |
+| GRN | ✓ | — | — |
+| Residual / skip merge | ✓ | add (`MatAddND`) | — |
+
+**Float32 on MCU:** supported via reference kernels only. There is **no plan** for an optimized float32 MCU path; production MCU is int8 + CMSIS-NN.
 
 **Depthwise conv** is **2D-only** in the API (`DepthwiseConv2D`, NHWC `[H,W,C]`, weights `[C,Kh,Kw]`). **1D** along time/height is expressed as a degenerate 2D kernel (e.g. `kernel_h=5`, `kernel_w=1` on input `[T,1,C]`). See [NK_FORMAT.md](NK_FORMAT.md) and `python/README.md`.
 
-**Fused blocks** (ResNet BasicBlock, MobileNetV4 UIB, ConvNeXt V2) route internal BN, ReLU, FC, LayerNorm, GELU, GRN, and residual adds through `fused_kernel_ops.hpp` → `Kernels::`, so CMSIS applies when enabled. Composite blocks do not introduce separate CMSIS entry points — they delegate to the same `Try*` paths as primitives. When CMSIS-NN rejects a case (e.g. depthwise conv with asymmetric padding), the reference kernel handles it automatically.
+**Fused blocks** (ResNet BasicBlock, MobileNetV4 UIB, ConvNeXt V2) route internal BN, ReLU, FC, LayerNorm, GELU, GRN, and residual adds through `fused_kernel_ops.hpp` → `Kernels::`, so CMSIS-NN / XNNPACK apply when enabled. Composite blocks do not introduce separate CMSIS entry points — they delegate to the same `Try*` paths as primitives. When CMSIS-NN rejects a case (e.g. depthwise conv with asymmetric padding), the reference kernel handles it automatically.
 
-**Float im2col conv** (reference path when CMSIS-NN is off or rejects a case): partial and full im2col use `Kernels::MatMulImpl` when CMSIS-DSP is enabled. Hot contiguous dots use the inlined 4-accumulator path by default (see below). Asymmetric-padding conv fallbacks go through `Conv2dDispatchForward` so specialized kernels remain in the dispatch chain.
+**Float im2col conv** (reference path when CMSIS-NN is off or rejects a case): partial and full im2col use `Kernels::MatMulImpl`. Hot contiguous dots use the inlined 4-accumulator path. Asymmetric-padding conv fallbacks go through `Conv2dDispatchForward` so specialized kernels remain in the dispatch chain.
 
-**Float32 path:** when `NETKIT_USE_CMSIS_DSP=1`, `cmsis_dsp_util.cpp` provides contiguous f32/q7 **helpers** (`arm_copy_f32`, `arm_max_f32`, `arm_add_f32`, `arm_mult_f32`, `arm_scale_f32`, and optionally `arm_dot_prod_f32`) used by reference fallbacks, board firmware staging/argmax, and `CmsisDspKernel` Try* ops. Asymmetric pool layers route through `Kernels::MaxPool2dForwardPadded` / `AvgPool2dForwardPadded` instead of bypassing to `ReferenceKernel`.
+**Portable helpers:** `netkit_util.cpp` (`NetkitUtil::`) provides contiguous f32/int8 copy, argmax, and related helpers used by reference fallbacks and board firmware staging. Asymmetric pool layers route through `Kernels::MaxPool2dForwardPadded` / `AvgPool2dForwardPadded`.
 
-**Hot dot product is header-inline (helpers-only DSP policy).** `CmsisDspUtil::DotProductF32` (in `cmsis_dsp_util.hpp`) is `inline` so the FC/conv reduction loops inline at `-O2` without LTO. It resolves at compile time:
-
-- **Default (including `NETKIT_USE_CMSIS_DSP=1`)** → inlined 4-accumulator `NetkitLoopUnroll::dot_contiguous`. CMSIS-DSP stays on vector helpers; portable host `arm_dot_prod_f32` was a large regression vs this path.
-- **`NETKIT_CMSIS_DSP_DOT=1` (with CMSIS-DSP on)** → out-of-line call to `arm_dot_prod_f32` via `DotProductF32Cmsis`. Prefer only on Cortex-M where that kernel is a real win.
-
-  The inlined body grows `.text` (~+6 KB in `conv_direct` at `-O2` on Cortex-M4). Firmwares that do not link the float conv path pay nothing after `--gc-sections`. To reclaim size on a flash-constrained float CNN, move `dot_contiguous` out-of-line in `cmsis_dsp_util.cpp`.
-
-**Int8 quant path:** layer compute is CMSIS-NN (`arm_convolve_wrapper_s8`, pool, FC, softmax). When `NETKIT_USE_CMSIS_DSP=1`, the same util module uses CMSIS-DSP for int8 copy/argmax (`arm_copy_q7`, `arm_max_q7`). MCU firmware should stage int8 inputs in SRAM before the first conv (TFLM copies into the tensor arena; netkit benchmark firmware uses `g_input_staging` in `main.cpp`) so the conv kernel reads activations from SRAM, not flash-resident test vectors.
+**Int8 quant path:** layer compute is CMSIS-NN (`arm_convolve_wrapper_s8`, pool, FC, softmax) on MCU. MCU firmware should stage int8 inputs in SRAM before the first conv (TFLM copies into the tensor arena; netkit benchmark firmware uses `g_input_staging` in `main.cpp`) so the conv kernel reads activations from SRAM, not flash-resident test vectors.
 
 ### CMSIS kernel workspace
 
@@ -142,11 +135,11 @@ No virtual functions; the compiler inlines the selected path for each translatio
 
 ## Reference-kernel loop unroll (`NETKIT_LOOP_UNROLL`) — **experimental**
 
-Optional **4× manual loop unroll** for netkit reference kernels only. **Off by default** (`NETKIT_LOOP_UNROLL=0`). Independent of CMSIS-DSP `ARM_MATH_LOOPUNROLL` — CMSIS translation units never receive this flag.
+Optional **4× manual loop unroll** for netkit reference kernels only. **Off by default** (`NETKIT_LOOP_UNROLL=0`). Independent of CMSIS-NN `ARM_MATH_LOOPUNROLL` — CMSIS translation units never receive this flag.
 
 > **Experimental:** Duplicating loop bodies increases **`.text` / flash size**. On tight MCUs, enabling this can push the firmware image over available program memory even when RAM (arena) is sized correctly. Measure `.text` before shipping; prefer CMSIS backends on production firmware unless you have flash headroom.
 >
-> **Where it might help:** In practice this is most likely something to consider on an **MPU** — more program memory than a typical MCU, and reference kernels are often the primary path when CMSIS-NN is unavailable. **Avoid on flash-constrained MCUs**; on desktop CPU, CMSIS-DSP or default reference builds are usually sufficient.
+> **Where it might help:** In practice this is most likely something to consider on an **MPU** — more program memory than a typical MCU, and reference kernels are often the primary path when CMSIS-NN is unavailable. **Avoid on flash-constrained MCUs**; on desktop CPU, XNNPACK or default reference builds are usually sufficient.
 
 ```bash
 make NETKIT_LOOP_UNROLL=1 lib

@@ -1,7 +1,7 @@
 #include "quant_ops.hpp"
 
 #include "cmsis_nn_quant.hpp"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "conv_im2col_policy.hpp"
 #include "im2col_quant.hpp"
 #include "kernel_workspace.hpp"

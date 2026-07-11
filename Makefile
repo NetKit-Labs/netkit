@@ -4,10 +4,10 @@
 #
 # Build target (NETKIT_TARGET) — ISA-qualified firmware profiles:
 #   cpu       (default) — desktop: CLI, regression; arena defaults to heap
-#   mcu_arm             — Arm MCU lean runtime; CMSIS-DSP + CMSIS-NN defaults
-#   mpu_arm             — Arm MPU lean runtime; XNNPACK + CMSIS-DSP (helpers) defaults
-#   mcu_risc            — RISC-V MCU lean runtime (generic kernels; CMSIS + XNNPACK forbidden)
-#   mpu_risc            — RISC-V MPU lean runtime; XNNPACK on; CMSIS-DSP/NN forbidden
+#   mcu_arm             — Arm MCU lean runtime; CMSIS-NN defaults (int8 production)
+#   mpu_arm             — Arm MPU lean runtime; XNNPACK defaults
+#   mcu_risc            — RISC-V MCU lean runtime (generic kernels; CMSIS-NN + XNNPACK forbidden)
+#   mpu_risc            — RISC-V MPU lean runtime; XNNPACK on; CMSIS-NN forbidden
 #
 # Legacy NETKIT_TARGET=mcu|mpu is rejected — use mcu_arm / mpu_arm.
 #
@@ -24,16 +24,15 @@
 #
 # Optional backends (profile defaults below; override on command line):
 #   NETKIT_CMSIS_NN=1      — Arm MCU only (NETKIT_TARGET=mcu_arm + NETKIT_ARCH=CM4|M33|...)
-#   NETKIT_CMSIS_DSP=1     — CMSIS-DSP vector helpers (Arm ISA / host cpu; forbidden on RISC)
-#   NETKIT_CMSIS_DSP_DOT=1 — optional: route DotProductF32 through arm_dot_prod_f32
 #   NETKIT_XNNPACK=1       — Google XNNPACK (cpu + any MPU; forbidden on MCU; ./tools/fetch_xnnpack.sh)
+#   CMSIS-DSP is not used (no NETKIT_CMSIS_DSP backend).
 #
 # Profile defaults:
-#   cpu      — XNNPACK on (any host ISA), CMSIS-DSP/NN off
-#   mcu_arm  — CMSIS-DSP + CMSIS-NN on, XNNPACK forbidden
-#   mpu_arm  — XNNPACK + CMSIS-DSP on (helpers), CMSIS-NN off
-#   mcu_risc — generic kernels only (CMSIS-DSP/NN + XNNPACK forbidden)
-#   mpu_risc — XNNPACK on; CMSIS-DSP/NN forbidden
+#   cpu      — XNNPACK on (any host ISA), CMSIS-NN off
+#   mcu_arm  — CMSIS-NN on, XNNPACK forbidden (float32 uses reference kernels)
+#   mpu_arm  — XNNPACK on, CMSIS-NN off
+#   mcu_risc — generic kernels only (CMSIS-NN + XNNPACK forbidden)
+#   mpu_risc — XNNPACK on; CMSIS-NN forbidden
 #
 # Optional reference-kernel loop unroll (netkit code only; not CMSIS):
 # NETKIT_IM2COL=0|1|2 — Conv2D strategy (float + int8 QuantOps): 0 direct (default), 1 partial, 2 full im2col+GEMM.
@@ -54,7 +53,6 @@ NETKIT_HEAP_ARENA ?= 0
 # Optional default-arena override (bytes). Prefer NETKIT_ARENA_CAPACITY; NETKIT_ARENA_KB is KiB.
 # NETKIT_ARENA_CAPACITY ?=
 # NETKIT_ARENA_KB ?=
-NETKIT_CMSIS_DSP_DOT ?= 0
 # mmap file load: default on for cpu + any MPU; forbidden on MCU (override with NETKIT_MMAP=0 on MPU/cpu).
 ifneq ($(filter $(NETKIT_TARGET),mcu_arm mcu_risc),)
   NETKIT_MMAP ?= 0
@@ -69,23 +67,18 @@ ifneq ($(filter $(NETKIT_TARGET),mcu_arm mcu_risc),)
   override NETKIT_MMAP := 0
 endif
 ifeq ($(NETKIT_TARGET),cpu)
-  NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu_arm)
-  NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 1
   NETKIT_XNNPACK ?= 0
 else ifeq ($(NETKIT_TARGET),mpu_arm)
-  NETKIT_CMSIS_DSP ?= 1
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu_risc)
-  NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 0
 else ifeq ($(NETKIT_TARGET),mpu_risc)
-  NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 1
 else ifeq ($(NETKIT_TARGET),mcu)
@@ -93,16 +86,13 @@ else ifeq ($(NETKIT_TARGET),mcu)
 else ifeq ($(NETKIT_TARGET),mpu)
   $(error NETKIT_TARGET=mpu is removed — use NETKIT_TARGET=mpu_arm)
 else
-  NETKIT_CMSIS_DSP ?= 0
   NETKIT_CMSIS_NN ?= 0
   NETKIT_XNNPACK ?= 0
 endif
-# In CI, exercise CMSIS-DSP only when explicitly requested on the host cpu build
-# (portable __GNUC_PYTHON__ path). Cross-target host compile-checks keep reference
-# kernels (no ARM toolchain / CMSIS-Core on the runner). XNNPACK forced off in CI.
+# In CI, cross-target host compile-checks keep reference kernels (no ARM toolchain /
+# CMSIS-Core on the runner). XNNPACK forced off in CI.
 ifeq ($(GITHUB_ACTIONS),true)
   ifneq ($(NETKIT_TARGET),cpu)
-    override NETKIT_CMSIS_DSP := 0
     override NETKIT_CMSIS_NN := 0
   endif
   override NETKIT_XNNPACK := 0
@@ -114,7 +104,7 @@ NETKIT_ARCH ?=
 
 include third_party/netkit_arch.mk
 
-# Host embedded smoke (desktop): portable CMSIS-DSP without CMSIS-Core headers.
+# Host embedded smoke (desktop): portable CMSIS-NN / ARM_MATH path without CMSIS-Core headers.
 ifeq ($(NETKIT_HOST_SMOKE),1)
   NETKIT_ARCH_CFLAGS += -D__GNUC_PYTHON__
 endif
@@ -129,7 +119,7 @@ LIB = libnetkit.a
 RUNTIME_SOURCES = src/arena.cpp src/nk_mmap.cpp src/tensor_factory.cpp src/tensor_access.cpp src/reference_kernel.cpp src/kernel_workspace.cpp src/cmsis_buffer_size.cpp src/ops.cpp \
                     src/conv2d.cpp src/depthwise_conv2d.cpp src/conv2d_layout.cpp src/conv_dispatch.cpp src/conv1x1_kernel.cpp src/conv_depthwise_kernel.cpp \
                     src/conv_direct_kernel.cpp src/im2col_partial.cpp src/im2col_full.cpp src/im2col_quant.cpp \
-                    src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/quant_ops.cpp src/quant_softmax_s8.cpp src/cmsis_dsp_util.cpp src/quant_trace.cpp src/cmsis_nn_quant_backend.cpp src/cmsis_quant_plan.cpp src/cnn_quant.cpp src/cnn.cpp \
+                    src/convnextv2_block.cpp src/mobilenetv4_uib.cpp src/resnet_basic_block.cpp src/yolox_decoupled_head.cpp src/mlp.cpp src/quant_ops.cpp src/quant_softmax_s8.cpp src/netkit_util.cpp src/quant_trace.cpp src/cmsis_nn_quant_backend.cpp src/cmsis_quant_plan.cpp src/cnn_quant.cpp src/cnn.cpp \
                     src/layer_ops/nk_op_conv2d.cpp src/layer_ops/nk_op_depthwise_conv2d.cpp \
                     src/layer_ops/nk_op_convnextv2_block.cpp src/layer_ops/nk_op_mobilenetv4_uib.cpp src/layer_ops/nk_op_yolox_decoupled_head.cpp src/layer_ops/nk_op_resnet_basic_block.cpp src/layer_ops/nk_op_layernorm2d.cpp \
                     src/layer_ops/nk_op_max_pool2d.cpp \
@@ -147,15 +137,11 @@ CMSIS_NN_OBJECTS =
 NETKIT_CMSIS_NN_EFFECTIVE := 0
 CMSIS_SOFTMAX_OBJECTS =
 CMSIS_NN_DIR ?= third_party/CMSIS-NN
-# RISC targets: CMSIS-DSP and CMSIS-NN are never allowed (generic kernels only for those).
+# RISC targets: CMSIS-NN is never allowed (generic kernels only for those).
 ifneq ($(filter $(NETKIT_TARGET),mcu_risc mpu_risc),)
-  ifeq ($(NETKIT_CMSIS_DSP),1)
-    $(warning NETKIT_CMSIS_DSP=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-DSP is forbidden on RISC)
-  endif
   ifeq ($(NETKIT_CMSIS_NN),1)
     $(warning NETKIT_CMSIS_NN=1 forced off on NETKIT_TARGET=$(NETKIT_TARGET) — CMSIS-NN is forbidden on RISC)
   endif
-  override NETKIT_CMSIS_DSP := 0
   override NETKIT_CMSIS_NN := 0
 endif
 ifneq ($(wildcard $(CMSIS_NN_DIR)/Source/SoftmaxFunctions/arm_nn_softmax_common_s8.c),)
@@ -186,16 +172,6 @@ ifeq ($(NETKIT_CMSIS_NN_EFFECTIVE),1)
   RUNTIME_SOURCES += src/cmsis_nn_backend.cpp
 endif
 
-CMSIS_DSP_OBJECTS =
-ifeq ($(NETKIT_CMSIS_DSP),1)
-  CMSIS_DSP_DIR ?= third_party/CMSIS-DSP
-  ifeq ($(wildcard $(CMSIS_DSP_DIR)/Include/arm_math.h),)
-    $(error NETKIT_CMSIS_DSP=1 requires CMSIS-DSP at $(CMSIS_DSP_DIR) — run ./tools/fetch_cmsis_dsp.sh)
-  endif
-  include third_party/cmsis_dsp.mk
-  TARGET_CPPFLAGS += -DNETKIT_USE_CMSIS_DSP=1 -I$(CMSIS_DSP_DIR)/Include -I$(CMSIS_DSP_DIR)/PrivateInclude
-  RUNTIME_SOURCES += src/cmsis_dsp_backend.cpp
-endif
 
 # XNNPACK: default LayerFast on cpu + any MPU. Always forced off on MCU.
 XNNPACK_DIR ?= third_party/XNNPACK
@@ -298,7 +274,6 @@ endif
 
 TARGET_CPPFLAGS += -DNETKIT_IM2COL=$(NETKIT_IM2COL)
 TARGET_CPPFLAGS += -DNETKIT_LOOP_UNROLL=$(NETKIT_LOOP_UNROLL)
-TARGET_CPPFLAGS += -DNETKIT_CMSIS_DSP_DOT=$(NETKIT_CMSIS_DSP_DOT)
 TARGET_CPPFLAGS += -DNETKIT_USE_MMAP=$(NETKIT_MMAP)
 ifdef NETKIT_ARENA_CAPACITY
   TARGET_CPPFLAGS += -DNK_ARENA_DEFAULT_CAPACITY=$(NETKIT_ARENA_CAPACITY)
@@ -347,7 +322,7 @@ TRIM_CORE_OBJECTS = $(TRIM_RUNTIME_SOURCES:.cpp=.o)
 
 # Rebuild objects when target/backends change — avoids mixing CPU and MCU .o files in libnetkit.a.
 NETKIT_BUILD_STAMP = .netkit_build_stamp
-NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),arena_cap=$(NETKIT_ARENA_CAPACITY)$(NETKIT_ARENA_KB),mmap=$(NETKIT_MMAP),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),cmsis_dsp=$(NETKIT_CMSIS_DSP),cmsis_dsp_dot=$(NETKIT_CMSIS_DSP_DOT),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
+NETKIT_BUILD_ID = target=$(NETKIT_TARGET),global_arena=$(NETKIT_GLOBAL_ARENA),heap_arena=$(NETKIT_HEAP_ARENA),arena_cap=$(NETKIT_ARENA_CAPACITY)$(NETKIT_ARENA_KB),mmap=$(NETKIT_MMAP),cmsis_nn=$(NETKIT_CMSIS_NN_EFFECTIVE),xnnpack=$(NETKIT_XNNPACK_EFFECTIVE),im2col=$(NETKIT_IM2COL),loop_unroll=$(NETKIT_LOOP_UNROLL),arch=$(NETKIT_ARCH),host_smoke=$(NETKIT_HOST_SMOKE)
 
 NETKIT_STALE_BINARIES = $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER)
 
@@ -362,9 +337,14 @@ netkit-config-sync:
 	  rm -f $(NETKIT_BUILD_STAMP).tmp; \
 	fi
 
+# Real stamp target so parallel `make -j` can create the file after `clean`
+# (%.o depends on it; phony netkit-config-sync alone is not enough).
+$(NETKIT_BUILD_STAMP):
+	@$(MAKE) --no-print-directory netkit-config-sync
+
 .PHONY: all lib clean rebuild test test-full test-cpp test-c test-python test-python-full run example-c example-cpp examples \
         export-mnist export-mnist-int8 export-mnist-cnn export-mnist-all export-op-matrix \
-        export-nk build-all embed-tests cmsis-nn-init cmsis-dsp-init cmsis-init \
+        export-nk build-all embed-tests cmsis-nn-init cmsis-init \
         cpu cpu-global mcu-arm mcu-arm-heap mpu-arm mpu-arm-heap mcu-risc mpu-risc \
         embedded-smoke test-embedded-smoke test-embedded-smoke-matrix trim-lib check-trim-lib
 
@@ -378,7 +358,7 @@ endif
 
 .DEFAULT_GOAL := all
 
-$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_DSP_OBJECTS) $(CMSIS_SOFTMAX_OBJECTS)
+$(LIB): $(CORE_OBJECTS) $(CMSIS_NN_OBJECTS) $(CMSIS_SOFTMAX_OBJECTS)
 	ar rcs $@ $^
 
 build/cmsis_softmax/%.o: $(CMSIS_NN_DIR)/%.c
@@ -445,7 +425,7 @@ clean:
 	rm -f $(CORE_OBJECTS) $(TRIM_CORE_OBJECTS) $(CLI_OBJECTS) $(EXAMPLE_C_OBJ) $(EXAMPLE_CPP_OBJ) $(TEST_C_OBJ) $(EMBEDDED_SMOKE_OBJ) $(NK_INFER_OBJ) \
 	      $(TARGET) $(LIB) $(TRIM_LIB) $(EXAMPLE_C) $(EXAMPLE_CPP) $(TEST_C) $(EMBEDDED_SMOKE) $(NK_INFER) examples/trim_firmware examples/trim_firmware.o
 	rm -f src/*.o src/layer_ops/*.o examples/*.o tests/*.o tools/*.o
-	rm -rf build/cmsis_nn build/cmsis_dsp build/cmsis_softmax
+	rm -rf build/cmsis_nn build/cmsis_softmax
 
 rebuild: clean all
 
@@ -523,16 +503,13 @@ mpu-risc:
 cmsis-nn-init:
 	./tools/fetch_cmsis_nn.sh
 
-cmsis-dsp-init:
-	./tools/fetch_cmsis_dsp.sh
-
 cmsis-core-init:
 	./tools/fetch_cmsis_core.sh
 
 xnnpack-init:
 	./tools/fetch_xnnpack.sh
 
-cmsis-init: cmsis-nn-init cmsis-dsp-init cmsis-core-init
+cmsis-init: cmsis-nn-init cmsis-core-init
 
 .PHONY: xnnpack-init
 

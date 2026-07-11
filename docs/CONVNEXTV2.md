@@ -18,7 +18,7 @@ For input `X` with shape `[H, W, C]`:
 
 Spatial size is unchanged (`H`, `W` constant).
 
-**Runtime:** all sub-ops above (except the residual buffer copy in other blocks) go through `Kernels::` via `include/fused_kernel_ops.hpp`, so CMSIS-NN/DSP apply when enabled with reference fallback. GELU uses CMSIS-NN `tanh` on the inner polynomial when NN is linked; GRN uses CMSIS-DSP vector ops when DSP is linked.
+**Runtime:** all sub-ops above (except the residual buffer copy in other blocks) go through `Kernels::` via `include/fused_kernel_ops.hpp`, so CMSIS-NN / XNNPACK apply when enabled with reference fallback. GELU uses CMSIS-NN `tanh` on the inner polynomial when NN is linked; GRN uses reference / `NetkitUtil`.
 
 ## `.nk` layer descriptor
 

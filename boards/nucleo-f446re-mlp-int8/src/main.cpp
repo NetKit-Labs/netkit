@@ -2,7 +2,7 @@
 // Interpreter embed (.nk loader). Prequantized int8 test vectors.
 
 #include "dwt_time.h"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "mnist_mlp_int8_aot.hpp"
 #include "mnist_mlp_int8_test_images.h"
 #include "netkit_config.h"
@@ -76,13 +76,8 @@ extern "C" int main(void)
     dwt_time_init();
 
     uart_write("\r\nnetkit NUCLEO-F446RE MNIST MLP int8 benchmark\r\n");
-#if defined(NETKIT_USE_CMSIS_DSP) && NETKIT_USE_CMSIS_DSP
-    uart_printf("  backend:     %s int8 + cmsis-dsp utils (MCU CM4, .nk loader)\r\n",
-                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn");
-#else
     uart_printf("  backend:     %s int8 (MCU CM4, .nk loader)\r\n",
                 NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "cmsis-nn");
-#endif
     uart_printf("  weights:     flash (embedded .nk blob)\r\n");
     uart_write("  dtype:       int8 end-to-end (weights, activations, inputs; logits out)\r\n");
     uart_write("  classify:    argmax(logits) — final Softmax omitted\r\n");

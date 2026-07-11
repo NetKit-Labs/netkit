@@ -6,7 +6,7 @@
 #include "arena.hpp"
 #include "arena_util.hpp"
 #include "cnn.hpp"
-#include "cmsis_dsp_util.hpp"
+#include "netkit_util.hpp"
 #include "imagenet_mnv4_netkit_int8_test_images.h"
 #include "nk_loader.hpp"
 #include "tensor_factory.hpp"

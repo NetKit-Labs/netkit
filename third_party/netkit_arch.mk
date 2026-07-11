@@ -1,5 +1,6 @@
-# NETKIT_ARCH => CMSIS-DSP ARM_MATH_* flags (see arm_math.h).
+# NETKIT_ARCH => CMSIS ARM_MATH_* flags for CMSIS-NN (see arm_math_types.h / arm_nnfunctions.h).
 # Empty NETKIT_ARCH => desktop / CPU (no core-specific ARM_MATH_* defines).
+# CMSIS-DSP is not used as a netkit backend.
 
 NETKIT_ARCH ?=
 NETKIT_ARCH_UPPER := $(shell printf '%s' '$(NETKIT_ARCH)' | tr '[:lower:]' '[:upper:]')
@@ -72,17 +73,14 @@ ifneq ($(NETKIT_ARCH),)
   endif
 endif
 
-# Desktop host builds use CMSIS-DSP's portable GNUC_PYTHON path.
+# Desktop host builds use the portable GNUC_PYTHON path for CMSIS-NN host smoke.
 ifeq ($(NETKIT_ARCH),)
   ifeq ($(NETKIT_TARGET),cpu)
     NETKIT_ARCH_CFLAGS += -D__GNUC_PYTHON__
   endif
-  ifeq ($(NETKIT_CMSIS_DSP),1)
-    NETKIT_ARCH_CFLAGS += -DARM_MATH_LOOPUNROLL
-  endif
 endif
 
-# Embedded firmware: loop unrolling (CMSIS-DSP 1.10+ defaults off) + CMSIS-Core include.
+# Embedded firmware: loop unrolling + CMSIS-Core include for CMSIS-NN.
 ifneq ($(NETKIT_ARCH),)
   NETKIT_ARCH_CFLAGS += -DARM_MATH_LOOPUNROLL
   CMSISCORE_DIR ?= third_party/CMSIS-Core/CMSIS/Core/Include

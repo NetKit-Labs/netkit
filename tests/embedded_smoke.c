@@ -84,12 +84,6 @@ static void TestTargetProfile(void)
     printf("backend: reference conv/pool/FC\n");
 #endif
 
-#if defined(NETKIT_USE_CMSIS_DSP)
-    printf("backend: CMSIS-DSP enabled\n");
-#else
-    printf("backend: reference vector ops\n");
-#endif
-
     ExpectTrue(1, "target profile printed");
 }
 

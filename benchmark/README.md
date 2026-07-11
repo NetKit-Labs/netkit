@@ -63,7 +63,6 @@ The main repo `libnetkit.a` (clang, debug) is **not** used by these benchmarks.
 ```bash
 make export-mnist export-mnist-cnn   # if models not present
 make -C benchmark/tflm export-assets # once, or after retraining
-./tools/fetch_cmsis_dsp.sh           # once, for CMSIS-DSP netkit variant
 
 ./benchmark/compare.sh
 ```
@@ -80,8 +79,6 @@ Variants executed (in order):
 
 1. NETKIT MLP reference
 2. NETKIT CNN reference
-3. NETKIT MLP CMSIS-DSP
-4. NETKIT CNN CMSIS-DSP
 5. TFLM MLP
 6. TFLM CNN
 7. NETKIT MLP profile
@@ -95,7 +92,6 @@ Speedup in tables is **TFLM mean ÷ NETKIT mean** (e.g. `5× faster` = NETKIT is
 
 ```bash
 make -C benchmark/netkit run              # netkit interpreter MLP + CNN (reference)
-make -C benchmark/netkit run-cmsis        # netkit interpreter MLP + CNN (CMSIS-DSP)
 make -C benchmark/tflm run                # TFLM interpreter MLP + CNN (needs GNU make)
 make -C benchmark/netkit run-aot          # optional: lowered AOT only (not in compare.sh)
 make -C benchmark/netkit run-mlp-profile  # NETKIT MLP per-layer profile
@@ -122,7 +118,6 @@ make -C benchmark/tflm run-cnn
 ```bash
 make -C benchmark/netkit run-mobilenetv4         # netkit float32 reference kernels
 make -C benchmark/netkit run-mobilenetv4-int8     # netkit int8 reference kernels
-make -C benchmark/netkit run-mobilenetv4-cmsis   # netkit float32 CMSIS-DSP
 make -C benchmark/tflm run-mobilenetv4           # TFLM float32 (after export-mobilenetv4)
 make -C benchmark/tflm run-mobilenetv4-int8        # TFLM int8 (after export-mobilenetv4-int8)
 ./tools/run_mobilenetv4_4way_benchmark.sh        # all four, writes benchmark/mobilenetv4_4way_results.txt
@@ -141,7 +136,6 @@ Pretrained `mobilenetv4_conv_small` (224×224×3, 1000 classes) compared across 
 ```bash
 ./tools/fetch_xnnpack.sh   # once
 make -C benchmark/netkit run-mobilenetv4-imagenet-xnnpack   # netkit XNNPACK, tflite flags
-make -C benchmark/netkit run-mobilenetv4-imagenet-cmsis     # netkit CMSIS-DSP, tflite flags
 make -C benchmark/tflite run-mobilenetv4-imagenet           # TF Lite XNNPACK, 1 thread
 make -C benchmark/tflite run-mobilenetv4-imagenet-ref       # TF Lite builtin-ref
 make -C benchmark/tflm run-mobilenetv4-imagenet             # TFLM (still TFLM -O2 host flags)
@@ -188,7 +182,7 @@ Each binary prints machine-readable summary lines:
 
 ```
 BENCHMARK_SUMMARY runtime=netkit model=mlp backend=reference mean_us=... runs=100
-BENCHMARK_SUMMARY runtime=netkit model=mlp backend=cmsis-dsp mean_us=... runs=100
+BENCHMARK_SUMMARY runtime=netkit model=mlp backend=reference mean_us=... runs=100
 BENCHMARK_SUMMARY runtime=tflm model=mlp backend=reference mean_us=... runs=100
 PROFILE_SUMMARY runtime=netkit model=cnn kind=op tag=Conv2D mean_us=... pct=...
 PROFILE_SUMMARY runtime=tflm model=cnn kind=op tag=Conv2D mean_us=... pct=...
@@ -206,8 +200,8 @@ These benchmarks run on the **host desktop** (macOS/Linux), not on Cortex-M firm
 
 | Label in compare output | What it actually is on host |
 |-------------------------|----------------------------|
-| NETKIT (without CMSIS-DSP) | Reference kernels only |
-| NETKIT (with CMSIS-DSP) | CMSIS-DSP vector ops + reference layer ops |
+| NETKIT (reference) | Reference kernels only |
+| NETKIT (xnnpack) | XNNPACK LayerFast when enabled |
 | TFLM reference | TFLM reference kernels (not CMSIS-NN on desktop) |
 
 **CMSIS-NN is only enabled on MCU + Cortex-M builds** (`NETKIT_CMSIS_NN_ALLOWED`). On the host, TFLM does not use CMSIS-NN either — both stacks exercise portable reference conv paths. The large CNN gap on Apple Silicon is therefore **not** a direct preview of Cortex-M4F ratios: on MCU, TFLM typically links CMSIS-NN while netkit can use CMSIS-NN for conv/pool/FC when the case is supported.
@@ -222,7 +216,7 @@ Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. For firmw
 
 | Firmware | Model | Backend | Notes |
 |----------|-------|---------|-------|
-| [boards/nucleo-f446re](../boards/nucleo-f446re/README.md) | MNIST MLP f32 | CMSIS-DSP lowered AOT | ~10.7 ms, 10/10 |
+| [boards/nucleo-f446re](../boards/nucleo-f446re/README.md) | MNIST MLP f32 | CMSIS-NN / reference lowered AOT | ~10.7 ms, 10/10 |
 | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN interpreter embed | ~95 ms (94.9–97.0 ms typical), 10/10; 64 KiB arena, ~334 KiB flash / ~75 KiB SRAM |
 | [boards/nucleo-f446re-tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md) | MNIST CNN int8 | TFLite Micro | comparison baseline |
 

@@ -1,10 +1,11 @@
 # NUCLEO-F446RE (STM32F446RET6) — MNIST MLP f32 benchmark firmware.
 #
-# Build profile (explicit CMSIS opt-in):
-#   NETKIT_CMSIS_DSP=1, NETKIT_CMSIS_NN=1
+# Build profile (explicit CMSIS-NN opt-in):
+#   NETKIT_CMSIS_NN=1 (CMSIS-DSP is not used)
 #   NETKIT_TARGET=mcu_arm, NETKIT_ARCH=CM4 (weights always flash/blob-backed)
 #   Toolchain: mcu_tflm_toolchain.mk (CORE/KERNEL/THIRD_PARTY all -O2, -flto link)
 #     so netkit and TFLM firmware are compiled with matching speed flags.
+#   Float32 uses reference kernels — no optimized float32 MCU CMSIS-DSP path.
 #
 # Usage:
 #   make cmsis-init          # once, from repo root
@@ -24,7 +25,6 @@ include $(BOARD_ROOT)/mcu_tflm_toolchain.mk
 BUILD_DIR := build
 GEN_DIR := generated
 LIB_DIR := $(BUILD_DIR)/lib
-CMSIS_DSP_DIR := $(NETKIT_ROOT)/third_party/CMSIS-DSP
 CMSIS_NN_DIR := $(NETKIT_ROOT)/third_party/CMSIS-NN
 
 TARGET := mnist_mlp_nucleo_f446re
@@ -38,17 +38,13 @@ INCLUDES := \
 	-I$(NETKIT_ROOT)/include \
 	-I$(GEN_DIR) \
 	-I$(NETKIT_ROOT)/benchmark/tflm/generated \
-	-I$(CMSIS_DSP_DIR)/Include \
-	-I$(CMSIS_DSP_DIR)/PrivateInclude \
 	-I$(CMSIS_NN_DIR)/Include \
 	-I$(NETKIT_ROOT)/third_party/CMSIS-Core/CMSIS/Core/Include
 
-NETKIT_CMSIS_DSP ?= 1
 NETKIT_CMSIS_NN ?= 1
 
 NETKIT_CPPFLAGS := \
 	-DNETKIT_TARGET_MCU_ARM=1 \
-	$(if $(filter 1,$(NETKIT_CMSIS_DSP)),-DNETKIT_USE_CMSIS_DSP=1,) \
 	$(if $(filter 1,$(NETKIT_CMSIS_NN)),-DNETKIT_USE_CMSIS_NN=1 -DARM_NN_ENABLE_F32=1,) \
 	-DNETKIT_LOOP_UNROLL=0 \
 	-DNETKIT_IM2COL=0 \
@@ -56,14 +52,11 @@ NETKIT_CPPFLAGS := \
 	-DARM_MATH_LOOPUNROLL
 
 # Hot inference kernels — compiled at KERNEL_OPTIMIZATION_LEVEL (-O2), the same
-# tier TFLM applies to its cmsis_nn / cmsis_dsp kernels.
+# tier TFLM applies to its cmsis_nn kernels.
 NETKIT_KERNEL_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/reference_kernel.cpp \
 	$(NETKIT_ROOT)/src/ops.cpp \
-	$(NETKIT_ROOT)/src/cmsis_dsp_util.cpp
-ifeq ($(NETKIT_CMSIS_DSP),1)
-NETKIT_KERNEL_RUNTIME_SOURCES += $(NETKIT_ROOT)/src/cmsis_dsp_backend.cpp
-endif
+	$(NETKIT_ROOT)/src/netkit_util.cpp
 ifeq ($(NETKIT_CMSIS_NN),1)
 NETKIT_KERNEL_RUNTIME_SOURCES += $(NETKIT_ROOT)/src/cmsis_nn_backend.cpp
 endif
@@ -76,23 +69,6 @@ NETKIT_CORE_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/kernel_workspace.cpp \
 	$(NETKIT_ROOT)/src/cmsis_buffer_size.cpp
 
-CMSIS_DSP_SOURCES :=
-ifeq ($(NETKIT_CMSIS_DSP),1)
-CMSIS_DSP_SOURCES := \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_add_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_mult_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_dot_prod_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_scale_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_offset_f32.c \
-	$(CMSIS_DSP_DIR)/Source/BasicMathFunctions/arm_clip_f32.c \
-	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_mean_f32.c \
-	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_var_f32.c \
-	$(CMSIS_DSP_DIR)/Source/StatisticsFunctions/arm_max_f32.c \
-	$(CMSIS_DSP_DIR)/Source/SupportFunctions/arm_copy_f32.c \
-	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_init_f32.c \
-	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_vec_mult_f32.c \
-	$(CMSIS_DSP_DIR)/Source/MatrixFunctions/arm_mat_mult_f32.c
-endif
 
 # CMSIS-NN float32 kernels (opt-in via NETKIT_CMSIS_NN=1). The netkit CmsisNnKernel
 # adapter lives in cmsis_nn_backend.cpp; the CMSIS-NN f32 kernels below satisfy its
@@ -124,8 +100,6 @@ all: check-deps export-embed $(ELF) size
 
 check-deps:
 	$(MCU_ASSERT_GCC_TOOLCHAIN)
-	@test "$(NETKIT_CMSIS_DSP)" != "1" -o -f $(CMSIS_DSP_DIR)/Include/arm_math.h || \
-		(echo "NETKIT_CMSIS_DSP=1 requires CMSIS-DSP — run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test "$(NETKIT_CMSIS_NN)" != "1" -o -f $(CMSIS_NN_DIR)/Include/arm_nnfunctions.h || \
 		(echo "NETKIT_CMSIS_NN=1 requires CMSIS-NN — run: make -C $(NETKIT_ROOT) cmsis-init" >&2; exit 1)
 	@test -f $(NETKIT_ROOT)/models/mnist_mlp.nk || \
@@ -141,13 +115,9 @@ $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_mlp.nk $(NETKIT_ROOT)/pytho
 
 export-aot: export-embed
 
-$(LIBNETKIT): $(NETKIT_KERNEL_RUNTIME_SOURCES) $(NETKIT_CORE_RUNTIME_SOURCES) $(CMSIS_DSP_SOURCES) $(CMSIS_NN_SOURCES)
+$(LIBNETKIT): $(NETKIT_KERNEL_RUNTIME_SOURCES) $(NETKIT_CORE_RUNTIME_SOURCES) $(CMSIS_NN_SOURCES)
 	@mkdir -p $(LIB_DIR)
 	@rm -f $(LIB_DIR)/*.o
-	@set -e; for src in $(CMSIS_DSP_SOURCES); do \
-		obj=$(LIB_DIR)/cmsis_dsp_$$(basename $$src .c).o; \
-		$(CC) $(MCU_THIRD_PARTY_KERNEL_CFLAGS) $(MCU_DEBUG_FLAGS) $(INCLUDES) $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \
-	done
 	@set -e; for src in $(CMSIS_NN_SOURCES); do \
 		obj=$(LIB_DIR)/cmsis_nn_$$(basename $$src .c).o; \
 		$(CC) $(MCU_THIRD_PARTY_KERNEL_CFLAGS) $(MCU_DEBUG_FLAGS) -I$(CMSIS_NN_DIR)/Include $(NETKIT_CPPFLAGS) -c $$src -o $$obj; \

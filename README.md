@@ -26,7 +26,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
-| **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-DSP, lowered AOT) |
+| **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-NN / reference, lowered AOT) |
 | **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 benchmark (CMSIS-NN, interpreter embed) |
 | **[NUCLEO-F446RE MLP int8](boards/nucleo-f446re-mlp-int8/README.md)** | On-device MNIST MLP int8 benchmark (CMSIS-NN, interpreter embed) |
 | **[NUCLEO-F446RE TFLM CNN int8](boards/nucleo-f446re-tflm-cnn-int8/README.md)** | Same CNN int8 vectors via TFLite Micro (comparison baseline) |
@@ -64,7 +64,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — complete default path on cpu / MCU / MPU
 - **Int8 inference** — complete end-to-end int8 I/O (MNIST CNN/MLP MCU CMSIS-NN; host/MPU XNNPACK qs8 or QuantOps; ImageNet MNv4 int8)
-- **Optional backends** — CMSIS-NN (Arm MCU); CMSIS-DSP (Arm helpers); XNNPACK (cpu + any MPU, forbidden on MCU); RISC MCU uses fast generic kernels ([STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md))
+- **Optional backends** — CMSIS-NN (Arm MCU int8); XNNPACK (cpu + any MPU, forbidden on MCU); reference everywhere else. CMSIS-DSP is not used. ([STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md))
 
 ## Quick start
 
@@ -169,7 +169,7 @@ make test-python-full  # ONNX parity (82) + AOT compile tests (requires libnetki
 make test-embedded-smoke-matrix  # MCU/MPU + NETKIT_ARCH + CMSIS (host smoke; local only)
 make example-cpp  # C++26 usage demo
 make example-c    # C23 usage demo
-make cmsis-init   # fetch CMSIS-NN + CMSIS-DSP (optional backends)
+make cmsis-init   # fetch CMSIS-NN + CMSIS-Core (optional backends)
 make export-mnist # regenerate MNIST MLP model (requires PyTorch: pip install -e "python[train]")
 make export-mnist-cnn # regenerate MNIST CNN model (requires PyTorch)
 make export-mnist-cnn-int8 # quantize MNIST CNN to int8 .nk + prequantized test vectors
@@ -178,26 +178,27 @@ make clean
 make rebuild
 ```
 
-### Optional CMSIS backends and architecture
+### Optional backends and architecture
 
-CMSIS backends are **opt-in** via `NETKIT_CMSIS_*=1` (or CMake `-DNETKIT_CMSIS_*=ON`). They are **not** inferred from `NETKIT_ARCH` alone — `NETKIT_ARCH` only sets `ARM_MATH_*` tuning flags.
+Backends: **reference** + **XNNPACK** (cpu / MPU) + **CMSIS-NN** (Arm MCU int8). CMSIS-DSP is **not** used. CMSIS-NN is **opt-in** via `NETKIT_CMSIS_NN=1` (or CMake `-DNETKIT_CMSIS_NN=ON`). `NETKIT_ARCH` only sets `ARM_MATH_*` tuning flags.
 
-**Profile defaults** (override on the command line, e.g. `make NETKIT_CMSIS_DSP=0`):
+**Profile defaults** (override on the command line, e.g. `make NETKIT_CMSIS_NN=0`):
 
-| `NETKIT_TARGET` | Default CMSIS-DSP | Default CMSIS-NN | Default XNNPACK |
-|-----------------|-------------------|------------------|-----------------|
-| `cpu` | off (fewer host deps) | off | on (any host ISA) |
-| `mcu_arm` | on (helpers; dots off unless `NETKIT_CMSIS_DSP_DOT=1`) | on (Cortex-M `NETKIT_ARCH`) | forbidden |
-| `mpu_arm` | on (helpers) | off | on |
-| `mcu_risc` | off (forbidden) | off (forbidden) | forbidden |
-| `mpu_risc` | off (forbidden) | off (forbidden) | on |
+| `NETKIT_TARGET` | Default CMSIS-NN | Default XNNPACK |
+|-----------------|------------------|-----------------|
+| `cpu` | off | on (any host ISA) |
+| `mcu_arm` | on (Cortex-M `NETKIT_ARCH`; int8 production) | forbidden |
+| `mpu_arm` | off | on |
+| `mcu_risc` | off (forbidden) | forbidden |
+| `mpu_risc` | off (forbidden) | on |
+
+Float32 on MCU uses portable/reference kernels only — there is no plan for an optimized float32 MCU build.
 
 ```bash
 make cmsis-init
 make xnnpack-init                     # once, for cpu / MPU LayerFast
-make test-cpp                         # cpu: XNNPACK preferred, DSP off
-make NETKIT_CMSIS_DSP=1 test-cpp      # optional portable DSP helpers on host
-make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib   # mcu_arm: CMSIS-DSP + CMSIS-NN
+make test-cpp                         # cpu: XNNPACK preferred
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib   # mcu_arm: CMSIS-NN
 
 # Host smoke before on-device bring-up (sets NETKIT_HOST_SMOKE=1)
 make test-embedded-smoke-matrix
@@ -213,7 +214,7 @@ cmake --build cmake-build
 ./cmake-build/netkit test
 ```
 
-CMake options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, `NETKIT_CMSIS_DSP`, arena flags.
+CMake options mirror Make: `NETKIT_TARGET`, `NETKIT_ARCH`, `NETKIT_CMSIS_NN`, arena flags.
 
 See [docs/BUILD_TARGETS.md](docs/BUILD_TARGETS.md) for CPU vs MCU vs MPU builds and [docs/TESTING.md](docs/TESTING.md) for the regression layout.
 

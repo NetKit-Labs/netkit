@@ -1,5 +1,6 @@
-# Map NETKIT_ARCH to CMSIS-DSP ARM_MATH_* preprocessor flags (see arm_math.h / CMSIS docs).
+# Map NETKIT_ARCH to CMSIS ARM_MATH_* preprocessor flags for CMSIS-NN.
 # Empty NETKIT_ARCH => native desktop / CPU build.
+# CMSIS-DSP is not used as a netkit backend.
 
 set(NETKIT_ARCH "" CACHE STRING
     "Target core (empty=desktop CPU): CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, NEON")
@@ -16,7 +17,6 @@ function(netkit_resolve_architecture)
     set(_arm_math_neon OFF)
     set(_arm_math_loopunroll OFF)
     set(_arm_math_mve OFF)
-    set(_cmsis_dsp OFF)
     set(_cmsis_nn OFF)
     set(_generic_nn OFF)
     set(_target_default cpu)
@@ -28,7 +28,7 @@ function(netkit_resolve_architecture)
         set(_arm_math_loopunroll ON)
 
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-            message(STATUS "Desktop CPU: Apple Silicon / Arm64 (portable CMSIS + optional NEON paths)")
+            message(STATUS "Desktop CPU: Apple Silicon / Arm64 (portable CMSIS-NN host path + optional NEON)")
             set(NEON ON CACHE BOOL "Enable NEON" FORCE)
         else()
             message(STATUS "Desktop CPU: x86_64 / Intel / AMD (portable C)")
@@ -101,7 +101,6 @@ function(netkit_resolve_architecture)
     set(NETKIT_ENV_ARM_MATH_NEON ${_arm_math_neon} PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_LOOPUNROLL ${_arm_math_loopunroll} PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_MVE ${_arm_math_mve} PARENT_SCOPE)
-    set(NETKIT_ENV_CMSIS_DSP ${_cmsis_dsp} PARENT_SCOPE)
     set(NETKIT_ENV_CMSIS_NN ${_cmsis_nn} PARENT_SCOPE)
     set(NETKIT_ENV_GENERIC_NN ${_generic_nn} PARENT_SCOPE)
     set(_netkit_target_default ${_target_default} PARENT_SCOPE)
