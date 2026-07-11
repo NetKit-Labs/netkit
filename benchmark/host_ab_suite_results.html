@@ -4,66 +4,41 @@
 <meta charset="utf-8" />
 <title>Host A/B suite — netkit vs TF Lite</title>
 <style>
-  @page { size: letter; margin: 0.6in; }
+  @page { size: letter; margin: 0.55in; }
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     color: #1a1a1a;
-    font-size: 11px;
-    line-height: 1.45;
-    margin: 0;
-    padding: 0;
-  }
-  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
-  h2 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
-  .sub { color: #666; font-size: 11px; margin-bottom: 18px; }
-  .muted { color: #888; font-size: 10px; }
-  .section { margin-bottom: 20px; }
-  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .card {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 12px 14px;
-  }
-  .card-h {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    font-weight: 600;
-    font-size: 12px;
-    margin-bottom: 10px;
-  }
-  .card-h span { font-weight: 400; color: #666; font-size: 10px; }
-  .stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px 14px;
-  }
-  .stat-v { font-size: 16px; font-weight: 650; }
-  .stat-v.good { color: #1b7a3d; }
-  .stat-l { font-size: 10px; color: #666; margin-top: 2px; }
-  .callout {
-    background: #f0f5ff;
-    border: 1px solid #c9d8f5;
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin: 16px 0;
-  }
-  .callout strong { display: block; margin-bottom: 4px; font-size: 11px; }
-  hr { border: none; border-top: 1px solid #e5e5e5; margin: 18px 0; }
-  table {
-    width: 100%;
-    border-collapse: collapse;
     font-size: 10.5px;
+    line-height: 1.4;
+    margin: 0;
   }
-  th, td {
-    padding: 5px 7px;
-    border-bottom: 1px solid #eee;
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 4px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .sub { color: #666; font-size: 10.5px; margin: 0 0 16px; }
+  .muted { color: #888; font-size: 9.5px; margin: -2px 0 10px; }
+  .section { margin-bottom: 16px; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px; }
+  .card-h {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-weight: 600; font-size: 11.5px; margin-bottom: 8px;
   }
+  .card-h span { font-weight: 400; color: #666; font-size: 9.5px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  .stat-v { font-size: 15px; font-weight: 650; }
+  .stat-v.good { color: #1b7a3d; }
+  .stat-l { font-size: 9.5px; color: #666; margin-top: 1px; }
+  .callout {
+    background: #f0f5ff; border: 1px solid #c9d8f5; border-radius: 8px;
+    padding: 8px 10px; margin: 12px 0;
+  }
+  .callout strong { display: block; margin-bottom: 3px; font-size: 10.5px; }
+  hr { border: none; border-top: 1px solid #e5e5e5; margin: 14px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #eee; }
   th {
-    text-align: left;
-    font-weight: 600;
-    background: #f7f7f7;
+    text-align: left; font-weight: 600; background: #f7f7f7;
     border-bottom: 1px solid #ddd;
   }
   th.r, td.r { text-align: right; font-variant-numeric: tabular-nums; }
@@ -72,25 +47,25 @@
   tr.lose td { background: #fff6e8; }
   tr.win:nth-child(even) td { background: #e6f4ea; }
   tr.lose:nth-child(even) td { background: #ffefd6; }
-  .footer { margin-top: 14px; color: #888; font-size: 10px; }
+  .footer { margin-top: 12px; color: #888; font-size: 9.5px; }
 </style>
 </head>
 <body>
   <h1>Host A/B suite — netkit vs TF Lite</h1>
   <p class="sub">
-    Apple Silicon · clean rebuild Jul 11, 2026 · warm-only · MLP batched 1000×10 ·
-    models + fixture images excluded from flash/RAM
+    Apple Silicon · warm-only · MNIST CNN + MNIST DS-CNN + MobileNetV4-Conv-Small
+    (ImageNet) · models + fixture images excluded from flash/RAM
   </p>
 
   <div class="section">
-    <h2>Runtime flash / RAM (absolute)</h2>
-    <p class="muted" style="margin-top:-4px;margin-bottom:10px">
-      MCU-style image only: netkit ELF TEXT/DATA minus fixture .o; TF Lite = core
-      LiteRT CPU libs. Same TF footprint for both dtypes.
+    <h2>1. Runtime flash / RAM (absolute)</h2>
+    <p class="muted">
+      MCU-style image only: netkit ELF TEXT/DATA minus fixture .o; TF Lite =
+      core LiteRT CPU libs. Same TF footprint for int8 and float32.
     </p>
     <div class="cards">
       <div class="card">
-        <div class="card-h">XNNPACK ON <span>~9.4× / 3.9× smaller</span></div>
+        <div class="card-h">XNNPACK ON <span>TF÷nk ≈ 9.4× / 3.9×</span></div>
         <div class="stats">
           <div><div class="stat-v good">1.31–1.32 MiB</div><div class="stat-l">netkit flash</div></div>
           <div><div class="stat-v">12.41 MiB</div><div class="stat-l">TF Lite flash</div></div>
@@ -99,7 +74,7 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-h">XNNPACK OFF <span>~64× / 48× smaller</span></div>
+        <div class="card-h">XNNPACK OFF <span>TF÷nk ≈ 64× / 48×</span></div>
         <div class="stats">
           <div><div class="stat-v good">193–200 KiB</div><div class="stat-l">netkit flash</div></div>
           <div><div class="stat-v">12.41 MiB</div><div class="stat-l">TF Lite flash</div></div>
@@ -108,19 +83,41 @@
         </div>
       </div>
     </div>
+    <table>
+      <thead>
+        <tr>
+          <th>mode</th>
+          <th class="r">netkit flash</th><th class="r">TF flash</th><th class="r">flash TF÷nk</th>
+          <th class="r">netkit RAM</th><th class="r">TF RAM</th><th class="r">ram TF÷nk</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>XNNPACK ON</td>
+          <td class="r">1.31–1.32 MiB</td><td class="r">12.41 MiB</td><td class="r">9.4×</td>
+          <td class="r">191.8 KiB</td><td class="r">752.0 KiB</td><td class="r">3.9×</td>
+        </tr>
+        <tr>
+          <td>XNNPACK OFF</td>
+          <td class="r">193–200 KiB</td><td class="r">12.41 MiB</td><td class="r">~64×</td>
+          <td class="r">15.8 KiB</td><td class="r">752.0 KiB</td><td class="r">47.7×</td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
   <div class="callout">
-    <strong>Warm-only methodology</strong>
-    Discard 1st process, keep 2nd; order swaps (nk→TF, TF→nk). MLP: discard batch
-    pass 0. CNN: discard run 0 + image 0 (runs=9 both sides). ImageNet: warm_mean
-    discards the full first image pass. Ratio = TF ÷ netkit (&gt;1 ⇒ netkit faster / smaller).
+    <strong>Models + methodology</strong>
+    MNIST CNN = digit classifier. MNIST DS-CNN = depthwise-separable digit peer.
+    MNv4-Small ImageNet = MobileNetV4-Conv-Small (10-class fixture). Discard 1st
+    process; order swaps. MNIST: discard run 0 + image 0. ImageNet: discard full
+    first image pass. Ratio = TF ÷ netkit (&gt;1 ⇒ netkit faster / smaller).
   </div>
 
   <hr />
 
   <div class="section">
-    <h2>INT8 — latency (absolute + TF÷netkit)</h2>
+    <h2>2. INT8 — all models (absolute + TF÷netkit)</h2>
     <table>
       <thead>
         <tr>
@@ -130,20 +127,18 @@
         </tr>
       </thead>
       <tbody>
-        <tr class="lose"><td>mlp</td><td>ON</td><td class="r">1.558 µs</td><td class="r">1.140 µs</td><td class="r">0.73×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="win"><td>cnn</td><td>ON</td><td class="r">20.324 µs</td><td class="r">21.270 µs</td><td class="r">1.05×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="win"><td>cnn_dw</td><td>ON</td><td class="r">20.765 µs</td><td class="r">23.212 µs</td><td class="r">1.12×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="win"><td>imagenet</td><td>ON</td><td class="r">694 µs</td><td class="r">721 µs</td><td class="r">1.04×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="win"><td>mlp</td><td>OFF</td><td class="r">2.883 µs</td><td class="r">7.703 µs</td><td class="r">2.67×</td><td class="r">63.5×</td><td class="r">47.7×</td></tr>
-        <tr class="win"><td>cnn</td><td>OFF</td><td class="r">141 µs</td><td class="r">551 µs</td><td class="r">3.92×</td><td class="r">63.5×</td><td class="r">47.7×</td></tr>
-        <tr class="win"><td>cnn_dw</td><td>OFF</td><td class="r">188 µs</td><td class="r">450 µs</td><td class="r">2.39×</td><td class="r">63.5×</td><td class="r">47.7×</td></tr>
-        <tr class="win"><td>imagenet</td><td>OFF</td><td class="r">7.53 ms</td><td class="r">28.5 ms</td><td class="r">3.78×</td><td class="r">65.6×</td><td class="r">47.7×</td></tr>
+        <tr class="win"><td>MNIST CNN</td><td>ON</td><td class="r">20.118 µs</td><td class="r">20.463 µs</td><td class="r">1.017×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
+        <tr class="win"><td>MNIST DS-CNN</td><td>ON</td><td class="r">20.560 µs</td><td class="r">21.121 µs</td><td class="r">1.027×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
+        <tr class="win"><td>MNv4-Small ImageNet</td><td>ON</td><td class="r">681 µs</td><td class="r">713 µs</td><td class="r">1.048×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
+        <tr class="win"><td>MNIST CNN</td><td>OFF</td><td class="r">153 µs</td><td class="r">578 µs</td><td class="r">3.78×</td><td class="r">63.5×</td><td class="r">47.7×</td></tr>
+        <tr class="win"><td>MNIST DS-CNN</td><td>OFF</td><td class="r">196 µs</td><td class="r">424 µs</td><td class="r">2.17×</td><td class="r">63.5×</td><td class="r">47.7×</td></tr>
+        <tr class="win"><td>MNv4-Small ImageNet</td><td>OFF</td><td class="r">7.62 ms</td><td class="r">28.8 ms</td><td class="r">3.78×</td><td class="r">65.6×</td><td class="r">47.7×</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="section">
-    <h2>FLOAT32 — latency (absolute + TF÷netkit)</h2>
+    <h2>3. FLOAT32 — all models (absolute + TF÷netkit)</h2>
     <table>
       <thead>
         <tr>
@@ -153,21 +148,19 @@
         </tr>
       </thead>
       <tbody>
-        <tr class="win"><td>mlp</td><td>ON</td><td class="r">1.200 µs</td><td class="r">2.244 µs</td><td class="r">1.87×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="lose"><td>cnn</td><td>ON</td><td class="r">30.915 µs</td><td class="r">29.854 µs</td><td class="r">0.97×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="win"><td>cnn_dw</td><td>ON</td><td class="r">29.034 µs</td><td class="r">30.620 µs</td><td class="r">1.06×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="win"><td>imagenet</td><td>ON</td><td class="r">1.054 ms</td><td class="r">1.100 ms</td><td class="r">1.04×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
-        <tr class="win"><td>mlp</td><td>OFF</td><td class="r">19.9 µs</td><td class="r">45.4 µs</td><td class="r">2.28×</td><td class="r">65.8×</td><td class="r">47.7×</td></tr>
-        <tr class="win"><td>cnn</td><td>OFF</td><td class="r">517 µs</td><td class="r">1.13 ms</td><td class="r">2.19×</td><td class="r">65.8×</td><td class="r">47.7×</td></tr>
-        <tr class="win"><td>cnn_dw</td><td>OFF</td><td class="r">256 µs</td><td class="r">405 µs</td><td class="r">1.58×</td><td class="r">65.8×</td><td class="r">47.7×</td></tr>
-        <tr class="win"><td>imagenet</td><td>OFF</td><td class="r">32.5 ms</td><td class="r">60.9 ms</td><td class="r">1.87×</td><td class="r">63.6×</td><td class="r">47.7×</td></tr>
+        <tr class="win"><td>MNIST CNN</td><td>ON</td><td class="r">30.582 µs</td><td class="r">31.532 µs</td><td class="r">1.031×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
+        <tr class="win"><td>MNIST DS-CNN</td><td>ON</td><td class="r">26.860 µs</td><td class="r">29.300 µs</td><td class="r">1.091×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
+        <tr class="win"><td>MNv4-Small ImageNet</td><td>ON</td><td class="r">1.088 ms</td><td class="r">1.171 ms</td><td class="r">1.076×</td><td class="r">9.4×</td><td class="r">3.9×</td></tr>
+        <tr class="win"><td>MNIST CNN</td><td>OFF</td><td class="r">508 µs</td><td class="r">1.01 ms</td><td class="r">1.99×</td><td class="r">65.8×</td><td class="r">47.7×</td></tr>
+        <tr class="win"><td>MNIST DS-CNN</td><td>OFF</td><td class="r">272 µs</td><td class="r">445 µs</td><td class="r">1.63×</td><td class="r">65.8×</td><td class="r">47.7×</td></tr>
+        <tr class="win"><td>MNv4-Small ImageNet</td><td>OFF</td><td class="r">32.7 ms</td><td class="r">61.5 ms</td><td class="r">1.88×</td><td class="r">63.6×</td><td class="r">47.7×</td></tr>
       </tbody>
     </table>
   </div>
 
   <p class="footer">
-    Green rows: netkit ahead on latency (ratio ≥ 1). Amber: TF Lite ahead.
-    Source: benchmark/host_ab_suite_results_int8.txt and host_ab_suite_results_float32.txt.
+    Green: netkit ahead on latency (ratio ≥ 1). Amber: TF Lite ahead or tied within noise (&lt; 1).
+    Source: host_ab_suite_results_int8.txt / host_ab_suite_results_float32.txt.
   </p>
 </body>
 </html>

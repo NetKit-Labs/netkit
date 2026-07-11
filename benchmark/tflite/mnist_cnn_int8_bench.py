@@ -96,7 +96,6 @@ def main() -> int:
         )
 
     use_xnnpack = not args.no_xnnpack
-    # Host TF Lite has no CMSIS-NN path; XNNPACK is the optimized peer.
     backend = "xnnpack" if use_xnnpack else "builtin-ref"
 
     interp = _load_interpreter(

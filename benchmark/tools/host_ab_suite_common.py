@@ -8,11 +8,15 @@ Fairness policy (cold-start / rebuild bias removed):
      first-to-run side is hot when its kept (2nd) process starts.
   4. Timed metrics come from already-built binaries / Python benches only.
   5. Order swaps (netkit→TF Lite, then TF Lite→netkit).
-  6. Equalize MNIST MLP batch timing (1000 invokes/window × 10 passes both sides).
-  7. LiteRT-matched -O3 flags for netkit (BENCH_FLAG_PROFILE=tflite).
-  8. Within each kept process, benches never report cold inference:
-     MNIST CNN discards run 0 and image 0 of every run; MLP uses batched windows
-     (discard batch pass 0); ImageNet warm_mean discards the entire first image pass.
+  6. LiteRT-matched -O3 flags for netkit (BENCH_FLAG_PROFILE=tflite).
+  7. Within each kept process, benches never report cold inference:
+     MNIST CNN / DS-CNN discard run 0 and image 0 of every run;
+     MobileNetV4-Small ImageNet warm_mean discards the entire first image pass.
+
+Models (display names):
+  cnn      — MNIST digit CNN
+  cnn_dw   — MNIST digit DS-CNN (depthwise-separable peer)
+  imagenet — MobileNetV4-Conv-Small on ImageNet (10-class fixture)
 
 Flash/RAM (MCU-style): netkit bench ELF TEXT/DATA minus hard-coded test-image
 `.o` fixtures; TF Lite = core LiteRT CPU libs. Models (`.nk` / `.tflite`) and
@@ -38,11 +42,15 @@ TFLITE = ROOT / "benchmark" / "tflite"
 TFLITE_PY = TFLITE / ".venv" / "bin" / "python"
 SUMMARY_RE = re.compile(r"^BENCHMARK_SUMMARY\s+(.*)$", re.M)
 
-MLP_BATCH_INVOKES = 1000
-MLP_BATCH_PASSES = 10
 CNN_RUNS = 10
 
-MODEL_CHOICES = ("mlp", "cnn", "cnn_dw", "imagenet")
+# Suite keys → human-readable labels (tables / banners).
+MODEL_CHOICES = ("cnn", "cnn_dw", "imagenet")
+MODEL_LABELS = {
+    "cnn": "MNIST CNN",
+    "cnn_dw": "MNIST DS-CNN",
+    "imagenet": "MNv4-Small ImageNet",
+}
 
 
 @dataclass(frozen=True)
@@ -67,7 +75,7 @@ class SuiteCfg:
 class RunResult:
     runtime: str
     model: str
-    xnnpack: bool
+    mode: str  # "xnn" | "ref"
     order: str
     metric_name: str
     metric_us: float
@@ -78,7 +86,7 @@ class RunResult:
 @dataclass
 class PairAvg:
     model: str
-    xnnpack: bool
+    mode: str  # "xnn" | "ref"
     netkit_us: float
     tflite_us: float
     metric_name: str
@@ -107,6 +115,23 @@ class PairAvg:
             return float("nan")
         return self.tflite_ram_bytes / self.netkit_ram_bytes
 
+
+@dataclass(frozen=True)
+class CompareMode:
+    """One A/B slot: netkit build + TF Lite resolver/delegate combination."""
+
+    key: str
+    title: str
+    netkit_xnn: bool
+    tflite_args: tuple[str, ...]
+
+
+# xnn: both sides XNNPACK
+# ref: both sides reference (TF BUILTIN_REF)
+COMPARE_MODES: tuple[CompareMode, ...] = (
+    CompareMode("xnn", "XNNPACK ON", True, ()),
+    CompareMode("ref", "XNNPACK OFF (reference)", False, ("--no-xnnpack",)),
+)
 
 FLOAT32 = DtypeProfile(name="float32", tag="f32", header_label="FLOAT32")
 INT8 = DtypeProfile(name="int8", tag="i8", header_label="INT8")
@@ -220,13 +245,11 @@ def _netkit_fixture_image_objs(model: str, cfg: SuiteCfg) -> list[Path]:
     gen = ROOT / "benchmark" / "tflm" / "generated"
     if cfg.dtype.name == "float32":
         return {
-            "mlp": [gen / "mnist_test_images.o"],
             "cnn": [gen / "mnist_cnn_test_images.o"],
             "cnn_dw": [gen / "cnn_dw" / "mnist_cnn_test_images.o"],
             "imagenet": [gen / "imagenet_mnv4_test_images.o"],
         }[model]
     return {
-        "mlp": [gen / "mnist_mlp_int8_test_images.o"],
         "cnn": [gen / "mnist_cnn_int8_test_images.o"],
         "cnn_dw": [gen / "cnn_dw" / "mnist_cnn_int8_test_images.o"],
         "imagenet": [gen / "imagenet_mnv4_netkit_int8_test_images.o"],
@@ -262,11 +285,9 @@ def _ensure_venv() -> None:
 
 def ensure_assets_float32() -> None:
     needed = [
-        ROOT / "models" / "mnist_mlp.nk",
         ROOT / "models" / "mnist_cnn.nk",
         ROOT / "models" / "mnist_cnn_dw.nk",
         ROOT / "models" / "mobilenetv4_imagenet_f32.nk",
-        ROOT / "benchmark" / "tflm" / "generated" / "mnist_mlp.tflite",
         ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn.tflite",
         ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_dw.tflite",
         ROOT / "benchmark" / "tflm" / "generated" / "mobilenetv4_imagenet_f32.tflite",
@@ -280,11 +301,9 @@ def ensure_assets_float32() -> None:
 
 def ensure_assets_int8() -> None:
     needed = [
-        ROOT / "models" / "mnist_mlp_int8.nk",
         ROOT / "models" / "mnist_cnn_int8.nk",
         ROOT / "models" / "mnist_cnn_dw_int8.nk",
         ROOT / "models" / "mobilenetv4_imagenet_int8.nk",
-        ROOT / "benchmark" / "tflm" / "generated" / "mnist_mlp_int8.tflite",
         ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_int8.tflite",
         ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_dw_int8.tflite",
         ROOT
@@ -329,14 +348,12 @@ def _bench_name(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> str:
     xt = _xnn_tag(xnnpack)
     if cfg.dtype.name == "float32":
         prefix = {
-            "mlp": "mnist_mlp_bench",
             "cnn": "mnist_cnn_bench",
             "cnn_dw": "mnist_cnn_dw_bench",
             "imagenet": "mobilenetv4_imagenet_bench",
         }[model]
     else:
         prefix = {
-            "mlp": "mnist_mlp_int8_bench",
             "cnn": "mnist_cnn_int8_bench",
             "cnn_dw": "mnist_cnn_dw_int8_bench",
             "imagenet": "mobilenetv4_imagenet_int8_bench",
@@ -351,13 +368,11 @@ def _netkit_binary(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> Path:
 def _netkit_model_path(model: str, cfg: SuiteCfg) -> str:
     if cfg.dtype.name == "float32":
         return {
-            "mlp": "models/mnist_mlp.nk",
             "cnn": "models/mnist_cnn.nk",
             "cnn_dw": "models/mnist_cnn_dw.nk",
             "imagenet": "models/mobilenetv4_imagenet_f32.nk",
         }[model]
     return {
-        "mlp": "models/mnist_mlp_int8.nk",
         "cnn": "models/mnist_cnn_int8.nk",
         "cnn_dw": "models/mnist_cnn_dw_int8.nk",
         "imagenet": "models/mobilenetv4_imagenet_int8.nk",
@@ -370,12 +385,6 @@ def _netkit_build_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
     tag = f"{cfg.suite_tag}_{_xnn_tag(xnnpack)}"
 
     if cfg.dtype.name == "float32":
-        if model == "mlp":
-            return common + [
-                f"MLP_BENCH={name}",
-                f"MLP_MAIN_OBJ=src/main_ab_{tag}.o",
-                "build-mlp",
-            ]
         if model == "cnn":
             return common + [
                 f"CNN_BENCH={name}",
@@ -398,12 +407,6 @@ def _netkit_build_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                 "build-mobilenetv4-imagenet",
             ]
     else:
-        if model == "mlp":
-            return common + [
-                f"MLP_INT8_BENCH={name}",
-                f"MLP_INT8_MAIN_OBJ=src/mnist_mlp_int8_main_ab_{tag}.o",
-                "build-mlp-int8",
-            ]
         if model == "cnn":
             return common + [
                 f"CNN_INT8_BENCH={name}",
@@ -429,31 +432,16 @@ def _netkit_build_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
 
 
 def _netkit_run_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
-    cmd = [
+    return [
         str(_netkit_binary(model, cfg, xnnpack=xnnpack)),
         _netkit_model_path(model, cfg),
     ]
-    if model == "mlp":
-        cmd.extend([str(MLP_BATCH_INVOKES), str(MLP_BATCH_PASSES)])
-    return cmd
 
 
-def _tflite_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
+def _tflite_cmd(model: str, cfg: SuiteCfg, *, mode: CompareMode) -> list[str]:
     py = str(TFLITE_PY)
-    no_xnn = [] if xnnpack else ["--no-xnnpack"]
+    backend_args = list(mode.tflite_args)
     if cfg.dtype.name == "float32":
-        if model == "mlp":
-            return [
-                py,
-                str(TFLITE / "mnist_mlp_bench.py"),
-                "--num-threads",
-                "1",
-                "--batch-invokes",
-                str(MLP_BATCH_INVOKES),
-                "--runs",
-                str(MLP_BATCH_PASSES),
-                *no_xnn,
-            ]
         if model == "cnn":
             return [
                 py,
@@ -462,7 +450,7 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                 "1",
                 "--runs",
                 str(CNN_RUNS),
-                *no_xnn,
+                *backend_args,
             ]
         if model == "cnn_dw":
             return [
@@ -476,7 +464,7 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                 str(ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_dw.tflite"),
                 "--nk",
                 str(ROOT / "models" / "mnist_cnn_dw.nk"),
-                *no_xnn,
+                *backend_args,
             ]
         if model == "imagenet":
             return [
@@ -484,21 +472,9 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                 str(TFLITE / "mobilenetv4_imagenet_bench.py"),
                 "--num-threads",
                 "1",
-                *no_xnn,
+                *backend_args,
             ]
     else:
-        if model == "mlp":
-            return [
-                py,
-                str(TFLITE / "mnist_mlp_int8_bench.py"),
-                "--num-threads",
-                "1",
-                "--batch-invokes",
-                str(MLP_BATCH_INVOKES),
-                "--runs",
-                str(MLP_BATCH_PASSES),
-                *no_xnn,
-            ]
         if model == "cnn":
             return [
                 py,
@@ -507,7 +483,7 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                 "1",
                 "--runs",
                 str(CNN_RUNS),
-                *no_xnn,
+                *backend_args,
             ]
         if model == "cnn_dw":
             return [
@@ -531,7 +507,7 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                     / "generated"
                     / "mnist_cnn_dw_int8_tflite_quant.json"
                 ),
-                *no_xnn,
+                *backend_args,
             ]
         if model == "imagenet":
             return [
@@ -539,7 +515,7 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                 str(TFLITE / "mobilenetv4_imagenet_int8_bench.py"),
                 "--num-threads",
                 "1",
-                *no_xnn,
+                *backend_args,
             ]
     raise ValueError(model)
 
@@ -549,31 +525,36 @@ def _prebuild(models: list[str], cfg: SuiteCfg) -> None:
         f"\n======== PREBUILD (untimed, {cfg.dtype.header_label}) ========",
         flush=True,
     )
-    for xnnpack in (True, False):
-        mode = "XNNPACK ON" if xnnpack else "XNNPACK OFF"
-        print(f"-- {mode} --", flush=True)
+    # Only two netkit builds: XNNPACK on and reference.
+    built: set[bool] = set()
+    for mode in COMPARE_MODES:
+        if mode.netkit_xnn in built:
+            continue
+        built.add(mode.netkit_xnn)
+        label = "XNNPACK ON" if mode.netkit_xnn else "XNNPACK OFF (netkit reference)"
+        print(f"-- {label} --", flush=True)
         for model in models:
             print(f"  build netkit {model} ...", flush=True)
-            _run(_netkit_build_cmd(model, cfg, xnnpack=xnnpack), cwd=NETKIT)
-            binary = _netkit_binary(model, cfg, xnnpack=xnnpack)
+            _run(_netkit_build_cmd(model, cfg, xnnpack=mode.netkit_xnn), cwd=NETKIT)
+            binary = _netkit_binary(model, cfg, xnnpack=mode.netkit_xnn)
             if not binary.is_file():
                 raise RuntimeError(f"missing binary after build: {binary}")
     print("prebuild done.", flush=True)
 
 
-def _warmup_runtime(model: str, runtime: str, cfg: SuiteCfg, *, xnnpack: bool) -> None:
+def _warmup_runtime(model: str, runtime: str, cfg: SuiteCfg, *, mode: CompareMode) -> None:
     if runtime == "netkit":
-        _run(_netkit_run_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
+        _run(_netkit_run_cmd(model, cfg, xnnpack=mode.netkit_xnn), cwd=ROOT)
     else:
-        _run(_tflite_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
+        _run(_tflite_cmd(model, cfg, mode=mode), cwd=ROOT)
 
 
 def _execute_runtime(
-    model: str, runtime: str, cfg: SuiteCfg, *, xnnpack: bool
+    model: str, runtime: str, cfg: SuiteCfg, *, mode: CompareMode
 ) -> tuple[str, float]:
     if runtime == "netkit":
-        return _run(_netkit_run_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
-    return _run(_tflite_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
+        return _run(_netkit_run_cmd(model, cfg, xnnpack=mode.netkit_xnn), cwd=ROOT)
+    return _run(_tflite_cmd(model, cfg, mode=mode), cwd=ROOT)
 
 
 def _one_runtime(
@@ -581,7 +562,7 @@ def _one_runtime(
     runtime: str,
     cfg: SuiteCfg,
     *,
-    xnnpack: bool,
+    mode: CompareMode,
     order: str,
     discard_first: bool,
 ) -> RunResult:
@@ -589,24 +570,24 @@ def _one_runtime(
     if discard_first:
         print(
             f"  discard-1st [{order}] {runtime:6s} {model:8s} "
-            f"xnn={'ON' if xnnpack else 'OFF':3s} ...",
+            f"mode={mode.key:6s} ...",
             flush=True,
         )
-        _execute_runtime(model, runtime, cfg, xnnpack=xnnpack)
+        _execute_runtime(model, runtime, cfg, mode=mode)
 
-    out, elapsed = _execute_runtime(model, runtime, cfg, xnnpack=xnnpack)
+    out, elapsed = _execute_runtime(model, runtime, cfg, mode=mode)
     fields = _parse_summary(out)
     metric_name, metric_us = _metric_from_summary(fields, imagenet=imagenet)
     summary_line = SUMMARY_RE.findall(out)[-1]
     print(
-        f"  [{order}] {runtime:6s} {model:8s} xnn={'ON' if xnnpack else 'OFF':3s} "
+        f"  [{order}] {runtime:6s} {model:8s} mode={mode.key:6s} "
         f"{metric_name}={metric_us:.3f} us  ({elapsed:.1f}s)",
         flush=True,
     )
     return RunResult(
         runtime=runtime,
         model=model,
-        xnnpack=xnnpack,
+        mode=mode.key,
         order=order,
         metric_name=metric_name,
         metric_us=metric_us,
@@ -623,26 +604,26 @@ def run_suite(
     results: list[RunResult] = []
     avgs: list[PairAvg] = []
 
-    for xnnpack in (True, False):
-        mode = "XNNPACK ON" if xnnpack else "XNNPACK OFF"
+    for mode in COMPARE_MODES:
         print(
-            f"\n======== MEASURE {mode} ({cfg.dtype.header_label}) ========",
+            f"\n======== MEASURE {mode.title} ({cfg.dtype.header_label}) ========",
             flush=True,
         )
         for model in models:
-            print(f"\n-- model={model} --", flush=True)
+            label = MODEL_LABELS.get(model, model)
+            print(f"\n-- model={label} ({model}) --", flush=True)
 
             if do_warmup:
                 print(
-                    f"  prime opposite (tflite) before Pass A ({model}) ...",
+                    f"  prime opposite (tflite) before Pass A ({label}) ...",
                     flush=True,
                 )
-                _warmup_runtime(model, "tflite", cfg, xnnpack=xnnpack)
+                _warmup_runtime(model, "tflite", cfg, mode=mode)
             a_nk = _one_runtime(
                 model,
                 "netkit",
                 cfg,
-                xnnpack=xnnpack,
+                mode=mode,
                 order="A:nk→tf",
                 discard_first=do_warmup,
             )
@@ -650,22 +631,22 @@ def run_suite(
                 model,
                 "tflite",
                 cfg,
-                xnnpack=xnnpack,
+                mode=mode,
                 order="A:nk→tf",
                 discard_first=do_warmup,
             )
 
             if do_warmup:
                 print(
-                    f"  prime opposite (netkit) before Pass B ({model}) ...",
+                    f"  prime opposite (netkit) before Pass B ({label}) ...",
                     flush=True,
                 )
-                _warmup_runtime(model, "netkit", cfg, xnnpack=xnnpack)
+                _warmup_runtime(model, "netkit", cfg, mode=mode)
             b_tf = _one_runtime(
                 model,
                 "tflite",
                 cfg,
-                xnnpack=xnnpack,
+                mode=mode,
                 order="B:tf→nk",
                 discard_first=do_warmup,
             )
@@ -673,18 +654,20 @@ def run_suite(
                 model,
                 "netkit",
                 cfg,
-                xnnpack=xnnpack,
+                mode=mode,
                 order="B:tf→nk",
                 discard_first=do_warmup,
             )
 
             results.extend([a_nk, a_tf, b_tf, b_nk])
 
-            nk_flash, nk_ram = _netkit_runtime_flash_ram(model, cfg, xnnpack=xnnpack)
+            nk_flash, nk_ram = _netkit_runtime_flash_ram(
+                model, cfg, xnnpack=mode.netkit_xnn
+            )
             tf_flash, tf_ram = _tflite_runtime_flash_ram()
             pair = PairAvg(
                 model=model,
-                xnnpack=xnnpack,
+                mode=mode.key,
                 netkit_us=(a_nk.metric_us + b_nk.metric_us) / 2.0,
                 tflite_us=(a_tf.metric_us + b_tf.metric_us) / 2.0,
                 metric_name=a_nk.metric_name,
@@ -699,13 +682,13 @@ def run_suite(
             spread_nk = abs(a_nk.metric_us - b_nk.metric_us)
             spread_tf = abs(a_tf.metric_us - b_tf.metric_us)
             print(
-                f"  order-avg {model:8s} netkit={pair.netkit_us:.3f}  "
+                f"  order-avg {label:22s} netkit={pair.netkit_us:.3f}  "
                 f"tflite={pair.tflite_us:.3f}  speedup(TF÷nk)={pair.speedup:.3f}×  "
                 f"|Δnk|={spread_nk:.3f} |Δtf|={spread_tf:.3f}",
                 flush=True,
             )
             print(
-                f"  footprint {model:8s} "
+                f"  footprint {label:22s} "
                 f"flash nk={_fmt_bytes(pair.netkit_flash_bytes)} "
                 f"tf={_fmt_bytes(pair.tflite_flash_bytes)} "
                 f"(TF÷nk={pair.flash_ratio:.3f}×)  "
@@ -745,14 +728,14 @@ def print_report(
         "order-averaged over 2 swaps"
     )
     print(
-        f"MNIST MLP batch={MLP_BATCH_INVOKES} invokes x {MLP_BATCH_PASSES} passes "
-        f"(both sides); CNN/DW runs={CNN_RUNS}"
+        "Models: MNIST CNN (digit classifier), MNIST DS-CNN (depthwise-separable "
+        "digit peer), MobileNetV4-Conv-Small on ImageNet (10-class fixture)."
     )
+    print(f"MNIST CNN / DS-CNN runs={CNN_RUNS} (discard run 0 + image 0 each run)")
     print("NETKIT_IM2COL=0 (direct) for all netkit builds")
     print(
-        "Latency is warm-only: MLP batches discard pass 0; "
-        "CNN discards run 0 + image 0 each run; "
-        "ImageNet warm_mean discards the full first image pass."
+        "Latency is warm-only: MNIST CNN/DS-CNN discard run 0 + image 0; "
+        "MobileNetV4-Small ImageNet warm_mean discards the full first image pass."
     )
     print(
         "Flash/RAM = MCU-style runtime image only "
@@ -761,37 +744,38 @@ def print_report(
         "Models (`.nk` / `.tflite`) and fixture images are excluded."
     )
     print("Ratio = TF ÷ netkit (same as latency).")
+    print("Modes: xnn = both XNNPACK; ref = both reference.")
     print("=" * 78)
 
-    for xnnpack in (True, False):
-        mode = "XNNPACK ON" if xnnpack else "XNNPACK OFF (reference)"
-        print(f"\n### {mode}\n")
+    for mode in COMPARE_MODES:
+        print(f"\n### {mode.title}\n")
         print(
-            f"{'model':12s} {'metric':14s} {'netkit':22s} {'tflite':22s} "
+            f"{'model':22s} {'metric':14s} {'netkit':22s} {'tflite':22s} "
             f"{'TF÷nk':>10s}"
         )
-        print("-" * 78)
+        print("-" * 88)
         for p in avgs:
-            if p.xnnpack != xnnpack:
+            if p.mode != mode.key:
                 continue
+            label = MODEL_LABELS.get(p.model, p.model)
             print(
-                f"{p.model:12s} {p.metric_name:14s} "
+                f"{label:22s} {p.metric_name:14s} "
                 f"{_fmt_us(p.netkit_us):22s} {_fmt_us(p.tflite_us):22s} "
                 f"{p.speedup:9.3f}×"
             )
             print(
-                f"{'':12s} {'  (pass A/B)':14s} "
+                f"{'':22s} {'  (pass A/B)':14s} "
                 f"{p.netkit_runs[0]:8.3f} / {p.netkit_runs[1]:8.3f}     "
                 f"{p.tflite_runs[0]:8.3f} / {p.tflite_runs[1]:8.3f}"
             )
             print(
-                f"{'':12s} {'flash':14s} "
+                f"{'':22s} {'flash':14s} "
                 f"{_fmt_bytes(p.netkit_flash_bytes):22s} "
                 f"{_fmt_bytes(p.tflite_flash_bytes):22s} "
                 f"{p.flash_ratio:9.3f}×"
             )
             print(
-                f"{'':12s} {'ram':14s} "
+                f"{'':22s} {'ram':14s} "
                 f"{_fmt_bytes(p.netkit_ram_bytes):22s} "
                 f"{_fmt_bytes(p.tflite_ram_bytes):22s} "
                 f"{p.ram_ratio:9.3f}×"
@@ -801,7 +785,7 @@ def print_report(
     print("### Raw BENCHMARK_SUMMARY lines\n")
     for r in results:
         print(
-            f"xnn={'ON' if r.xnnpack else 'OFF'} order={r.order} "
+            f"mode={r.mode} order={r.order} "
             f"BENCHMARK_SUMMARY {r.raw_summary}"
         )
 

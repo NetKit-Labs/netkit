@@ -60,14 +60,20 @@ The main repo `libnetkit.a` (clang, debug) is **not** used by these benchmarks.
 
 ## Host A/B suite (netkit vs TF Lite)
 
-Primary fair host peer for **float32** and **int8** (MLP, CNN, DW-CNN, ImageNet MNv4):
+Primary fair host peer for **float32** and **int8**:
+
+| key | Model |
+|-----|--------|
+| `cnn` | **MNIST CNN** — digit classifier |
+| `cnn_dw` | **MNIST DS-CNN** — depthwise-separable digit peer |
+| `imagenet` | **MobileNetV4-Conv-Small** on ImageNet (10-class fixture) |
 
 ```bash
 python3 benchmark/tools/run_host_ab_suite_int8.py
 python3 benchmark/tools/run_host_ab_suite_float32.py
 ```
 
-Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency plus MCU-style **runtime** flash/RAM (ELF TEXT/DATA minus fixture images vs LiteRT CPU libs; models excluded), each as TF÷netkit. MLP uses **batched** timing (1000 invokes × 10 passes) to escape ~1 µs timer noise; CNN/ImageNet keep per-invoke methodology. `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary); printable summary: [host_ab_suite_results.pdf](host_ab_suite_results.pdf).
+Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency plus MCU-style **runtime** flash/RAM (ELF TEXT/DATA minus fixture images vs LiteRT CPU libs; models excluded), each as TF÷netkit. MNIST CNN/DS-CNN use per-invoke warm discards; MobileNetV4-Small ImageNet uses `warm_mean` (discard full first image pass). `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary); printable summary: [host_ab_suite_results.pdf](host_ab_suite_results.pdf).
 
 ## Run comparison (recommended)
 

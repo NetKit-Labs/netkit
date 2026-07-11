@@ -38,7 +38,6 @@ def _load_interpreter(model_path: Path, *, num_threads: int, use_xnnpack: bool):
         "num_threads": num_threads,
     }
     if not use_xnnpack:
-        # Builtin reference kernels only (no XNNPACK delegate).
         kwargs["experimental_op_resolver_type"] = OpResolverType.BUILTIN_REF
     return Interpreter(**kwargs)
 
