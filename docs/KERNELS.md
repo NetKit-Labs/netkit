@@ -195,6 +195,8 @@ Padding uses inclusive input bounds (`ih ∈ [0, in_h)`, `iw ∈ [0, in_w)`) con
 
 **Int8 QuantOps Conv2D** uses the same `NETKIT_IM2COL` policy via `im2col_quant.cpp` when CMSIS-NN / XNNPACK do not handle the op (generic / no-Arm builds). Depthwise stays direct. If full-matrix scratch does not fit the arena, QuantOps degrades to partial then direct.
 
+**Product guidance:** default **`NETKIT_IM2COL=0`** on all targets. im2col is mainly for MCU / reference Conv2D; XNNPACK and CMSIS-NN ignore it. On MPU/cpu with XNNPACK off, `NETKIT_IM2COL=1` can give a small float CNN bump — at most try `1`; safest is to leave `0`. See [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance).
+
 ## Adding a new kernel op
 
 1. Add `OpImpl` to `ReferenceKernel` and declare on `KernelBase`.

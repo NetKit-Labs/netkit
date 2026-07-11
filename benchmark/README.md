@@ -4,7 +4,7 @@ Side-by-side invoke latency on the same 10 MNIST test vectors per model (from TC
 
 **Fair comparison policy:** benchmarks use the **interpreter** path only — netkit loads `.nk` models via `NkLoader` and calls `forward()` / `forward_quantized()`; TFLM uses `MicroInterpreter::Invoke()`. **AOT lowered firmware is not included** in `compare.sh` or `make -C benchmark/netkit run-all` (use `run-aot*` targets separately for deployment profiling).
 
-**Kernel defaults:** Conv2D strategy is the single `NETKIT_IM2COL` knob (`0` = direct, `1` = partial im2col, `2` = full im2col + GEMM) for **float reference** and **int8 QuantOps**. The host/CPU benchmark uses the default **`0` (direct loops)**; override with `NETKIT_IM2COL=1` (partial) or `NETKIT_IM2COL=2` (full). `NETKIT_LOOP_UNROLL` stays **off** (`0`) in all benchmark builds. CMSIS-NN / XNNPACK ignore this knob.
+**Kernel defaults:** Conv2D strategy is the single `NETKIT_IM2COL` knob (`0` = direct, `1` = partial im2col, `2` = full im2col + GEMM) for **float reference** and **int8 QuantOps**. **Default `0` on cpu / MCU / MPU** — leave it there unless profiling MCU or reference-only MPU builds. `NETKIT_IM2COL=1` can give a small bump when XNNPACK is off; CMSIS-NN / XNNPACK ignore the knob. Prefer at most `1`; safest is `0`. See [docs/BUILD_TARGETS.md](../docs/BUILD_TARGETS.md#netkit_im2col-guidance). `NETKIT_LOOP_UNROLL` stays **off** (`0`) in all benchmark builds.
 
 ## Methodology
 
@@ -57,6 +57,17 @@ ImageNet int8 XNNPACK runtime also mirrors the LiteRT delegate defaults used by 
 ImageNet targets pass `BENCH_FLAG_PROFILE=tflite` so netkit is not accidentally compared under TFLM's Micro flags. MNIST / `compare.sh` keep the TFLM profile.
 
 The main repo `libnetkit.a` (clang, debug) is **not** used by these benchmarks.
+
+## Host A/B suite (netkit vs TF Lite)
+
+Primary fair host peer for **float32** and **int8** (MLP, CNN, DW-CNN, ImageNet MNv4):
+
+```bash
+python3 benchmark/tools/run_host_ab_suite_int8.py
+python3 benchmark/tools/run_host_ab_suite_float32.py
+```
+
+Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency, **flash** (ELF+`.nk` vs `.tflite`+LiteRT CPU libs), and **RAM** (peak RSS), each as TF÷netkit. `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary).
 
 ## Run comparison (recommended)
 

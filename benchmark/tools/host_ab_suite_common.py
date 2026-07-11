@@ -65,6 +65,7 @@ class RunResult:
     metric_us: float
     raw_summary: str
     elapsed_s: float
+    peak_rss_bytes: int = 0
 
 
 @dataclass
@@ -74,14 +75,32 @@ class PairAvg:
     netkit_us: float
     tflite_us: float
     metric_name: str
+    netkit_flash_bytes: int = 0
+    tflite_flash_bytes: int = 0
+    netkit_ram_bytes: int = 0
+    tflite_ram_bytes: int = 0
     netkit_runs: list[float] = field(default_factory=list)
     tflite_runs: list[float] = field(default_factory=list)
+    netkit_rss_runs: list[int] = field(default_factory=list)
+    tflite_rss_runs: list[int] = field(default_factory=list)
 
     @property
     def speedup(self) -> float:
         if self.netkit_us <= 0:
             return float("nan")
         return self.tflite_us / self.netkit_us
+
+    @property
+    def flash_ratio(self) -> float:
+        if self.netkit_flash_bytes <= 0:
+            return float("nan")
+        return self.tflite_flash_bytes / self.netkit_flash_bytes
+
+    @property
+    def ram_ratio(self) -> float:
+        if self.netkit_ram_bytes <= 0:
+            return float("nan")
+        return self.tflite_ram_bytes / self.netkit_ram_bytes
 
 
 FLOAT32 = DtypeProfile(name="float32", tag="f32", header_label="FLOAT32")
@@ -121,6 +140,128 @@ def _run(cmd: list[str], *, cwd: Path) -> tuple[str, float]:
             f"command failed ({proc.returncode}): {' '.join(cmd)}\n{out[-4000:]}"
         )
     return out, elapsed
+
+
+_RSS_HELPER = r"""
+import platform
+import resource
+import subprocess
+import sys
+
+cmd = sys.argv[1:]
+proc = subprocess.run(cmd, capture_output=True, text=True)
+sys.stdout.write(proc.stdout or "")
+sys.stderr.write(proc.stderr or "")
+rss = int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
+# Linux reports KiB; macOS/BSD report bytes.
+if platform.system() == "Linux":
+    rss *= 1024
+print(f"NETKIT_AB_PEAK_RSS_BYTES={rss}", file=sys.stderr, flush=True)
+raise SystemExit(proc.returncode)
+"""
+
+
+def _run_with_rss(cmd: list[str], *, cwd: Path) -> tuple[str, float, int]:
+    """Run cmd via a fresh Python helper; return (output, wall_s, peak_rss_bytes)."""
+    t0 = time.perf_counter()
+    full_cmd = [sys.executable, "-c", _RSS_HELPER, *cmd]
+    proc = subprocess.run(full_cmd, cwd=cwd, text=True, capture_output=True, check=False)
+    elapsed = time.perf_counter() - t0
+    out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"command failed ({proc.returncode}): {' '.join(cmd)}\n{out[-4000:]}"
+        )
+    return out, elapsed, _parse_peak_rss_bytes(proc.stderr or "")
+
+
+def _parse_peak_rss_bytes(stderr: str) -> int:
+    m = re.search(r"NETKIT_AB_PEAK_RSS_BYTES=(\d+)", stderr)
+    if m:
+        return int(m.group(1))
+    # Fallbacks if someone wraps with /usr/bin/time manually.
+    m = re.search(r"maximum resident set size\s*[:=]?\s*([\d.]+)", stderr, re.I)
+    if m:
+        return int(float(m.group(1)))
+    m = re.search(
+        r"Maximum resident set size \(kbytes\):\s*(\d+)", stderr, re.I
+    )
+    if m:
+        return int(m.group(1)) * 1024
+    return 0
+
+
+def _file_size(path: Path) -> int:
+    return path.stat().st_size if path.is_file() else 0
+
+
+def _tflite_model_path(model: str, cfg: SuiteCfg) -> Path:
+    if cfg.dtype.name == "float32":
+        return {
+            "mlp": ROOT / "benchmark" / "tflm" / "generated" / "mnist_mlp.tflite",
+            "cnn": ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn.tflite",
+            "cnn_dw": ROOT
+            / "benchmark"
+            / "tflm"
+            / "generated"
+            / "mnist_cnn_dw.tflite",
+            "imagenet": ROOT
+            / "benchmark"
+            / "tflm"
+            / "generated"
+            / "mobilenetv4_imagenet_f32.tflite",
+        }[model]
+    return {
+        "mlp": ROOT / "benchmark" / "tflm" / "generated" / "mnist_mlp_int8.tflite",
+        "cnn": ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_int8.tflite",
+        "cnn_dw": ROOT
+        / "benchmark"
+        / "tflm"
+        / "generated"
+        / "mnist_cnn_dw_int8.tflite",
+        "imagenet": ROOT
+        / "benchmark"
+        / "tflm"
+        / "generated"
+        / "mobilenetv4_imagenet_int8.tflite",
+    }[model]
+
+
+def _tflite_runtime_lib_bytes() -> int:
+    """On-disk size of core LiteRT CPU interpreter libs (excludes Metal GPU)."""
+    site_roots = list((TFLITE / ".venv").glob("lib/python*/site-packages/ai_edge_litert"))
+    if not site_roots:
+        return 0
+    total = 0
+    keep_names = {
+        "libpywrap_litert_common.dylib",
+        "libpywrap_litert_common.so",
+        "libLiteRt.dylib",
+        "libLiteRt.so",
+        "_pywrap_litert_interpreter_wrapper.so",
+        "_pywrap_litert_interpreter_wrapper.abi3.so",
+    }
+    for root in site_roots:
+        for p in root.rglob("*"):
+            if not p.is_file():
+                continue
+            if p.name in keep_names or (
+                p.suffix in {".so", ".dylib"}
+                and "interpreter_wrapper" in p.name
+                and "Metal" not in p.name
+            ):
+                total += p.stat().st_size
+    return total
+
+
+def _netkit_flash_bytes(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> int:
+    binary = _netkit_binary(model, cfg, xnnpack=xnnpack)
+    model_path = ROOT / _netkit_model_path(model, cfg)
+    return _file_size(binary) + _file_size(model_path)
+
+
+def _tflite_flash_bytes(model: str, cfg: SuiteCfg) -> int:
+    return _file_size(_tflite_model_path(model, cfg)) + _tflite_runtime_lib_bytes()
 
 
 def _ensure_venv() -> None:
@@ -185,6 +326,7 @@ def _make_common(cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
         f"BACKEND={backend}",
         "CMSIS_NN=0",
         f"XNNPACK={x}",
+        "NETKIT_IM2COL=0",
         "NETKIT_LOOP_UNROLL=0",
         "BENCH_FLAG_PROFILE=tflite",
         f"BENCH_OBJDIR=bench_obj_ab_{cfg.suite_tag}_{xt}",
@@ -430,10 +572,10 @@ def _warmup_runtime(model: str, runtime: str, cfg: SuiteCfg, *, xnnpack: bool) -
 
 def _execute_runtime(
     model: str, runtime: str, cfg: SuiteCfg, *, xnnpack: bool
-) -> tuple[str, float]:
+) -> tuple[str, float, int]:
     if runtime == "netkit":
-        return _run(_netkit_run_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
-    return _run(_tflite_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
+        return _run_with_rss(_netkit_run_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
+    return _run_with_rss(_tflite_cmd(model, cfg, xnnpack=xnnpack), cwd=ROOT)
 
 
 def _one_runtime(
@@ -454,13 +596,14 @@ def _one_runtime(
         )
         _execute_runtime(model, runtime, cfg, xnnpack=xnnpack)
 
-    out, elapsed = _execute_runtime(model, runtime, cfg, xnnpack=xnnpack)
+    out, elapsed, peak_rss = _execute_runtime(model, runtime, cfg, xnnpack=xnnpack)
     fields = _parse_summary(out)
     metric_name, metric_us = _metric_from_summary(fields, imagenet=imagenet)
     summary_line = SUMMARY_RE.findall(out)[-1]
+    rss_note = f" rss={_fmt_bytes(peak_rss)}" if peak_rss > 0 else ""
     print(
         f"  [{order}] {runtime:6s} {model:8s} xnn={'ON' if xnnpack else 'OFF':3s} "
-        f"{metric_name}={metric_us:.3f} us  ({elapsed:.1f}s)",
+        f"{metric_name}={metric_us:.3f} us  ({elapsed:.1f}s){rss_note}",
         flush=True,
     )
     return RunResult(
@@ -472,6 +615,7 @@ def _one_runtime(
         metric_us=metric_us,
         raw_summary=summary_line,
         elapsed_s=elapsed,
+        peak_rss_bytes=peak_rss,
     )
 
 
@@ -546,8 +690,18 @@ def run_suite(
                 netkit_us=(a_nk.metric_us + b_nk.metric_us) / 2.0,
                 tflite_us=(a_tf.metric_us + b_tf.metric_us) / 2.0,
                 metric_name=a_nk.metric_name,
+                netkit_flash_bytes=_netkit_flash_bytes(model, cfg, xnnpack=xnnpack),
+                tflite_flash_bytes=_tflite_flash_bytes(model, cfg),
+                netkit_ram_bytes=int(
+                    round((a_nk.peak_rss_bytes + b_nk.peak_rss_bytes) / 2.0)
+                ),
+                tflite_ram_bytes=int(
+                    round((a_tf.peak_rss_bytes + b_tf.peak_rss_bytes) / 2.0)
+                ),
                 netkit_runs=[a_nk.metric_us, b_nk.metric_us],
                 tflite_runs=[a_tf.metric_us, b_tf.metric_us],
+                netkit_rss_runs=[a_nk.peak_rss_bytes, b_nk.peak_rss_bytes],
+                tflite_rss_runs=[a_tf.peak_rss_bytes, b_tf.peak_rss_bytes],
             )
             avgs.append(pair)
             spread_nk = abs(a_nk.metric_us - b_nk.metric_us)
@@ -558,6 +712,16 @@ def run_suite(
                 f"|Δnk|={spread_nk:.3f} |Δtf|={spread_tf:.3f}",
                 flush=True,
             )
+            print(
+                f"  footprint {model:8s} "
+                f"flash nk={_fmt_bytes(pair.netkit_flash_bytes)} "
+                f"tf={_fmt_bytes(pair.tflite_flash_bytes)} "
+                f"(TF÷nk={pair.flash_ratio:.3f}×)  "
+                f"ram(rss) nk={_fmt_bytes(pair.netkit_ram_bytes)} "
+                f"tf={_fmt_bytes(pair.tflite_ram_bytes)} "
+                f"(TF÷nk={pair.ram_ratio:.3f}×)",
+                flush=True,
+            )
     return results, avgs
 
 
@@ -565,6 +729,16 @@ def _fmt_us(us: float) -> str:
     if us >= 1000.0:
         return f"{us:10.1f} us ({us / 1000.0:7.3f} ms)"
     return f"{us:10.3f} us"
+
+
+def _fmt_bytes(n: int) -> str:
+    if n <= 0:
+        return "       n/a"
+    if n >= 1024 * 1024:
+        return f"{n / (1024 * 1024):7.2f} MiB"
+    if n >= 1024:
+        return f"{n / 1024:7.1f} KiB"
+    return f"{n:7d} B"
 
 
 def print_report(
@@ -579,6 +753,15 @@ def print_report(
         "order-averaged over 2 swaps"
     )
     print(f"MNIST MLP runs={MLP_RUNS} both sides; CNN/DW runs={CNN_RUNS}")
+    print("NETKIT_IM2COL=0 (direct) for all netkit builds")
+    print(
+        "Flash = on-disk deploy footprint "
+        "(netkit: ELF+`.nk`; tflite: `.tflite`+core LiteRT CPU libs)."
+    )
+    print(
+        "RAM = peak RSS of the kept timed process (order-averaged); "
+        "ratio = TF ÷ netkit (same as latency)."
+    )
     print("=" * 78)
 
     for xnnpack in (True, False):
@@ -586,7 +769,7 @@ def print_report(
         print(f"\n### {mode}\n")
         print(
             f"{'model':12s} {'metric':14s} {'netkit':22s} {'tflite':22s} "
-            f"{'speedup':>10s}"
+            f"{'TF÷nk':>10s}"
         )
         print("-" * 78)
         for p in avgs:
@@ -602,13 +785,25 @@ def print_report(
                 f"{p.netkit_runs[0]:8.3f} / {p.netkit_runs[1]:8.3f}     "
                 f"{p.tflite_runs[0]:8.3f} / {p.tflite_runs[1]:8.3f}"
             )
+            print(
+                f"{'':12s} {'flash':14s} "
+                f"{_fmt_bytes(p.netkit_flash_bytes):22s} "
+                f"{_fmt_bytes(p.tflite_flash_bytes):22s} "
+                f"{p.flash_ratio:9.3f}×"
+            )
+            print(
+                f"{'':12s} {'ram(rss)':14s} "
+                f"{_fmt_bytes(p.netkit_ram_bytes):22s} "
+                f"{_fmt_bytes(p.tflite_ram_bytes):22s} "
+                f"{p.ram_ratio:9.3f}×"
+            )
         print()
 
     print("### Raw BENCHMARK_SUMMARY lines\n")
     for r in results:
         print(
             f"xnn={'ON' if r.xnnpack else 'OFF'} order={r.order} "
-            f"BENCHMARK_SUMMARY {r.raw_summary}"
+            f"rss={r.peak_rss_bytes} BENCHMARK_SUMMARY {r.raw_summary}"
         )
 
 

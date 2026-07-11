@@ -7,6 +7,8 @@ Same fairness policy as host_ab_suite_common (prebuild, discard 1st process,
 order swaps, equalized MLP runs, LiteRT-matched -O3).
 
 Sweeps XNNPACK ON/OFF (reference when XNNPACK is off).
+NETKIT_IM2COL is fixed at 0 (direct).
+Also reports flash (on-disk) and RAM (peak RSS) with TF÷netkit ratios.
 
 Results default: benchmark/host_ab_suite_results_float32.txt
 """
@@ -24,5 +26,5 @@ if __name__ == "__main__":
     cli_entry(
         FLOAT32,
         ensure_assets_float32,
-        __doc__ or "Host A/B suite (float32)"
+        __doc__ or "Host A/B suite (float32)",
     )

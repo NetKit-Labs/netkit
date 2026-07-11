@@ -80,11 +80,30 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_ARENA_HEAP` | Heap arena API compiled in (CPU default; MCU/MPU when opted in) |
 | `NETKIT_GLOBAL_ARENA` | CPU only — force global/static arena instead of heap default |
 | `NETKIT_USE_CMSIS_NN` | CMSIS-NN backends enabled (see CMSIS section) |
-| `NETKIT_IM2COL` | Conv2D strategy for **float reference** and **int8 QuantOps** (single tri-state): `0` = direct loops only, `1` = partial im2col, `2` = full im2col + GEMM. Default **`0` (direct) on all targets**. CMSIS-NN / XNNPACK ignore this knob (they use their own scratch). |
+| `NETKIT_IM2COL` | Conv2D strategy for **float reference** and **int8 QuantOps** only: `0` = direct loops, `1` = partial im2col, `2` = full im2col + GEMM. **Default `0` on cpu / MCU / MPU.** CMSIS-NN and XNNPACK ignore this knob. Prefer leaving `0`; at most try `1` on MCU or on MPU/cpu when XNNPACK is off (small bump possible). Avoid `2` unless profiling shows a clear win. See guidance below. |
 | `NETKIT_LOOP_UNROLL` | `1` — **experimental** 4× manual loop unroll in **netkit reference kernels** only (default **0**). Increases `.text` size; can exceed flash on small MCUs. Does not affect CMSIS (`ARM_MATH_LOOPUNROLL` is separate). |
 | `NETKIT_DW_ROW_ACCUM` | Depthwise conv cross-row accumulator strategy (default **1**). See `src/conv_depthwise_kernel.cpp`. |
 | `NETKIT_HOST_SMOKE` | Host MCU/MPU smoke only — adds `__GNUC_PYTHON__` for CMSIS-NN without CMSIS-Core |
 | `NETKIT_USE_MMAP` | File mmap for path-based `.nk` load (`NETKIT_MMAP=0\|1`). POSIX on macOS/Linux; Win32 on Windows. Default **1** on cpu + any MPU; **forbidden** on MCU |
+
+### `NETKIT_IM2COL` guidance
+
+im2col is primarily an **MCU / reference-path** Conv2D optimization. It does **not** affect CMSIS-NN or XNNPACK LayerFast convolutions.
+
+| Value | Meaning | Recommendation |
+|-------|---------|----------------|
+| **`0` (default)** | Direct nested loops | **Safest — leave this everywhere** (cpu, MPU, MCU) |
+| **`1`** | Partial im2col | Optional small speedup on **MCU**, or on **MPU/cpu when `NETKIT_XNNPACK=0`**. Host A/B saw modest gains on some float CNN reference runs; not worth it when XNNPACK is on |
+| **`2`** | Full im2col + GEMM | Rarely useful; higher scratch / code size. Do not enable without profiling |
+
+```bash
+# Default (recommended)
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 lib
+
+# Optional MCU / reference-path experiment
+make NETKIT_TARGET=mcu_arm NETKIT_ARCH=CM4 NETKIT_IM2COL=1 lib
+make NETKIT_XNNPACK=0 NETKIT_IM2COL=1 lib   # MPU/cpu reference only
+```
 
 Default arena constant (`NK_ARENA_DEFAULT_CAPACITY` / `Arena::kDefaultCapacity`):
 

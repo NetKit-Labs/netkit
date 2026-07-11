@@ -20,7 +20,7 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 | **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Mostly done** — same portable XNNPACK + generic path as other MPUs |
 | **mcu_risc** | RISC-V MCU | Generic / reference kernels only; CMSIS + XNNPACK **forbidden** | **Works today** — no RISC-specific optimized kernels yet; **generic fallbacks are fast** and suitable until ISA-tuned kernels land |
 
-**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). CMSIS-DSP is not used. Float32 on MCU uses reference kernels only (no optimized float32 MCU plan).
+**Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels only (no optimized float32 MCU plan). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
 
 ## Host file mmap
 
@@ -32,33 +32,57 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 
 Default **on** for cpu + any MPU; opt out with `NETKIT_MMAP=0` on RTOS / bare-metal MPU. See [ARENA.md](ARENA.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
-## Recent peer benches (CPU host)
+## Host A/B suite (preliminary)
 
-Methodology: LiteRT-matched `-O3` flags for fair TF Lite peers; order swaps (netkit↔TF Lite) to reduce cold-start bias. Primary ImageNet metric: `warm_mean_us`.
+Fair CPU peer suite vs TF Lite / LiteRT (`benchmark/tools/run_host_ab_suite_{int8,float32}.py`):
 
-### ImageNet MobileNetV4-Conv-Small @224 (order-averaged)
+- Prebuild netkit binaries (untimed); discard first process per timed slot; order swaps (nk→TF, TF→nk)
+- LiteRT-matched `-O3` flags; `NETKIT_IM2COL=0`; MLP `--runs 100` both sides
+- **Latency** metric: MNIST `mean_us`; ImageNet `warm_mean_us`
+- **Flash**: on-disk deploy footprint (netkit ELF + `.nk`; TF Lite `.tflite` + core LiteRT CPU libs)
+- **RAM**: peak RSS of the kept timed process
+- Ratio column is always **TF ÷ netkit** (>1 ⇒ netkit faster / smaller)
 
-| dtype | accel | netkit | TF Lite | speedup (TF÷netkit) |
-|-------|--------|--------|---------|---------------------|
-| float32 | XNNPACK ON (DSP+XNNPACK / XNNPACK) | ~1.11 ms | ~1.19 ms | ~1.07× |
-| float32 | OFF (reference / builtin-ref) | ~32.9 ms | ~62.4 ms | ~1.90× |
-| int8 | XNNPACK ON | ~0.71 ms | ~0.71 ms | ~1.00× (tie) |
-| int8 | OFF (reference / builtin-ref) | ~8.0 ms | ~28.2 ms | ~3.5× |
+```bash
+python3 benchmark/tools/run_host_ab_suite_int8.py
+python3 benchmark/tools/run_host_ab_suite_float32.py
+```
 
-Top-1 on the 10-image fixture: float 9/10 both; int8 ON 8/10 both.
+Results files: `benchmark/host_ab_suite_results_{int8,float32}.txt`.
 
-### MNIST (host XNNPACK peers)
+### Preliminary results (host Apple Silicon, Jul 2026)
 
-| Model | dtype | Result (order-averaged) |
-|-------|--------|-------------------------|
-| Tutorial CNN | float32 | ~tied (~31 µs class) |
-| Tutorial CNN | int8 | TF Lite slightly ahead (~19 vs ~21 µs) |
-| MLP | float32 | netkit ahead (~1.2–1.5 vs ~2.3 µs) |
-| MLP | int8 | ~tied (~1.3 µs) |
-| Depthwise-separable CNN | float32 | ~tied (~28.5 µs) |
-| Depthwise-separable CNN | int8 | netkit ~1.05× (~20.9 vs ~22.0 µs) |
+#### INT8 — latency / flash / ram (TF÷netkit)
 
-Reproduce: `make -C benchmark/netkit run-*-xnnpack` and `make -C benchmark/tflite run-*` (see [benchmark/README.md](../benchmark/README.md)).
+| model | XNNPACK | latency | flash | ram |
+|-------|---------|---------|-------|-----|
+| mlp | ON | 1.37× | 9.4× | 16.2× |
+| cnn | ON | 0.72× | 8.9× | 13.0× |
+| cnn_dw | ON | 0.97× | 9.0× | 13.2× |
+| imagenet | ON | 1.00× | 3.1× | 4.6× |
+| mlp | OFF | 1.38× | 45.7× | 21.7× |
+| cnn | OFF | 4.30× | 35.1× | 20.9× |
+| cnn_dw | OFF | 2.31× | 36.1× | 20.5× |
+| imagenet | OFF | 3.70× | 4.0× | 7.0× |
+
+#### FLOAT32 — latency / flash / ram (TF÷netkit)
+
+| model | XNNPACK | latency | flash | ram |
+|-------|---------|---------|-------|-----|
+| mlp | ON | 1.18× | 8.1× | 13.2× |
+| cnn | ON | 0.97× | 6.9× | 9.4× |
+| cnn_dw | ON | 1.00× | 7.0× | 9.8× |
+| imagenet | ON | 0.97× | 1.4× | 1.8× |
+| mlp | OFF | 2.24× | 25.0× | 19.0× |
+| cnn | OFF | 2.40× | 15.5× | 14.9× |
+| cnn_dw | OFF | 1.47× | 16.2× | 14.9× |
+| imagenet | OFF | 1.92× | 1.5× | 2.1× |
+
+**Takeaways:** with XNNPACK ON, latency is roughly tied (ImageNet ~parity; MNIST within noise). With XNNPACK OFF, netkit reference is clearly ahead on latency. **Flash and RAM favor netkit substantially** on every model (self-contained ELF vs LiteRT shared libs + Python process RSS). Absolute ImageNet float32 warm means were ~5.1 ms (netkit XNN) vs ~4.9 ms (TF); int8 ~1.6 ms both sides.
+
+### `NETKIT_IM2COL` note (from earlier host sweep)
+
+With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). With XNNPACK OFF, **`NETKIT_IM2COL=1` (partial)** can give a **small** float CNN reference bump on MPU/cpu; **`2` (full)** was not a clear win. **Default and recommendation: leave `NETKIT_IM2COL=0`.** At most try `1` on MCU or reference-only MPU builds.
 
 ### MCU (NUCLEO-F446RE)
 
