@@ -7,6 +7,7 @@
 #include "mobilenetv4_uib.hpp"
 #include "resnet_basic_block.hpp"
 #include "yolox_decoupled_head.hpp"
+#include "yolox_pafpn.hpp"
 #include "mlp.hpp"
 #include "layer_quant.hpp"
 #include "ops_resolver.hpp"
@@ -37,7 +38,9 @@ enum class CnnBlockType
     ConvNeXtV2Block,
     MobilenetV4Uib,
     ResNetBasicBlock,
-    YoloxDecoupledHead
+    YoloxDecoupledHead,
+    FeatureTap,
+    YoloxPafpnMultiscale
 };
 
 struct Conv2DLayer
@@ -135,6 +138,23 @@ struct YoloxDecoupledHeadLayer
     void forward(const Tensor& input, Tensor& output);
 };
 
+struct FeatureTapLayer
+{
+    int channels = 0;
+    uint8_t tap_id = 0;
+    float* tap_buffer = nullptr;
+    uint32_t tap_elems = 0;
+
+    void forward(const Tensor& input, Tensor& output);
+};
+
+struct YoloxPafpnLayer
+{
+    YoloxPafpnMultiscale block;
+
+    void forward(const Tensor& input, Tensor& output);
+};
+
 struct CnnBlock
 {
     CnnBlockType type = CnnBlockType::Conv2D;
@@ -148,6 +168,8 @@ struct CnnBlock
     MobilenetV4UibLayer mobilenetv4_uib;
     ResNetBasicBlockLayer resnet_basic_block;
     YoloxDecoupledHeadLayer yolox_decoupled_head;
+    FeatureTapLayer feature_tap;
+    YoloxPafpnLayer yolox_pafpn;
     MLPLayer dense;
 };
 
@@ -182,6 +204,13 @@ private:
     CmsisQuantPlan::Runtime* quant_runtime_{};
     // Persistent float32 XNNPACK full-network subgraph (cpu/mpu, when enabled).
     XnnpackFloat::Runtime* xnn_float_runtime_{};
+
+    static constexpr uint32_t kMaxFeatureTaps = 4;
+    float* feature_tap_buffers_[kMaxFeatureTaps]{};
+    uint32_t feature_tap_h_[kMaxFeatureTaps]{};
+    uint32_t feature_tap_w_[kMaxFeatureTaps]{};
+    uint32_t feature_tap_c_[kMaxFeatureTaps]{};
+    uint32_t feature_tap_elems_[kMaxFeatureTaps]{};
 
     Tensor& forward_quantized(const Tensor& input);
 
@@ -422,6 +451,56 @@ public:
                                      float* reg_pred_bias,
                                      float* obj_pred_weights,
                                      float* obj_pred_bias);
+
+    void InitFeatureTapLayer(uint32_t layer_idx,
+                             Arena& arena,
+                             uint32_t spatial_h,
+                             uint32_t spatial_w,
+                             int channels,
+                             uint8_t tap_id);
+
+    void InitYoloxPafpnLayer(uint32_t layer_idx,
+                             Arena& arena,
+                             uint32_t c5_h,
+                             uint32_t c5_w,
+                             int c3_channels,
+                             int c4_channels,
+                             int c5_channels,
+                             int hidden_dim,
+                             int num_classes,
+                             int num_convs,
+                             float* lat3_weights,
+                             float* lat3_bias,
+                             float* lat4_weights,
+                             float* lat4_bias,
+                             float* lat5_weights,
+                             float* lat5_bias,
+                             float* td_p4_dw_weights,
+                             float* td_p4_dw_bias,
+                             float* td_p4_pw_weights,
+                             float* td_p4_pw_bias,
+                             float* td_p3_dw_weights,
+                             float* td_p3_dw_bias,
+                             float* td_p3_pw_weights,
+                             float* td_p3_pw_bias,
+                             float* bu_n4_dw_weights,
+                             float* bu_n4_dw_bias,
+                             float* bu_n4_pw_weights,
+                             float* bu_n4_pw_bias,
+                             float* bu_n5_dw_weights,
+                             float* bu_n5_dw_bias,
+                             float* bu_n5_pw_weights,
+                             float* bu_n5_pw_bias);
+
+    float* GetFeatureTapBuffer(uint8_t tap_id) const
+    {
+        return tap_id < kMaxFeatureTaps ? feature_tap_buffers_[tap_id] : nullptr;
+    }
+
+    uint32_t GetFeatureTapElems(uint8_t tap_id) const
+    {
+        return tap_id < kMaxFeatureTaps ? feature_tap_elems_[tap_id] : 0;
+    }
 
     void InitFlattenLayer(uint32_t layer_idx);
 

@@ -1,4 +1,4 @@
-"""Single-scale YOLOX decoupled detection head + MobileNetV4-Small detector builder."""
+"""Single-scale helpers retained; detector builder always uses PAFPN multi-scale neck."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from typing import Any
 
 import numpy as np
 
-from .mobilenetv4_small import build_mobilenetv4_small_arch
-from .reference_forward import _activate, _conv_nhwc, forward_cnn
+from .reference_forward import _conv_nhwc, forward_cnn
+from .yolox_pafpn import build_yolox_mnv4_small_pafpn_detector
 
 YOLOX_MAX_STACKED_CONVS = 4
 MNv4_SMALL_BACKBONE_OUT_CHANNELS = 960
@@ -27,43 +27,42 @@ def build_yolox_mnv4_small_detector(
     width: int,
     channels: int = 3,
     num_classes: int = 10,
-    hidden_dim: int = 256,
+    hidden_dim: int = 64,
     num_convs: int = 2,
 ) -> dict[str, Any]:
-    """MobileNetV4-Conv-Small backbone + fused YOLOX decoupled head (single scale)."""
-    if num_convs < 1 or num_convs > YOLOX_MAX_STACKED_CONVS:
-        raise ValueError(f"num_convs must be in 1..{YOLOX_MAX_STACKED_CONVS}, got {num_convs}")
-
-    arch = build_mobilenetv4_small_arch(
+    """MobileNetV4-Conv-Small + feature taps + YOLOX Nano PAFPN + 3 decoupled heads."""
+    return build_yolox_mnv4_small_pafpn_detector(
         height=height,
         width=width,
         channels=channels,
-        include_head=False,
+        num_classes=num_classes,
+        hidden_dim=hidden_dim,
+        num_convs=num_convs,
     )
-    arch["layers"].append(
-        {
-            "type": "yolox_decoupled_head",
-            "in_channels": MNv4_SMALL_BACKBONE_OUT_CHANNELS,
-            "hidden_dim": hidden_dim,
-            "num_classes": num_classes,
-            "num_convs": num_convs,
-        }
-    )
-    return arch
 
 
 def backbone_arch_from_detector(arch: dict[str, Any]) -> dict[str, Any]:
-    """Return the MobileNetV4-Small backbone portion of a detector arch (no YOLOX head)."""
-    if not arch.get("layers") or arch["layers"][-1].get("type") != "yolox_decoupled_head":
-        raise ValueError("expected a detector arch ending with yolox_decoupled_head")
-    return {"network": "cnn", "input": list(arch["input"]), "layers": arch["layers"][:-1]}
+    """Return MobileNetV4-Small backbone layers only (strip taps + PAFPN)."""
+    layers = [layer for layer in arch["layers"] if layer.get("type") not in
+              ("feature_tap", "yolox_pafpn_multiscale", "yolox_decoupled_head")]
+    return {"network": "cnn", "input": list(arch["input"]), "layers": layers}
+
+
+def neck_weight_offset(arch: dict[str, Any]) -> int:
+    """Flat weight index where the fused PAFPN (or legacy head) tensors begin."""
+    from .arch_writer import count_packed_cnn_weight_floats
+
+    n = 0
+    for layer in arch["layers"]:
+        if layer.get("type") in ("yolox_pafpn_multiscale", "yolox_decoupled_head"):
+            break
+        n += 1
+    return count_packed_cnn_weight_floats(arch, num_layers=n)
 
 
 def head_weight_offset(arch: dict[str, Any]) -> int:
-    """Flat weight index where the fused YOLOX head tensors begin."""
-    from .arch_writer import count_packed_cnn_weight_floats
-
-    return count_packed_cnn_weight_floats(arch, num_layers=len(arch["layers"]) - 1)
+    """Alias for neck_weight_offset (PAFPN owns the detection heads)."""
+    return neck_weight_offset(arch)
 
 
 def forward_yolox_backbone(
@@ -71,8 +70,8 @@ def forward_yolox_backbone(
     arch: dict[str, Any],
     weights: np.ndarray,
 ) -> list[float]:
-    """Forward through the detector backbone layers only."""
-    offset = head_weight_offset(arch)
+    """Forward through the detector backbone layers only (no taps/neck)."""
+    offset = neck_weight_offset(arch)
     return forward_cnn(flat_input, backbone_arch_from_detector(arch), weights[:offset])
 
 
@@ -83,7 +82,7 @@ def forward_yolox_head_nhwc(
     *,
     offset: int | None = None,
 ) -> np.ndarray:
-    """Run the fused YOLOX head on an NHWC backbone feature map."""
+    """Run a fused YOLOX head on an NHWC feature map (legacy single-scale helper)."""
     if offset is None:
         raise ValueError("offset is required when weights contain backbone tensors")
     out, _ = yolox_decoupled_head_forward_nhwc(

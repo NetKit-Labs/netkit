@@ -55,6 +55,7 @@ BENCH_RUNTIME_SOURCES := \
   src/mobilenetv4_uib.cpp \
   src/resnet_basic_block.cpp \
   src/yolox_decoupled_head.cpp \
+  src/yolox_pafpn.cpp \
   src/mlp.cpp \
   src/cnn.cpp \
   src/layer_ops/nk_op_conv2d.cpp \
@@ -62,6 +63,8 @@ BENCH_RUNTIME_SOURCES := \
   src/layer_ops/nk_op_convnextv2_block.cpp \
   src/layer_ops/nk_op_mobilenetv4_uib.cpp \
   src/layer_ops/nk_op_yolox_decoupled_head.cpp \
+  src/layer_ops/nk_op_feature_tap.cpp \
+  src/layer_ops/nk_op_yolox_pafpn.cpp \
   src/layer_ops/nk_op_resnet_basic_block.cpp \
   src/layer_ops/nk_op_layernorm2d.cpp \
   src/layer_ops/nk_op_max_pool2d.cpp \

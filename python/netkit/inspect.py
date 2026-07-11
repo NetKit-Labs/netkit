@@ -164,6 +164,28 @@ def _read_layer_body(stream: io.BytesIO, kind: int) -> dict:
             "num_classes": num_classes,
             "num_convs": num_convs,
         }
+    if kind == LayerKind.FEATURE_TAP:
+        channels, tap_id = struct.unpack("<IB", stream.read(5))
+        stream.read(3)
+        return {
+            "kind": "feature_tap",
+            "channels": channels,
+            "tap_id": tap_id,
+        }
+    if kind == LayerKind.YOLOX_PAFPN_MULTISCALE:
+        c3, c4, c5, hidden_dim, num_classes, num_convs = struct.unpack(
+            "<IIIII B", stream.read(21)
+        )
+        stream.read(3)
+        return {
+            "kind": "yolox_pafpn_multiscale",
+            "c3_channels": c3,
+            "c4_channels": c4,
+            "c5_channels": c5,
+            "hidden_dim": hidden_dim,
+            "num_classes": num_classes,
+            "num_convs": num_convs,
+        }
     if kind == LayerKind.FLATTEN:
         return {"kind": "flatten"}
     raise ValueError(f"unsupported layer kind: {kind}")
@@ -188,6 +210,10 @@ def _layer_body_bytes(kind: int) -> int:
         return 12
     if kind == LayerKind.YOLOX_DECOUPLED_HEAD:
         return 16
+    if kind == LayerKind.FEATURE_TAP:
+        return 8
+    if kind == LayerKind.YOLOX_PAFPN_MULTISCALE:
+        return 24
     if kind == LayerKind.FLATTEN:
         return 0
     raise ValueError(f"unsupported layer kind: {kind}")

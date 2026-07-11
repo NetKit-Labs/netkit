@@ -91,7 +91,7 @@ The `netkit` binary is a desktop development tool (C++26). See [CLI.md](CLI.md).
 
 | Command | Description |
 |---------|-------------|
-| `netkit test` | Run embedded `.nk` regression tests (88 cases) |
+| `netkit test` | Run embedded `.nk` regression tests (89 cases) |
 | `netkit run <model.nk> --input a,b,c` | Single inference |
 | `netkit inspect <model.nk>` | Boxed network summary (`--full` for arena sizing) |
 | `netkit help`, `-h`, `--help` | Print CLI usage |
@@ -154,7 +154,7 @@ On **cpu** or **mpu_arm**, `NETKIT_CMSIS_NN=1` is ignored (Make warning). CMSIS-
 
 ## Testing
 
-Both API test suites run **88 embedded `.nk` regression cases** on CPU builds — [TESTING.md](TESTING.md). Full Python ONNX parity (**82** cases) runs via `make test-full` (`make test-python-full`). MCU/MPU bring-up: `make test-embedded-smoke-matrix` (`test_mlp`, `cnn_4x4_single` on seven host profiles).
+Both API test suites run **89 embedded `.nk` regression cases** on CPU builds — [TESTING.md](TESTING.md). Full Python ONNX parity (**82** cases) runs via `make test-full` (`make test-python-full`). MCU/MPU bring-up: `make test-embedded-smoke-matrix` (`test_mlp`, `cnn_4x4_single` on seven host profiles).
 
 ```bash
 make test       # default: C++ then C then fast Python (cpu only)

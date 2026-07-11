@@ -1,21 +1,26 @@
-# YOLOX single-scale detector (MobileNetV4-Small)
+# YOLOX multi-scale detector (MobileNetV4-Small + Nano PAFPN)
 
-Netkit ships a **single-scale, anchor-free YOLOX-style object detector** built from the existing **MobileNetV4-Conv-Small** backbone plus a fused **decoupled detection head** layer kind (`yolox_decoupled_head`).
+Netkit ships an **anchor-free YOLOX-style object detector** with a **MobileNetV4-Conv-Small** backbone, **feature taps**, a fused **Nano-style PAFPN neck**, and **three decoupled heads** (`yolox_pafpn_multiscale`).
 
 ## Architecture
 
 ```
 Input (H×W×3)
-  └─ MobileNetV4-Conv-Small backbone (18 UIB/conv blocks, no classifier head)
-  └─ YOLOX decoupled head (fused composite layer)
-       ├─ stem: 1×1 conv + SiLU
-       ├─ cls branch: stacked 3×3 convs + SiLU → 1×1 cls prediction
-       ├─ reg branch: stacked 3×3 convs + SiLU → 1×1 box regression (ltrb)
-       └─ obj branch: 1×1 objectness (from reg features)
-Output (H'×W'×(4+1+num_classes))  — NHWC, single tensor
+  └─ MobileNetV4-Conv-Small backbone
+       ├─ … → C3 (stride 8, 64 ch)  → feature_tap[0]
+       ├─ … → C4 (stride 16, 96 ch) → feature_tap[1]
+       └─ … → C5 (stride 32, 960 ch) ──┐
+  └─ yolox_pafpn_multiscale (fused)     │
+       ├─ lateral 1×1: C3/C4/C5 → H     │
+       ├─ top-down upsample-add + DW+PW │
+       ├─ bottom-up stride-2 DW+PW      │
+       └─ 3× YoloxDecoupledHead on N3/N4/N5
+Output: flat concat [P3 | P4 | P5], each Hi×Wi×(4+1+num_classes)
 ```
 
-Channel layout per spatial location:
+The CNN runtime is **sequential (one tensor in/out)**. `feature_tap` is an identity pass-through that also copies the activation into a side buffer. The PAFPN layer reads `tap[0]=C3`, `tap[1]=C4`, and its layer input as `C5`.
+
+Channel layout per spatial location (unchanged from single-scale head):
 
 | Channels | Meaning |
 |----------|---------|
@@ -23,20 +28,43 @@ Channel layout per spatial location:
 | 4 | Objectness logit |
 | 5… | Class logits (`num_classes`) |
 
-The head runs cls/reg/obj branches **in parallel inside the fused layer** (netkit graphs are otherwise sequential). This matches YOLOX decoupled-head semantics at a single stride.
+## Tap points (MNv4-Conv-Small)
 
-## Fixture model
+0-based backbone block indices **before** inserting taps (`MOBILENETV4_CONV_SMALL_BLOCKS`):
 
-| File | Input | Head | Output grid |
-|------|-------|------|-------------|
-| `models/yolox_mnv4_small.nk` | 56×56×3 | hidden=64, 2 stacked convs, 10 classes | 2×2×15 (60 floats) |
-| `models/yolox_head_only.nk` | 2×2×960 (synthetic backbone features) | hidden=32, 2 stacked convs, 5 classes | 2×2×10 (40 floats) |
+| Feature | After block index | Spec | Stride / channels |
+|---------|-------------------|------|-------------------|
+| C3 | 4 | `conv_bn 1,1,64` | 8 / 64 |
+| C4 | 10 | `uib 3,0,1,96,4.0` | 16 / 96 |
+| C5 | 17 | `conv_bn 1,1,960` | 32 / 960 |
+
+After inserting two taps, layer indices shift; the builder inserts taps immediately after producing C3 and C4.
+
+## Weight catalog order (`yolox_pafpn_multiscale`)
+
+1. **Laterals** `lat3`, `lat4`, `lat5` — 1×1 W+B each  
+2. **Top-down** `td_p4`, `td_p3` — each DW 3×3 s1 + PW 1×1 (W+B each)  
+3. **Bottom-up** `bu_n4`, `bu_n5` — each DW 3×3 s2 + PW 1×1  
+4. **Heads** `head_p3`, `head_p4`, `head_p5` — same order as `pack_yolox_head_weights_flat` (stem, cls×N, reg×N, cls/reg/obj preds)
+
+## Descriptor layouts
+
+- **FeatureTap (kind 13):** `uint32 channels`, `uint8 tap_id`, `uint8 reserved[3]`
+- **YoloxPafpnMultiscale (kind 14):** `uint32 c3_ch, c4_ch, c5_ch, hidden_dim, num_classes`; `uint8 num_convs`; `uint8 reserved[3]`
+
+## Fixture models
+
+| File | Input | Notes |
+|------|-------|-------|
+| `models/yolox_mnv4_small.nk` | 64×64×3 | Full backbone + taps + PAFPN; grids 8×8 / 4×4 / 2×2; 10 classes, hidden=64 |
+| `models/yolox_pafpn_taps.nk` | 8×8×64 | Synthetic C3→tap→downsample→C4→tap→C5→PAFPN |
 
 Regenerate:
 
 ```bash
 python tools/write_yolox_mnv4_detector_fixture.py
-python tools/write_yolox_head_only_fixture.py
+python tools/write_yolox_mnv4_pafpn_fixture.py   # same as detector fixture
+python tools/write_yolox_head_only_fixture.py    # writes yolox_pafpn_taps.nk
 ```
 
 ## Python API
@@ -46,78 +74,55 @@ from netkit.yolox_detector import build_yolox_mnv4_small_detector
 from netkit.yolox_decode import decode_yolox_output
 from netkit.reference_forward import forward_cnn
 
-arch = build_yolox_mnv4_small_detector(height=416, width=416, num_classes=80, hidden_dim=256)
-# ... pack weights, write .nk with write_nk_from_arch ...
+arch = build_yolox_mnv4_small_detector(height=416, width=416, num_classes=80, hidden_dim=64)
+# ... pack weights, write .nk ...
 output = forward_cnn(flat_input, arch, weights)
-detections = decode_yolox_output(output, num_classes=80, input_height=416, input_width=416)
+detections = decode_yolox_output(
+    output, num_classes=80, input_height=416, input_width=416
+)  # strides [8,16,32]
 ```
 
-Builder parameters:
+`build_yolox_mnv4_small_detector` **always** builds backbone + taps + PAFPN (neck required).
 
-- `height`, `width` — input resolution (backbone stride ≈ 32 → output grid is H/32 × W/32)
-- `num_classes` — detection classes (default 80)
-- `hidden_dim` — head width (default 256, YOLOX-style)
-- `num_convs` — stacked 3×3 convs per branch (default 2, max 4)
+## Smoke train (no COCO)
+
+```bash
+python tools/train_yolox_mnv4_pafpn_smoke.py --steps 30
+```
+
+Uses timm `mobilenetv4_conv_small` (ImageNet pretrained, features_only), freezes or lightly trains the backbone, trains neck+heads on synthetic random boxes for ~30 Adam steps, and saves a checkpoint under `models/checkpoints/`.
+
+## Mini real-data dry run (coco128)
+
+```bash
+python tools/train_yolox_mnv4_pafpn_mini.py --steps 1000 --batch 4 --size 320
+```
+
+Downloads Ultralytics **coco128** (~128 boxed images) into `data/coco_mini/`, freezes the ImageNet backbone, trains neck+heads for ~1000 steps at 320² on MPS/CPU, then writes a demo image with decoded boxes under `models/checkpoints/`. Meant to validate the loop on real labels without a full COCO train (expect low scores / rough boxes; mAP is not the goal).
 
 ## C++ runtime
 
-The fused layer is registered in the op resolver as `yolox_decoupled_head` (`LayerKind` value **12**). Load and run like any CNN:
+Layer kinds: `feature_tap` (**13**), `yolox_pafpn_multiscale` (**14**). Load and run like any CNN. Post-processing stays on the host (`python/netkit/yolox_decode.py`).
 
-```bash
-./netkit run models/yolox_mnv4_small.nk --input <9408 comma-separated floats>
-./netkit inspect models/yolox_mnv4_small.nk --full
-```
+Manual construction: init backbone layers and `InitFeatureTapLayer` for tap ids 0/1, then `InitYoloxPafpnLayer` (wires heads after init via `GetBlock(...).yolox_pafpn.block.heads[i]`), then `InitActivationBuffers` with the **network input** shape.
 
-Post-processing (sigmoid, grid decode, NMS) stays on the host — see `python/netkit/yolox_decode.py`.
-
-## Manual construction
-
-Most deployments load `yolox_mnv4_small.nk` or `yolox_head_only.nk` via the loader. To attach a head to your own backbone features in code, follow the **same call order as any CNN**: create network → init layers in index order → `InitActivationBuffers` with **network input** shape → `forward`.
-
-| Step | C++ | C |
-|------|-----|---|
-| 1. Arena | `arena.init(memory, size)` | `nk_arena_init(&arena, memory, size)` |
-| 2. Network | `CNNNetwork(n, arena)` | `nk_cnn_create(&arena, n, &cnn)` |
-| 3. Layers | `InitConvLayer` / … / `InitYoloxDecoupledHeadLayer(i, arena, h, w, …)` | `nk_cnn_init_*_layer` / `nk_cnn_init_yolox_decoupled_head_layer` |
-| 4. Buffers | `InitActivationBuffers(arena, in_h, in_w, in_c)` | `nk_cnn_init_activation_buffers(&cnn, &arena, in_h, in_w, in_c)` |
-| 5. Inference | `forward(input, arena)` → `GetOutput()` | `nk_cnn_forward(&cnn, &arena, &input, &output)` |
-
-**Head-only** (backbone already produced `[H, W, C]` features): use `n = 1`, set `spatial_h/w` to the feature map size, `in_channels = C`, then call `InitActivationBuffers(arena, spatial_h, spatial_w, in_channels)`.
-
-**Full detector** (backbone + head): init UIB / conv layers for the backbone first (`layer_idx` 0…N−2), then `InitYoloxDecoupledHeadLayer(N−1, arena, h', w', …)` where `h', w'` are the spatial size **entering the head** (e.g. 2×2 on the bundled model). `InitActivationBuffers` always uses the **original network input** (e.g. 56×56×3), not the head's feature size.
-
-Stacked branch conv pointers: `cls_conv_weights[i]` and `reg_conv_weights[i]` for `i = 0 … num_convs−1` (max 4). Output tensor layout: NHWC `[H, W, 4 + 1 + num_classes]` — ltrb box (4), objectness (1), class logits (`num_classes`).
-
-Worked examples: [cpp-api.md](cpp-api.md#manual-construction-call-order-1), [c-api.md](c-api.md#cnn-manual-construction-call-order). Tests: `tests/test_c_api.c` (`TestManualYoloxDecoupledHeadLayer`).
-
-## Arena sizing
-
-Use `./netkit inspect models/yolox_mnv4_small.nk --full` for activation high-water. The fused head allocates scratch proportional to `3 × H' × W' × hidden_dim` inside the layer (not counted in ping-pong buffers).
-
-For MCU firmware, weights stay flash/blob-backed; size SRAM from inspect arena peaks and use `flash_payload_bytes` for flash budget (see [ARENA.md](ARENA.md)).
+Arena: PAFPN scratch scales with `~8 × H3×W3×hidden` plus three head workspaces reused sequentially; tap buffers are side allocations sized to each tapped map.
 
 ## Tests
 
-Synthetic regression covers the **full MobileNetV4-Small → YOLOX chain** and an **isolated head** fixture:
-
 | Layer | What is verified |
 |-------|------------------|
-| **C++ embedded TCAS** | `yolox_mnv4_small.nk` (19 layers, random 56×56×3 input) and `yolox_head_only.nk` (head on 2×2×960 features) vs Python reference |
-| **Backbone chain** | YOLOX backbone layers match `build_mobilenetv4_small_arch(include_head=False)`; shared weight prefix; backbone-only forward equals MNv4 without head |
-| **Head composition** | `forward(backbone) → head` equals full-detector forward (fixture + fresh random weights) |
-| **Decode golden** | Hand-built 1×1 output tensor → expected box geometry and score threshold behavior |
-| **Runtime parity** | `tools/nk_infer` matches NumPy reference on both fixtures and on a temp-written model |
+| **C++ TCAS** | `yolox_mnv4_small.nk`, `yolox_pafpn_taps.nk` vs Python reference |
+| **Arch / taps** | Block indices, tap insertion, output element count |
+| **Decode** | Multi-scale flat concat with strides 8/16/32 |
+| **Runtime** | `tools/nk_infer` parity |
 
-Python: `python/tests/test_yolox_detector.py` (run via `make test-python`).
+Python: `python/tests/test_yolox_pafpn.py`, `python/tests/test_yolox_detector.py`.
 
-C++: `src/test.cpp` includes both `.nk` fixtures (**88** total embedded cases across the suite).
+## Limitations
 
-C API smoke tests: `tests/test_c_api.c` (`TestManualYoloxDecoupledHeadLayer`, `yolox_head_only.nk` in composite load pass). Manual construction patterns: [c-api.md](c-api.md#cnn-manual-construction-call-order), [cpp-api.md](cpp-api.md#manual-construction-call-order-1).
-
-## Limitations (Phase 1)
-
-- **Single scale only** — no FPN/PAN multi-stride neck
-- **No NMS in runtime** — host decode helper only
-- **Random-weight fixture** — timm/YOLOX-trained checkpoint packing is future work
+- **No NMS in runtime** — host decode helper only  
+- **Random-weight fixtures** — smoke train saves a torch checkpoint; packing trained weights into `.nk` is optional follow-up  
+- **Depthwise Nano PAFPN** — add-based laterals/top-down/bottom-up (no extra bottom-up refine convs)
 
 See also: [MOBILENETV4.md](MOBILENETV4.md), [NK_FORMAT.md](NK_FORMAT.md).

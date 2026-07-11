@@ -2,6 +2,7 @@
 #include "mobilenetv4_uib.hpp"
 #include "resnet_basic_block.hpp"
 #include "yolox_decoupled_head.hpp"
+#include "yolox_pafpn.hpp"
 #include "tensor_factory.hpp"
 #include "nk_op_detail.hpp"
 #include "netkit_config.h"
@@ -115,6 +116,15 @@ namespace NkLoader
                 }
                 case NkFormat::LayerKind::YoloxDecoupledHead:
                     return 3u + 2u * static_cast<uint32_t>(layer.yolox_decoupled_head.num_convs);
+                case NkFormat::LayerKind::FeatureTap:
+                    return 0;
+                case NkFormat::LayerKind::YoloxPafpnMultiscale:
+                {
+                    const auto& p = layer.yolox_pafpn_multiscale;
+                    // 3 laterals + 2 td (dw+pw) + 2 bu (dw+pw) = 11; plus 3 heads
+                    const uint32_t per_head = 3u + 2u * static_cast<uint32_t>(p.num_convs);
+                    return 11u + 3u * per_head;
+                }
                 default:
                     return 0;
             }
@@ -233,6 +243,24 @@ namespace NkLoader
                             model.layers[i].yolox_decoupled_head;
                         c = 4u + 1u + head.num_classes;
                         features = h * w * c;
+                        break;
+                    }
+                    case NkFormat::LayerKind::FeatureTap:
+                        features = h * w * c;
+                        break;
+                    case NkFormat::LayerKind::YoloxPafpnMultiscale:
+                    {
+                        const NkFormat::YoloxPafpnMultiscaleLayerDesc& p =
+                            model.layers[i].yolox_pafpn_multiscale;
+                        const uint32_t out_c = 4u + 1u + p.num_classes;
+                        const uint32_t h3 = h * 4u;
+                        const uint32_t w3 = w * 4u;
+                        const uint32_t h4 = h * 2u;
+                        const uint32_t w4 = w * 2u;
+                        features = (h3 * w3 + h4 * w4 + h * w) * out_c;
+                        h = 1;
+                        w = 1;
+                        c = features;
                         break;
                     }
                     case NkFormat::LayerKind::Flatten:
@@ -450,6 +478,27 @@ namespace NkLoader
                              sizeof(layer.yolox_decoupled_head.reserved));
         }
 
+        bool ReadFeatureTapLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::FeatureTap;
+            return ReadU32(file, layer.feature_tap.channels) &&
+                   ReadU8(file, layer.feature_tap.tap_id) &&
+                   ReadExact(file, layer.feature_tap.reserved, sizeof(layer.feature_tap.reserved));
+        }
+
+        bool ReadYoloxPafpnMultiscaleLayer(std::FILE* file, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::YoloxPafpnMultiscale;
+            return ReadU32(file, layer.yolox_pafpn_multiscale.c3_channels) &&
+                   ReadU32(file, layer.yolox_pafpn_multiscale.c4_channels) &&
+                   ReadU32(file, layer.yolox_pafpn_multiscale.c5_channels) &&
+                   ReadU32(file, layer.yolox_pafpn_multiscale.hidden_dim) &&
+                   ReadU32(file, layer.yolox_pafpn_multiscale.num_classes) &&
+                   ReadU8(file, layer.yolox_pafpn_multiscale.num_convs) &&
+                   ReadExact(file, layer.yolox_pafpn_multiscale.reserved,
+                             sizeof(layer.yolox_pafpn_multiscale.reserved));
+        }
+
         bool ReadResNetBasicBlockLayer(std::FILE* file, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::ResNetBasicBlock;
@@ -501,6 +550,10 @@ namespace NkLoader
                     return ReadMobilenetV4UibLayer(file, layer);
                 case NkFormat::LayerKind::YoloxDecoupledHead:
                     return ReadYoloxDecoupledHeadLayer(file, layer);
+                case NkFormat::LayerKind::FeatureTap:
+                    return ReadFeatureTapLayer(file, layer);
+                case NkFormat::LayerKind::YoloxPafpnMultiscale:
+                    return ReadYoloxPafpnMultiscaleLayer(file, layer);
                 case NkFormat::LayerKind::ResNetBasicBlock:
                     return ReadResNetBasicBlockLayer(file, layer);
                 case NkFormat::LayerKind::LayerNorm2d:
@@ -963,6 +1016,28 @@ namespace NkLoader
                                    sizeof(layer.yolox_decoupled_head.reserved));
         }
 
+        bool ReadFeatureTapLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::FeatureTap;
+            return CursorReadU32(cursor, layer.feature_tap.channels) &&
+                   CursorReadU8(cursor, layer.feature_tap.tap_id) &&
+                   CursorReadExact(cursor, layer.feature_tap.reserved,
+                                   sizeof(layer.feature_tap.reserved));
+        }
+
+        bool ReadYoloxPafpnMultiscaleLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
+        {
+            layer.kind = NkFormat::LayerKind::YoloxPafpnMultiscale;
+            return CursorReadU32(cursor, layer.yolox_pafpn_multiscale.c3_channels) &&
+                   CursorReadU32(cursor, layer.yolox_pafpn_multiscale.c4_channels) &&
+                   CursorReadU32(cursor, layer.yolox_pafpn_multiscale.c5_channels) &&
+                   CursorReadU32(cursor, layer.yolox_pafpn_multiscale.hidden_dim) &&
+                   CursorReadU32(cursor, layer.yolox_pafpn_multiscale.num_classes) &&
+                   CursorReadU8(cursor, layer.yolox_pafpn_multiscale.num_convs) &&
+                   CursorReadExact(cursor, layer.yolox_pafpn_multiscale.reserved,
+                                   sizeof(layer.yolox_pafpn_multiscale.reserved));
+        }
+
         bool ReadResNetBasicBlockLayerCursor(ByteCursor& cursor, NkFormat::LayerDesc& layer)
         {
             layer.kind = NkFormat::LayerKind::ResNetBasicBlock;
@@ -1015,6 +1090,10 @@ namespace NkLoader
                     return ReadMobilenetV4UibLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::YoloxDecoupledHead:
                     return ReadYoloxDecoupledHeadLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::FeatureTap:
+                    return ReadFeatureTapLayerCursor(cursor, layer);
+                case NkFormat::LayerKind::YoloxPafpnMultiscale:
+                    return ReadYoloxPafpnMultiscaleLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::ResNetBasicBlock:
                     return ReadResNetBasicBlockLayerCursor(cursor, layer);
                 case NkFormat::LayerKind::LayerNorm2d:
@@ -1929,6 +2008,162 @@ namespace NkLoader
                         in_channels = 4 + 1 + static_cast<int>(num_classes);
                         break;
                     }
+                    case NkFormat::LayerKind::FeatureTap:
+                    {
+                        const NkFormat::FeatureTapLayerDesc& layer = parsed.layers[i].feature_tap;
+                        if (static_cast<int>(layer.channels) != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "feature_tap channels must match input channels in .nk");
+                        network->InitFeatureTapLayer(i, arena, h, w, in_channels, layer.tap_id);
+                        break;
+                    }
+                    case NkFormat::LayerKind::YoloxPafpnMultiscale:
+                    {
+                        const NkFormat::YoloxPafpnMultiscaleLayerDesc& layer =
+                            parsed.layers[i].yolox_pafpn_multiscale;
+                        const uint32_t c3 = layer.c3_channels;
+                        const uint32_t c4 = layer.c4_channels;
+                        const uint32_t c5 = layer.c5_channels;
+                        const uint32_t hidden = layer.hidden_dim;
+                        const uint32_t num_classes = layer.num_classes;
+                        const int num_convs = static_cast<int>(layer.num_convs);
+
+                        auto take_pair = [&](std::size_t expected_w,
+                                             std::size_t expected_b) -> std::pair<float*, float*>
+                        {
+                            const NkFormat::TensorDesc& w_desc = parsed.weight_tensors[weight_index++];
+                            const NkFormat::TensorDesc& b_desc = parsed.bias_tensors[bias_index++];
+                            if (w_desc.num_elements != expected_w || b_desc.num_elements != expected_b)
+                                return {nullptr, nullptr};
+                            float* w_ptr = weights + weight_offset;
+                            float* b_ptr = biases + bias_offset;
+                            weight_offset += expected_w;
+                            bias_offset += expected_b;
+                            return {w_ptr, b_ptr};
+                        };
+
+                        const auto [lat3_w, lat3_b] =
+                            take_pair(static_cast<std::size_t>(hidden) * c3, hidden);
+                        const auto [lat4_w, lat4_b] =
+                            take_pair(static_cast<std::size_t>(hidden) * c4, hidden);
+                        const auto [lat5_w, lat5_b] =
+                            take_pair(static_cast<std::size_t>(hidden) * c5, hidden);
+                        if (!lat3_w || !lat4_w || !lat5_w)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "YOLOX PAFPN lateral tensor shape mismatch in .nk catalog");
+
+                        const std::size_t dw_elems = static_cast<std::size_t>(hidden) * 9u;
+                        const std::size_t pw_elems = static_cast<std::size_t>(hidden) * hidden;
+
+                        const auto [td_p4_dw_w, td_p4_dw_b] = take_pair(dw_elems, hidden);
+                        const auto [td_p4_pw_w, td_p4_pw_b] = take_pair(pw_elems, hidden);
+                        const auto [td_p3_dw_w, td_p3_dw_b] = take_pair(dw_elems, hidden);
+                        const auto [td_p3_pw_w, td_p3_pw_b] = take_pair(pw_elems, hidden);
+                        const auto [bu_n4_dw_w, bu_n4_dw_b] = take_pair(dw_elems, hidden);
+                        const auto [bu_n4_pw_w, bu_n4_pw_b] = take_pair(pw_elems, hidden);
+                        const auto [bu_n5_dw_w, bu_n5_dw_b] = take_pair(dw_elems, hidden);
+                        const auto [bu_n5_pw_w, bu_n5_pw_b] = take_pair(pw_elems, hidden);
+                        if (!td_p4_dw_w || !td_p4_pw_w || !td_p3_dw_w || !td_p3_pw_w ||
+                            !bu_n4_dw_w || !bu_n4_pw_w || !bu_n5_dw_w || !bu_n5_pw_w)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "YOLOX PAFPN neck conv tensor shape mismatch in .nk catalog");
+
+                        if (static_cast<int>(c5) != in_channels)
+                            return Fail(LoadStatus::SizeMismatch,
+                                          "YOLOX PAFPN c5_channels must match input channels in .nk");
+
+                        network->InitYoloxPafpnLayer(i,
+                                                     arena,
+                                                     h,
+                                                     w,
+                                                     static_cast<int>(c3),
+                                                     static_cast<int>(c4),
+                                                     static_cast<int>(c5),
+                                                     static_cast<int>(hidden),
+                                                     static_cast<int>(num_classes),
+                                                     num_convs,
+                                                     lat3_w,
+                                                     lat3_b,
+                                                     lat4_w,
+                                                     lat4_b,
+                                                     lat5_w,
+                                                     lat5_b,
+                                                     td_p4_dw_w,
+                                                     td_p4_dw_b,
+                                                     td_p4_pw_w,
+                                                     td_p4_pw_b,
+                                                     td_p3_dw_w,
+                                                     td_p3_dw_b,
+                                                     td_p3_pw_w,
+                                                     td_p3_pw_b,
+                                                     bu_n4_dw_w,
+                                                     bu_n4_dw_b,
+                                                     bu_n4_pw_w,
+                                                     bu_n4_pw_b,
+                                                     bu_n5_dw_w,
+                                                     bu_n5_dw_b,
+                                                     bu_n5_pw_w,
+                                                     bu_n5_pw_b);
+
+                        YoloxPafpnMultiscale& neck = network->GetBlock(i).yolox_pafpn.block;
+                        const std::size_t branch_w_elems =
+                            static_cast<std::size_t>(hidden) * hidden * 9u;
+                        for (int s = 0; s < YoloxPafpnMultiscale::kNumScales; ++s)
+                        {
+                            YoloxDecoupledHead& head = neck.heads[s];
+                            const auto [stem_w, stem_b] =
+                                take_pair(static_cast<std::size_t>(hidden) * hidden, hidden);
+                            if (!stem_w)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "YOLOX PAFPN head stem tensor shape mismatch");
+                            head.stem_weights = stem_w;
+                            head.stem_bias = stem_b;
+
+                            for (int ci = 0; ci < num_convs; ++ci)
+                            {
+                                const auto [cw, cb] = take_pair(branch_w_elems, hidden);
+                                if (!cw)
+                                    return Fail(LoadStatus::SizeMismatch,
+                                                  "YOLOX PAFPN head cls conv tensor shape mismatch");
+                                head.cls_conv_weights[ci] = cw;
+                                head.cls_conv_bias[ci] = cb;
+                            }
+                            for (int ri = 0; ri < num_convs; ++ri)
+                            {
+                                const auto [rw, rb] = take_pair(branch_w_elems, hidden);
+                                if (!rw)
+                                    return Fail(LoadStatus::SizeMismatch,
+                                                  "YOLOX PAFPN head reg conv tensor shape mismatch");
+                                head.reg_conv_weights[ri] = rw;
+                                head.reg_conv_bias[ri] = rb;
+                            }
+
+                            const auto [cls_pred_w, cls_pred_b] =
+                                take_pair(static_cast<std::size_t>(num_classes) * hidden, num_classes);
+                            const auto [reg_pred_w, reg_pred_b] =
+                                take_pair(static_cast<std::size_t>(4u) * hidden, 4u);
+                            const auto [obj_pred_w, obj_pred_b] =
+                                take_pair(static_cast<std::size_t>(hidden), 1u);
+                            if (!cls_pred_w || !reg_pred_w || !obj_pred_w)
+                                return Fail(LoadStatus::SizeMismatch,
+                                              "YOLOX PAFPN head pred tensor shape mismatch");
+                            head.cls_pred_weights = cls_pred_w;
+                            head.cls_pred_bias = cls_pred_b;
+                            head.reg_pred_weights = reg_pred_w;
+                            head.reg_pred_bias = reg_pred_b;
+                            head.obj_pred_weights = obj_pred_w;
+                            head.obj_pred_bias = obj_pred_b;
+                        }
+
+                        const uint32_t out_c = 4u + 1u + num_classes;
+                        const uint32_t out_elems =
+                            (h * 4u * w * 4u + h * 2u * w * 2u + h * w) * out_c;
+                        h = 1;
+                        w = 1;
+                        in_channels = static_cast<int>(out_elems);
+                        (void)out_c;
+                        break;
+                    }
                     case NkFormat::LayerKind::Flatten:
                         dense_in = h * w * in_channels;
                         network->InitFlattenLayer(i);
@@ -2793,6 +3028,19 @@ namespace NkLoader
                               << " hidden=" << layer.yolox_decoupled_head.hidden_dim
                               << " classes=" << layer.yolox_decoupled_head.num_classes
                               << " convs=" << static_cast<uint32_t>(layer.yolox_decoupled_head.num_convs);
+                    break;
+                case NkFormat::LayerKind::FeatureTap:
+                    std::cout << "FeatureTap channels=" << layer.feature_tap.channels
+                              << " tap_id=" << static_cast<uint32_t>(layer.feature_tap.tap_id);
+                    break;
+                case NkFormat::LayerKind::YoloxPafpnMultiscale:
+                    std::cout << "YoloxPafpnMultiscale c3=" << layer.yolox_pafpn_multiscale.c3_channels
+                              << " c4=" << layer.yolox_pafpn_multiscale.c4_channels
+                              << " c5=" << layer.yolox_pafpn_multiscale.c5_channels
+                              << " hidden=" << layer.yolox_pafpn_multiscale.hidden_dim
+                              << " classes=" << layer.yolox_pafpn_multiscale.num_classes
+                              << " convs="
+                              << static_cast<uint32_t>(layer.yolox_pafpn_multiscale.num_convs);
                     break;
                 case NkFormat::LayerKind::Flatten:
                     std::cout << "Flatten";

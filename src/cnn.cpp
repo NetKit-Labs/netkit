@@ -103,6 +103,23 @@ void YoloxDecoupledHeadLayer::forward(const Tensor& input, Tensor& output)
     block.forward(input, output);
 }
 
+void FeatureTapLayer::forward(const Tensor& input, Tensor& output)
+{
+    const uint32_t elems = input.num_elements;
+    if (!output.data || elems == 0)
+        return;
+    if (output.num_elements != elems)
+        return;
+    std::memcpy(output.data, input.data, static_cast<std::size_t>(elems) * sizeof(float));
+    if (tap_buffer && tap_elems >= elems)
+        std::memcpy(tap_buffer, input.data, static_cast<std::size_t>(elems) * sizeof(float));
+}
+
+void YoloxPafpnLayer::forward(const Tensor& input, Tensor& output)
+{
+    block.forward(input, output);
+}
+
 CNNNetwork::CNNNetwork(uint32_t num_layers, Arena& arena)
     : blocks(nullptr), num_layers(num_layers)
 {
@@ -582,6 +599,139 @@ void CNNNetwork::InitYoloxDecoupledHeadLayer(uint32_t layer_idx,
         static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
                                         alignof(float)));
     block.scratch_elems = block.scratch ? scratch_elems : 0;
+}
+
+void CNNNetwork::InitFeatureTapLayer(uint32_t layer_idx,
+                                     Arena& arena,
+                                     uint32_t spatial_h,
+                                     uint32_t spatial_w,
+                                     int channels,
+                                     uint8_t tap_id)
+{
+    if (!blocks || layer_idx >= num_layers || tap_id >= kMaxFeatureTaps)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::FeatureTap;
+    FeatureTapLayer& tap = blocks[layer_idx].feature_tap;
+    tap.channels = channels;
+    tap.tap_id = tap_id;
+
+    const uint32_t elems = spatial_h * spatial_w * static_cast<uint32_t>(channels);
+    if (!feature_tap_buffers_[tap_id] || feature_tap_elems_[tap_id] < elems)
+    {
+        feature_tap_buffers_[tap_id] =
+            static_cast<float*>(arena.alloc(static_cast<std::size_t>(elems) * sizeof(float),
+                                            alignof(float)));
+        feature_tap_elems_[tap_id] = feature_tap_buffers_[tap_id] ? elems : 0;
+    }
+    feature_tap_h_[tap_id] = spatial_h;
+    feature_tap_w_[tap_id] = spatial_w;
+    feature_tap_c_[tap_id] = static_cast<uint32_t>(channels);
+
+    tap.tap_buffer = feature_tap_buffers_[tap_id];
+    tap.tap_elems = feature_tap_elems_[tap_id];
+}
+
+void CNNNetwork::InitYoloxPafpnLayer(uint32_t layer_idx,
+                                     Arena& arena,
+                                     uint32_t c5_h,
+                                     uint32_t c5_w,
+                                     int c3_channels,
+                                     int c4_channels,
+                                     int c5_channels,
+                                     int hidden_dim,
+                                     int num_classes,
+                                     int num_convs,
+                                     float* lat3_weights,
+                                     float* lat3_bias,
+                                     float* lat4_weights,
+                                     float* lat4_bias,
+                                     float* lat5_weights,
+                                     float* lat5_bias,
+                                     float* td_p4_dw_weights,
+                                     float* td_p4_dw_bias,
+                                     float* td_p4_pw_weights,
+                                     float* td_p4_pw_bias,
+                                     float* td_p3_dw_weights,
+                                     float* td_p3_dw_bias,
+                                     float* td_p3_pw_weights,
+                                     float* td_p3_pw_bias,
+                                     float* bu_n4_dw_weights,
+                                     float* bu_n4_dw_bias,
+                                     float* bu_n4_pw_weights,
+                                     float* bu_n4_pw_bias,
+                                     float* bu_n5_dw_weights,
+                                     float* bu_n5_dw_bias,
+                                     float* bu_n5_pw_weights,
+                                     float* bu_n5_pw_bias)
+{
+    if (!blocks || layer_idx >= num_layers)
+        return;
+
+    blocks[layer_idx].type = CnnBlockType::YoloxPafpnMultiscale;
+    YoloxPafpnMultiscale& neck = blocks[layer_idx].yolox_pafpn.block;
+    neck.c3_channels = c3_channels;
+    neck.c4_channels = c4_channels;
+    neck.c5_channels = c5_channels;
+    neck.hidden_dim = hidden_dim;
+    neck.num_classes = num_classes;
+    neck.num_convs = num_convs;
+
+    neck.lat3_weights = lat3_weights;
+    neck.lat3_bias = lat3_bias;
+    neck.lat4_weights = lat4_weights;
+    neck.lat4_bias = lat4_bias;
+    neck.lat5_weights = lat5_weights;
+    neck.lat5_bias = lat5_bias;
+
+    neck.td_p4_dw_weights = td_p4_dw_weights;
+    neck.td_p4_dw_bias = td_p4_dw_bias;
+    neck.td_p4_pw_weights = td_p4_pw_weights;
+    neck.td_p4_pw_bias = td_p4_pw_bias;
+    neck.td_p3_dw_weights = td_p3_dw_weights;
+    neck.td_p3_dw_bias = td_p3_dw_bias;
+    neck.td_p3_pw_weights = td_p3_pw_weights;
+    neck.td_p3_pw_bias = td_p3_pw_bias;
+
+    neck.bu_n4_dw_weights = bu_n4_dw_weights;
+    neck.bu_n4_dw_bias = bu_n4_dw_bias;
+    neck.bu_n4_pw_weights = bu_n4_pw_weights;
+    neck.bu_n4_pw_bias = bu_n4_pw_bias;
+    neck.bu_n5_dw_weights = bu_n5_dw_weights;
+    neck.bu_n5_dw_bias = bu_n5_dw_bias;
+    neck.bu_n5_pw_weights = bu_n5_pw_weights;
+    neck.bu_n5_pw_bias = bu_n5_pw_bias;
+
+    // Tap 0 = C3, tap 1 = C4
+    neck.c3_data = feature_tap_buffers_[0];
+    neck.c3_h = feature_tap_h_[0];
+    neck.c3_w = feature_tap_w_[0];
+    neck.c4_data = feature_tap_buffers_[1];
+    neck.c4_h = feature_tap_h_[1];
+    neck.c4_w = feature_tap_w_[1];
+
+    for (int s = 0; s < YoloxPafpnMultiscale::kNumScales; ++s)
+    {
+        YoloxDecoupledHead& head = neck.heads[s];
+        head.in_channels = hidden_dim;
+        head.hidden_dim = hidden_dim;
+        head.num_classes = num_classes;
+        head.num_convs = num_convs;
+    }
+
+    const uint32_t h3 = c5_h * 4u;
+    const uint32_t w3 = c5_w * 4u;
+    const uint32_t h4 = c5_h * 2u;
+    const uint32_t w4 = c5_w * 2u;
+    const uint32_t H = static_cast<uint32_t>(hidden_dim);
+    const uint32_t e3 = h3 * w3 * H;
+    const uint32_t e4 = h4 * w4 * H;
+    const uint32_t e5 = c5_h * c5_w * H;
+    const uint32_t scratch_elems = e3 + e4 + e5 + e3 + e3 + 3u * e3;
+    neck.scratch =
+        static_cast<float*>(arena.alloc(static_cast<std::size_t>(scratch_elems) * sizeof(float),
+                                        alignof(float)));
+    neck.scratch_elems = neck.scratch ? scratch_elems : 0;
 }
 
 void CNNNetwork::InitFlattenLayer(uint32_t layer_idx)

@@ -116,6 +116,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/resnet_basic_block.cpp \
 	$(NETKIT_ROOT)/src/convnextv2_block.cpp \
 	$(NETKIT_ROOT)/src/yolox_decoupled_head.cpp \
+	$(NETKIT_ROOT)/src/yolox_pafpn.cpp \
 	$(NETKIT_TRACE_SOURCES) \
 	$(NETKIT_ROOT)/src/nk_format.cpp \
 	$(NETKIT_ROOT)/src/nk_loader.cpp
@@ -141,6 +142,7 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/convnextv2_block.cpp \
 	$(NETKIT_ROOT)/src/mobilenetv4_uib.cpp \
 	$(NETKIT_ROOT)/src/yolox_decoupled_head.cpp \
+	$(NETKIT_ROOT)/src/yolox_pafpn.cpp \
 	$(NETKIT_ROOT)/src/resnet_basic_block.cpp \
 	$(NETKIT_ROOT)/src/mlp.cpp \
 	$(NETKIT_ROOT)/src/quant_ops.cpp \
@@ -155,6 +157,8 @@ NETKIT_RUNTIME_SOURCES := \
 	$(NETKIT_ROOT)/src/layer_ops/nk_op_convnextv2_block.cpp \
 	$(NETKIT_ROOT)/src/layer_ops/nk_op_mobilenetv4_uib.cpp \
 	$(NETKIT_ROOT)/src/layer_ops/nk_op_yolox_decoupled_head.cpp \
+	$(NETKIT_ROOT)/src/layer_ops/nk_op_feature_tap.cpp \
+	$(NETKIT_ROOT)/src/layer_ops/nk_op_yolox_pafpn.cpp \
 	$(NETKIT_ROOT)/src/layer_ops/nk_op_resnet_basic_block.cpp \
 	$(NETKIT_ROOT)/src/layer_ops/nk_op_layernorm2d.cpp \
 	$(NETKIT_ROOT)/src/layer_ops/nk_op_max_pool2d.cpp \

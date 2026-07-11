@@ -32,6 +32,8 @@ from .format import (
     pack_tensor_desc,
     pack_test_section,
     pack_yolox_decoupled_head_layer,
+    pack_feature_tap_layer,
+    pack_yolox_pafpn_multiscale_layer,
     pack_quant_section,
     payload_alignment_padding,
 )
@@ -65,6 +67,10 @@ class LayerSpec:
     hidden_dim: int = 256
     num_classes: int = 80
     num_convs: int = 2
+    tap_id: int = 0
+    c3_channels: int = 0
+    c4_channels: int = 0
+    c5_channels: int = 0
 
 
 @dataclass
@@ -269,6 +275,19 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
         elif layer.kind == "yolox_decoupled_head":
             layer_bytes += pack_yolox_decoupled_head_layer(
                 in_channels=layer.in_channels,
+                hidden_dim=layer.hidden_dim,
+                num_classes=layer.num_classes,
+                num_convs=layer.num_convs,
+            )
+        elif layer.kind == "feature_tap":
+            layer_bytes += pack_feature_tap_layer(
+                channels=layer.channels, tap_id=layer.tap_id
+            )
+        elif layer.kind == "yolox_pafpn_multiscale":
+            layer_bytes += pack_yolox_pafpn_multiscale_layer(
+                c3_channels=layer.c3_channels,
+                c4_channels=layer.c4_channels,
+                c5_channels=layer.c5_channels,
                 hidden_dim=layer.hidden_dim,
                 num_classes=layer.num_classes,
                 num_convs=layer.num_convs,

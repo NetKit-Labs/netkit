@@ -30,9 +30,11 @@ enum class NkOpCode : uint8_t
     ResNetBasicBlock = static_cast<uint8_t>(NkFormat::LayerKind::ResNetBasicBlock),
     LayerNorm2d = static_cast<uint8_t>(NkFormat::LayerKind::LayerNorm2d),
     YoloxDecoupledHead = static_cast<uint8_t>(NkFormat::LayerKind::YoloxDecoupledHead),
+    FeatureTap = static_cast<uint8_t>(NkFormat::LayerKind::FeatureTap),
+    YoloxPafpnMultiscale = static_cast<uint8_t>(NkFormat::LayerKind::YoloxPafpnMultiscale),
 };
 
-constexpr uint8_t kNkOpCodeCount = 12;
+constexpr uint8_t kNkOpCodeCount = 14;
 
 struct NkCnnSpatialPlan
 {

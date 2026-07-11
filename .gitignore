@@ -26,6 +26,12 @@ libnetkit_trim.a
 # Logs
 *.log
 
+# Local training checkpoints
+models/checkpoints/
+
+# Mini COCO dry-run download
+data/coco_mini/
+
 # VS Code
 .vscode/
 

@@ -30,6 +30,8 @@ namespace NkFormat
             case LayerKind::ResNetBasicBlock: return "resnet_basic_block";
             case LayerKind::LayerNorm2d: return "layernorm2d";
             case LayerKind::YoloxDecoupledHead: return "yolox_decoupled_head";
+            case LayerKind::FeatureTap: return "feature_tap";
+            case LayerKind::YoloxPafpnMultiscale: return "yolox_pafpn_multiscale";
         }
         return "unknown";
     }

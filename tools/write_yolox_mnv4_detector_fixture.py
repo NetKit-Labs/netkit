@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write yolox_mnv4_small.nk fixture (MobileNetV4-Small + YOLOX decoupled head)."""
+"""Write yolox_mnv4_pafpn.nk fixture (MNv4-Small + taps + PAFPN, 64×64 input)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from netkit.yolox_detector import build_yolox_mnv4_small_detector
 
 
 def main() -> None:
-    height, width = 56, 56
+    height, width = 64, 64
     num_classes = 10
     hidden_dim = 64
     num_convs = 2
@@ -44,14 +44,17 @@ def main() -> None:
             tolerance=1e-4,
             cases=[
                 RegressionCase(
-                    name="YOLOX MNv4-Small single-scale",
+                    name="YOLOX MNv4-Small PAFPN multi-scale",
                     input=inp,
                     expected=expected,
                 )
             ],
         ),
     )
-    print(f"Wrote {out} ({len(arch['layers'])} layers, {weights.nbytes} bytes, output={len(expected)} floats)")
+    print(
+        f"Wrote {out} ({len(arch['layers'])} layers, {weights.nbytes} bytes, "
+        f"output={len(expected)} floats)"
+    )
 
 
 if __name__ == "__main__":

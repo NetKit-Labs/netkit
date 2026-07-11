@@ -421,6 +421,7 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
     x = np.asarray(flat_input, dtype=np.float32).reshape(h, w, channels)
     offset = 0
     dense_in = 0
+    feature_taps: dict[int, np.ndarray] = {}
 
     for layer in arch["layers"]:
         layer_type = layer["type"]
@@ -713,6 +714,28 @@ def forward_cnn(flat_input: np.ndarray, arch: dict[str, Any], weights: np.ndarra
                 offset=offset,
             )
             h, w, channels = x.shape
+        elif layer_type == "feature_tap":
+            tap_id = int(layer["tap_id"])
+            feature_taps[tap_id] = np.array(x, dtype=np.float32, copy=True)
+        elif layer_type == "yolox_pafpn_multiscale":
+            from .yolox_pafpn import yolox_pafpn_forward_from_offset
+
+            c3 = feature_taps[0]
+            c4 = feature_taps[1]
+            x, offset = yolox_pafpn_forward_from_offset(
+                c3,
+                c4,
+                x,
+                c3_channels=int(layer["c3_channels"]),
+                c4_channels=int(layer["c4_channels"]),
+                c5_channels=int(layer["c5_channels"]),
+                hidden_dim=int(layer["hidden_dim"]),
+                num_classes=int(layer["num_classes"]),
+                num_convs=int(layer["num_convs"]),
+                weights=weights,
+                offset=offset,
+            )
+            h, w, channels = 1, 1, int(x.size)
         elif layer_type == "flatten":
             x = x.reshape(-1)
             dense_in = x.size

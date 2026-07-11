@@ -550,7 +550,7 @@ static void TestCompositeBlockLoad(void)
     ExpectModelTestsPass("models/import_convnextv2_block.nk", "import convnextv2 block");
     ExpectModelTestsPass("models/import_asym_depthwise_conv.nk", "import asym depthwise conv");
     ExpectModelTestsPass("models/yolox_mnv4_small.nk", "yolox mnv4 small");
-    ExpectModelTestsPass("models/yolox_head_only.nk", "yolox head only");
+    ExpectModelTestsPass("models/yolox_pafpn_taps.nk", "yolox pafpn taps");
 }
 
 static void TestManualYoloxDecoupledHeadLayer(void)

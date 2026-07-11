@@ -54,7 +54,9 @@ namespace NkFormat
         MobilenetV4Uib = 9,
         ResNetBasicBlock = 10,
         LayerNorm2d = 11,
-        YoloxDecoupledHead = 12
+        YoloxDecoupledHead = 12,
+        FeatureTap = 13,
+        YoloxPafpnMultiscale = 14
     };
 
     enum class DType : uint8_t
@@ -205,6 +207,24 @@ namespace NkFormat
         uint8_t reserved[3]{};
     };
 
+    struct FeatureTapLayerDesc
+    {
+        uint32_t channels = 0;
+        uint8_t tap_id = 0;
+        uint8_t reserved[3]{};
+    };
+
+    struct YoloxPafpnMultiscaleLayerDesc
+    {
+        uint32_t c3_channels = 0;
+        uint32_t c4_channels = 0;
+        uint32_t c5_channels = 0;
+        uint32_t hidden_dim = 64;
+        uint32_t num_classes = 80;
+        uint8_t num_convs = 2;
+        uint8_t reserved[3]{};
+    };
+
     struct LayerDesc
     {
         LayerKind kind = LayerKind::Dense;
@@ -217,6 +237,8 @@ namespace NkFormat
         ResNetBasicBlockLayerDesc resnet_basic_block{};
         LayerNormLayerDesc layernorm2d{};
         YoloxDecoupledHeadLayerDesc yolox_decoupled_head{};
+        FeatureTapLayerDesc feature_tap{};
+        YoloxPafpnMultiscaleLayerDesc yolox_pafpn_multiscale{};
     };
 
     const char* NetworkKindName(NetworkKind kind);

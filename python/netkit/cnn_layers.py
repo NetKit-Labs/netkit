@@ -113,6 +113,11 @@ def _layer_weight_tensor_count(layer: dict[str, Any]) -> int:
         return count
     if layer_type == "yolox_decoupled_head":
         return 3 + 2 * int(layer.get("num_convs", 2))
+    if layer_type == "feature_tap":
+        return 0
+    if layer_type == "yolox_pafpn_multiscale":
+        per_head = 3 + 2 * int(layer.get("num_convs", 2))
+        return 11 + 3 * per_head
     return 0
 
 

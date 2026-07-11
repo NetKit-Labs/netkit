@@ -46,6 +46,8 @@ class LayerKind(IntEnum):
     RESNET_BASIC_BLOCK = 10
     LAYERNORM2D = 11
     YOLOX_DECOUPLED_HEAD = 12
+    FEATURE_TAP = 13
+    YOLOX_PAFPN_MULTISCALE = 14
 
 
 class DType(IntEnum):
@@ -261,6 +263,32 @@ def pack_yolox_decoupled_head_layer(
 ) -> bytes:
     return pack_layer_kind(LayerKind.YOLOX_DECOUPLED_HEAD) + struct.pack(
         "<III B3x", in_channels, hidden_dim, num_classes, num_convs
+    )
+
+
+def pack_feature_tap_layer(*, channels: int, tap_id: int) -> bytes:
+    return pack_layer_kind(LayerKind.FEATURE_TAP) + struct.pack(
+        "<IB3x", channels, tap_id
+    )
+
+
+def pack_yolox_pafpn_multiscale_layer(
+    *,
+    c3_channels: int,
+    c4_channels: int,
+    c5_channels: int,
+    hidden_dim: int,
+    num_classes: int,
+    num_convs: int = 2,
+) -> bytes:
+    return pack_layer_kind(LayerKind.YOLOX_PAFPN_MULTISCALE) + struct.pack(
+        "<IIIII B3x",
+        c3_channels,
+        c4_channels,
+        c5_channels,
+        hidden_dim,
+        num_classes,
+        num_convs,
     )
 
 

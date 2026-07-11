@@ -359,6 +359,90 @@ def _split_cnn_weights(arch: dict, weights: np.ndarray) -> tuple[list[np.ndarray
             bias_tensors.append(obj_b.astype(np.float32))
 
             channels = 4 + 1 + num_classes
+        elif layer_type == "feature_tap":
+            pass
+        elif layer_type == "yolox_pafpn_multiscale":
+            H = int(layer["hidden_dim"])
+            c3 = int(layer["c3_channels"])
+            c4 = int(layer["c4_channels"])
+            c5 = int(layer["c5_channels"])
+            num_classes = int(layer["num_classes"])
+            num_convs = int(layer["num_convs"])
+
+            for in_c in (c3, c4, c5):
+                stem_elems = H * in_c
+                w = weights[offset : offset + stem_elems].reshape(H, 1, 1, in_c)
+                offset += stem_elems
+                b = weights[offset : offset + H]
+                offset += H
+                weight_tensors.append(w.astype(np.float32))
+                bias_tensors.append(b.astype(np.float32))
+
+            for _ in range(4):
+                dw = weights[offset : offset + H * 9].reshape(H, 3, 3)
+                offset += H * 9
+                dw_b = weights[offset : offset + H]
+                offset += H
+                weight_tensors.append(dw.astype(np.float32))
+                bias_tensors.append(dw_b.astype(np.float32))
+                pw = weights[offset : offset + H * H].reshape(H, 1, 1, H)
+                offset += H * H
+                pw_b = weights[offset : offset + H]
+                offset += H
+                weight_tensors.append(pw.astype(np.float32))
+                bias_tensors.append(pw_b.astype(np.float32))
+
+            for _ in range(3):
+                stem_elems = H * H
+                stem_w = weights[offset : offset + stem_elems].reshape(H, 1, 1, H)
+                offset += stem_elems
+                stem_b = weights[offset : offset + H]
+                offset += H
+                weight_tensors.append(stem_w.astype(np.float32))
+                bias_tensors.append(stem_b.astype(np.float32))
+
+                branch_elems = H * H * 9
+                for _b in range(num_convs):
+                    w = weights[offset : offset + branch_elems].reshape(H, 3, 3, H)
+                    offset += branch_elems
+                    b = weights[offset : offset + H]
+                    offset += H
+                    weight_tensors.append(w.astype(np.float32))
+                    bias_tensors.append(b.astype(np.float32))
+                for _b in range(num_convs):
+                    w = weights[offset : offset + branch_elems].reshape(H, 3, 3, H)
+                    offset += branch_elems
+                    b = weights[offset : offset + H]
+                    offset += H
+                    weight_tensors.append(w.astype(np.float32))
+                    bias_tensors.append(b.astype(np.float32))
+
+                cls_w = weights[offset : offset + num_classes * H].reshape(num_classes, 1, 1, H)
+                offset += num_classes * H
+                cls_b = weights[offset : offset + num_classes]
+                offset += num_classes
+                weight_tensors.append(cls_w.astype(np.float32))
+                bias_tensors.append(cls_b.astype(np.float32))
+
+                reg_w = weights[offset : offset + 4 * H].reshape(4, 1, 1, H)
+                offset += 4 * H
+                reg_b = weights[offset : offset + 4]
+                offset += 4
+                weight_tensors.append(reg_w.astype(np.float32))
+                bias_tensors.append(reg_b.astype(np.float32))
+
+                obj_w = weights[offset : offset + H].reshape(1, 1, 1, H)
+                offset += H
+                obj_b = weights[offset : offset + 1]
+                offset += 1
+                weight_tensors.append(obj_w.astype(np.float32))
+                bias_tensors.append(obj_b.astype(np.float32))
+
+            out_c = 4 + 1 + num_classes
+            h3, w3 = height * 4, width * 4
+            h4, w4 = height * 2, width * 2
+            channels = (h3 * w3 + h4 * w4 + height * width) * out_c
+            height, width = 1, 1
         elif layer_type == "flatten":
             dense_in = height * width * channels
         elif layer_type == "dense":
@@ -479,6 +563,28 @@ def pack_random_cnn_weights(arch: dict, rng: np.random.Generator, scale: float =
                 )
             )
             channels = 4 + 1 + int(layer["num_classes"])
+        elif layer_type == "feature_tap":
+            pass
+        elif layer_type == "yolox_pafpn_multiscale":
+            from .yolox_pafpn import pack_yolox_pafpn_weights_flat
+
+            parts.extend(
+                pack_yolox_pafpn_weights_flat(
+                    rng,
+                    c3_channels=int(layer["c3_channels"]),
+                    c4_channels=int(layer["c4_channels"]),
+                    c5_channels=int(layer["c5_channels"]),
+                    hidden_dim=int(layer["hidden_dim"]),
+                    num_classes=int(layer["num_classes"]),
+                    num_convs=int(layer["num_convs"]),
+                    scale=scale,
+                )
+            )
+            out_c = 4 + 1 + int(layer["num_classes"])
+            h3, w3 = height * 4, width * 4
+            h4, w4 = height * 2, width * 2
+            channels = (h3 * w3 + h4 * w4 + height * width) * out_c
+            height, width = 1, 1
         elif layer_type == "flatten":
             dense_in = height * width * channels
         elif layer_type == "dense":
@@ -613,6 +719,26 @@ def _arch_to_spec(arch: dict, weights: np.ndarray) -> ModelSpec:
                 LayerSpec(
                     kind="yolox_decoupled_head",
                     in_channels=layer["in_channels"],
+                    hidden_dim=int(layer["hidden_dim"]),
+                    num_classes=int(layer["num_classes"]),
+                    num_convs=int(layer["num_convs"]),
+                )
+            )
+        elif layer_type == "feature_tap":
+            layers.append(
+                LayerSpec(
+                    kind="feature_tap",
+                    channels=int(layer["channels"]),
+                    tap_id=int(layer["tap_id"]),
+                )
+            )
+        elif layer_type == "yolox_pafpn_multiscale":
+            layers.append(
+                LayerSpec(
+                    kind="yolox_pafpn_multiscale",
+                    c3_channels=int(layer["c3_channels"]),
+                    c4_channels=int(layer["c4_channels"]),
+                    c5_channels=int(layer["c5_channels"]),
                     hidden_dim=int(layer["hidden_dim"]),
                     num_classes=int(layer["num_classes"]),
                     num_convs=int(layer["num_convs"]),

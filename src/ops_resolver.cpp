@@ -28,5 +28,9 @@ NkOpCode ToOpCode(CnnBlockType block_type)
             return NkOpCode::ResNetBasicBlock;
         case CnnBlockType::YoloxDecoupledHead:
             return NkOpCode::YoloxDecoupledHead;
+        case CnnBlockType::FeatureTap:
+            return NkOpCode::FeatureTap;
+        case CnnBlockType::YoloxPafpnMultiscale:
+            return NkOpCode::YoloxPafpnMultiscale;
     }
 }

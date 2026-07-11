@@ -1086,6 +1086,92 @@ nk_status_t nk_cnn_init_yolox_decoupled_head_layer(nk_cnn_t* cnn,
     return NK_OK;
 }
 
+nk_status_t nk_cnn_init_feature_tap_layer(nk_cnn_t* cnn,
+                                          nk_arena_t* arena,
+                                          uint32_t layer_idx,
+                                          uint32_t spatial_h,
+                                          uint32_t spatial_w,
+                                          int channels,
+                                          uint8_t tap_id)
+{
+    if (!nk_cnn_is_valid(cnn) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    CnnPtr(cnn)->net->InitFeatureTapLayer(layer_idx, *ArenaPtr(arena), spatial_h, spatial_w,
+                                          channels, tap_id);
+    return NK_OK;
+}
+
+nk_status_t nk_cnn_init_yolox_pafpn_layer(nk_cnn_t* cnn,
+                                          nk_arena_t* arena,
+                                          uint32_t layer_idx,
+                                          uint32_t c5_h,
+                                          uint32_t c5_w,
+                                          int c3_channels,
+                                          int c4_channels,
+                                          int c5_channels,
+                                          int hidden_dim,
+                                          int num_classes,
+                                          int num_convs,
+                                          float* lat3_weights,
+                                          float* lat3_bias,
+                                          float* lat4_weights,
+                                          float* lat4_bias,
+                                          float* lat5_weights,
+                                          float* lat5_bias,
+                                          float* td_p4_dw_weights,
+                                          float* td_p4_dw_bias,
+                                          float* td_p4_pw_weights,
+                                          float* td_p4_pw_bias,
+                                          float* td_p3_dw_weights,
+                                          float* td_p3_dw_bias,
+                                          float* td_p3_pw_weights,
+                                          float* td_p3_pw_bias,
+                                          float* bu_n4_dw_weights,
+                                          float* bu_n4_dw_bias,
+                                          float* bu_n4_pw_weights,
+                                          float* bu_n4_pw_bias,
+                                          float* bu_n5_dw_weights,
+                                          float* bu_n5_dw_bias,
+                                          float* bu_n5_pw_weights,
+                                          float* bu_n5_pw_bias)
+{
+    if (!nk_cnn_is_valid(cnn) || !arena)
+        return NK_ERR_INVALID_ARGUMENT;
+    CnnPtr(cnn)->net->InitYoloxPafpnLayer(layer_idx,
+                                          *ArenaPtr(arena),
+                                          c5_h,
+                                          c5_w,
+                                          c3_channels,
+                                          c4_channels,
+                                          c5_channels,
+                                          hidden_dim,
+                                          num_classes,
+                                          num_convs,
+                                          lat3_weights,
+                                          lat3_bias,
+                                          lat4_weights,
+                                          lat4_bias,
+                                          lat5_weights,
+                                          lat5_bias,
+                                          td_p4_dw_weights,
+                                          td_p4_dw_bias,
+                                          td_p4_pw_weights,
+                                          td_p4_pw_bias,
+                                          td_p3_dw_weights,
+                                          td_p3_dw_bias,
+                                          td_p3_pw_weights,
+                                          td_p3_pw_bias,
+                                          bu_n4_dw_weights,
+                                          bu_n4_dw_bias,
+                                          bu_n4_pw_weights,
+                                          bu_n4_pw_bias,
+                                          bu_n5_dw_weights,
+                                          bu_n5_dw_bias,
+                                          bu_n5_pw_weights,
+                                          bu_n5_pw_bias);
+    return NK_OK;
+}
+
 nk_status_t nk_cnn_init_flatten_layer(nk_cnn_t* cnn, uint32_t layer_idx)
 {
     if (!nk_cnn_is_valid(cnn))

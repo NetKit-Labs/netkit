@@ -90,6 +90,8 @@ Each layer starts with **`uint8 kind` + 3 reserved bytes**, then kind-specific f
 | `resnet_basic_block` | 10 | `in_channels u32`, `out_channels u32`, `stride u8`, `reserved u8[3]` |
 | `layernorm2d` | 11 | `channels u32`, `eps f32`, `reserved u32` |
 | `yolox_decoupled_head` | 12 | `in_channels u32`, `hidden_dim u32`, `num_classes u32`, `num_convs u8`, `reserved u8[3]` |
+| `feature_tap` | 13 | `channels u32`, `tap_id u8`, `reserved u8[3]` |
+| `yolox_pafpn_multiscale` | 14 | `c3_ch u32`, `c4_ch u32`, `c5_ch u32`, `hidden_dim u32`, `num_classes u32`, `num_convs u8`, `reserved u8[3]` |
 
 See [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), and [YOLOX.md](YOLOX.md) for fused block details.
 

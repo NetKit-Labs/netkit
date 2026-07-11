@@ -78,6 +78,8 @@ set(NETKIT_LAYER_OP_SOURCES
     src/layer_ops/nk_op_convnextv2_block.cpp
     src/layer_ops/nk_op_mobilenetv4_uib.cpp
     src/layer_ops/nk_op_yolox_decoupled_head.cpp
+    src/layer_ops/nk_op_feature_tap.cpp
+    src/layer_ops/nk_op_yolox_pafpn.cpp
     src/layer_ops/nk_op_resnet_basic_block.cpp
     src/layer_ops/nk_op_layernorm2d.cpp
     src/layer_ops/nk_op_max_pool2d.cpp
@@ -109,6 +111,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/convnextv2_block.cpp
     src/mobilenetv4_uib.cpp
     src/yolox_decoupled_head.cpp
+    src/yolox_pafpn.cpp
     src/resnet_basic_block.cpp
     src/mlp.cpp
     src/quant_ops.cpp

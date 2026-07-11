@@ -160,6 +160,26 @@ def _layers_to_arch(network: str, input_shape: list[int], layers: list[dict]) ->
                     "num_convs": layer["num_convs"],
                 }
             )
+        elif kind == "feature_tap":
+            arch_layers.append(
+                {
+                    "type": "feature_tap",
+                    "channels": layer["channels"],
+                    "tap_id": layer["tap_id"],
+                }
+            )
+        elif kind == "yolox_pafpn_multiscale":
+            arch_layers.append(
+                {
+                    "type": "yolox_pafpn_multiscale",
+                    "c3_channels": layer["c3_channels"],
+                    "c4_channels": layer["c4_channels"],
+                    "c5_channels": layer["c5_channels"],
+                    "hidden_dim": layer["hidden_dim"],
+                    "num_classes": layer["num_classes"],
+                    "num_convs": layer["num_convs"],
+                }
+            )
         elif kind == "flatten":
             arch_layers.append({"type": "flatten"})
         else:
