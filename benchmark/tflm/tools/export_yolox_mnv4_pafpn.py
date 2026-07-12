@@ -66,7 +66,7 @@ def main() -> None:
     parser.add_argument(
         "--ckpt",
         type=Path,
-        default=ROOT / "models" / "checkpoints" / "yolox_mnv4_pafpn_coco_train_50k_ema.pt",
+        default=ROOT / "models" / "checkpoints" / "yolox_mnv4_pafpn_coco_train_50k_ema_v2.pt",
     )
     parser.add_argument("--height", type=int, default=320)
     parser.add_argument("--width", type=int, default=320)
@@ -87,7 +87,7 @@ def main() -> None:
         raise SystemExit(f"missing checkpoint {args.ckpt}")
 
     ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
-    det = MiniDetector(hidden=args.hidden, freeze_backbone=True)
+    det = MiniDetector(hidden=args.hidden, freeze_backbone=True, pretrained=False)
     det.load_state_dict(ckpt["state_dict"], strict=False)
     det.eval()
     model = FlatDetector(det)

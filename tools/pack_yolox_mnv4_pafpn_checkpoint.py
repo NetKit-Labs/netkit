@@ -135,7 +135,7 @@ def main() -> None:
     import timm
 
     ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)
-    model = MiniDetector(hidden=args.hidden, freeze_backbone=True)
+    model = MiniDetector(hidden=args.hidden, freeze_backbone=True, pretrained=False)
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
 

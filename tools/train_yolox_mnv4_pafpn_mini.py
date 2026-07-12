@@ -1446,7 +1446,13 @@ def main() -> None:
         train = samples[: -args.holdout]
     print(f"train images={len(train)}  holdout={len(holdout)}")
 
-    model = MiniDetector(hidden=args.hidden, freeze_backbone=True).to(device)
+    # Skip HF pretrained download when warm-starting — checkpoint supplies weights.
+    need_pretrained = args.init_from is None and args.resume is None
+    model = MiniDetector(
+        hidden=args.hidden,
+        freeze_backbone=True,
+        pretrained=need_pretrained,
+    ).to(device)
     losses: list[float] = []
     start_step = 0
     scale_choices = (
