@@ -130,6 +130,15 @@ python tools/train_yolox_mnv4_pafpn_mini.py --source coco_train --data data --ma
   --init-from models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_ema.pt \
   --out models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_ema_v2.pt
 
+# EMA v3 — longer lower-LR continuation (target ~0.30 COCO AP@0.5)
+NETKIT_TRAIN_DEVICE=mps python tools/train_yolox_mnv4_pafpn_mini.py --source coco_train --data data \
+  --max-images 50000 --holdout 200 \
+  --steps 40000 --unfreeze-after 0 --batch 4 --size 320 --assign simota \
+  --mosaic-prob 0.5 --mosaic-close-frac 0.2 --multiscale \
+  --ema-decay 0.999 --lr 1e-4 --backbone-lr 1e-5 \
+  --init-from models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_ema_v2.pt \
+  --out models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_ema_v3.pt
+
 # re-score with NMS (torch and/or exported TF Lite)
 python tools/eval_yolox_holdout.py --backend both \
   --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_ema_v2.pt \
