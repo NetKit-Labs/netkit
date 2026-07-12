@@ -115,20 +115,21 @@ python tools/train_yolox_mnv4_pafpn_mini.py --source coco_val --max-images 5000 
   --steps 10000 --unfreeze-after 5000 --batch 4 --size 320 \
   --out models/checkpoints/yolox_mnv4_pafpn_coco_val.pt
 
-# train2017 50k + SimOTA + Mosaic + light multi-scale (hold-out stays 320)
+# 416² + hidden 128 on the same 50k (backbone warm-start; neck/heads fresh)
 python tools/train_yolox_mnv4_pafpn_mini.py --source coco_train --data data --max-images 50000 --holdout 200 \
-  --steps 40000 --unfreeze-after 2000 --batch 4 --size 320 --assign simota \
+  --steps 30000 --unfreeze-after 3000 --batch 4 --size 416 --hidden 128 --assign simota \
   --mosaic-prob 1.0 --multiscale \
-  --init-from models/checkpoints/yolox_mnv4_pafpn_coco_train_50k.pt \
-  --out models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_mosaic.pt
+  --init-from models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_mosaic.pt \
+  --out models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_h128_416.pt
 
 # pack only if holdout COCO AP@0.5 clearly climbs (aim ≥0.15–0.20)
 python tools/pack_yolox_mnv4_pafpn_checkpoint.py \
-  --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_mosaic.pt \
+  --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_train_50k_h128_416.pt \
+  --hidden 128 --height 416 --width 416 \
   --out models/yolox_mnv4_pafpn_trained.nk
 ```
 
-Downloads Ultralytics **coco128**, official **COCO val2017**, or a boxed **train2017 subset** (no 18GB zip). For `coco_train`, hold-out comes from **val2017** (no overlap). Training uses freeze→unfreeze, flip+color jitter, optional **4-tile Mosaic** (`--mosaic-prob`) with late close, optional **multi-scale** 288/320/352 (`--multiscale`), **SimOTA** (default) or center-radius multi-positive (`--assign center`), exp-LTRB + GIoU box loss, and hold-out scoring (confidence, boxes, rough greedy mAP@0.5, and COCO-style AP@0.5 from a precision–recall curve). Pack writes `yolox_mnv4_pafpn_trained.nk` only when COCO AP@0.5 on hold-out is worth keeping (CI fixture untouched).
+Downloads Ultralytics **coco128**, official **COCO val2017**, or a boxed **train2017 subset** (no 18GB zip). For `coco_train`, hold-out comes from **val2017** (no overlap). Training uses freeze→unfreeze, flip+color jitter, optional **4-tile Mosaic** (`--mosaic-prob`) with late close, optional **multi-scale** around `--size` (`--multiscale`), **SimOTA** (default) or center-radius multi-positive (`--assign center`), exp-LTRB + GIoU box loss, and hold-out scoring (confidence, boxes, rough greedy mAP@0.5, and COCO-style AP@0.5 from a precision–recall curve). `--init-from` loads **shape-compatible** tensors only (backbone carries over when `--hidden` grows; neck/heads retrain). Pack writes `yolox_mnv4_pafpn_trained.nk` only when COCO AP@0.5 on hold-out is worth keeping (CI fixture untouched).
 
 ## C++ runtime
 

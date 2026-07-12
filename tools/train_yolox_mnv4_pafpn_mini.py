@@ -594,6 +594,18 @@ def mosaic4(
 MULTISCALE_SIZES = (288, 320, 352)
 
 
+def multiscale_sizes_for(base: int) -> tuple[int, ...]:
+    """Three train sizes around ``base``, all divisible by 32."""
+    if base % 32 != 0:
+        raise ValueError(f"base size must be divisible by 32, got {base}")
+    lo = base - 32
+    hi = base + 32
+    if lo < 160:
+        lo = base
+        hi = base + 64
+    return (lo, base, hi)
+
+
 def box_iou_xyxy(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """IoU between sets of boxes [N,4] and [M,4]."""
     if a.size == 0 or b.size == 0:
@@ -1247,7 +1259,7 @@ def load_batch(
         if augment and rng is not None and float(rng.random()) < 0.5:
             canvas = np.ascontiguousarray(canvas[:, ::-1, :])
             boxes = flip_lr_boxes(boxes, size)
-        tensor = torch.from_numpy(np.ascontiguousarray(canvas)).permute(2, 0, 1).float() / 255.0
+        tensor = torch.from_numpy(np.array(canvas, copy=True)).permute(2, 0, 1).float() / 255.0
         imgs.append(tensor)
         boxes_batch.append(boxes)
     batch = torch.stack(imgs, dim=0).to(device)
@@ -1362,7 +1374,7 @@ def main() -> None:
     parser.add_argument(
         "--multiscale",
         action="store_true",
-        help=f"Random train size in {MULTISCALE_SIZES} each step (hold-out stays --size)",
+        help="Random train size in {size-32, size, size+32} each step (hold-out stays --size)",
     )
     parser.add_argument(
         "--assign",
@@ -1426,18 +1438,33 @@ def main() -> None:
     model = MiniDetector(hidden=args.hidden, freeze_backbone=True).to(device)
     losses: list[float] = []
     start_step = 0
+    scale_choices = (
+        multiscale_sizes_for(args.size) if args.multiscale else (int(args.size),)
+    )
     warm = args.init_from if args.init_from is not None else None
     if warm is None and args.resume is not None:
         warm = args.resume
     if warm is not None and warm.is_file():
         ckpt = torch.load(warm, map_location="cpu", weights_only=False)
-        model.load_state_dict(ckpt["state_dict"])
+        sd = ckpt["state_dict"]
+        model_sd = model.state_dict()
+        compatible = {
+            k: v
+            for k, v in sd.items()
+            if k in model_sd and tuple(model_sd[k].shape) == tuple(v.shape)
+        }
+        missing = model.load_state_dict(compatible, strict=False)
+        print(
+            f"init-from {warm}: loaded {len(compatible)}/{len(model_sd)} tensors "
+            f"(shape-compatible; neck/heads stay fresh if hidden/size changed) "
+            f"unexpected={len(missing.unexpected_keys)} missing={len(missing.missing_keys)}"
+        )
         if args.resume is not None and args.init_from is None:
             losses = list(ckpt.get("losses", []))
             start_step = int(ckpt.get("steps", len(losses)))
-            print(f"resumed {warm} at step={start_step}")
+            print(f"resumed at step={start_step}")
         else:
-            print(f"init-from {warm} (steps reset)")
+            print("steps reset (warm-start)")
 
     def make_opt(*, include_backbone: bool) -> torch.optim.Optimizer:
         if include_backbone:
@@ -1471,9 +1498,7 @@ def main() -> None:
             frozen = False
             print(f"step {step}: unfroze backbone lr={args.backbone_lr}")
 
-        step_size = (
-            int(rng.choice(MULTISCALE_SIZES)) if args.multiscale else int(args.size)
-        )
+        step_size = int(rng.choice(scale_choices))
         mosaic_prob = (
             float(args.mosaic_prob)
             if use_aug and step < mosaic_close_step
@@ -1539,7 +1564,7 @@ def main() -> None:
         "mosaic_prob": args.mosaic_prob,
         "mosaic_close_frac": args.mosaic_close_frac,
         "multiscale": args.multiscale,
-        "multiscale_sizes": list(MULTISCALE_SIZES) if args.multiscale else [args.size],
+        "multiscale_sizes": list(scale_choices),
     }
     torch.save({"state_dict": model.state_dict(), **meta}, args.out)
     (args.out.with_suffix(".json")).write_text(
