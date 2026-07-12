@@ -17,6 +17,7 @@ Models (display names):
   cnn      — MNIST digit CNN
   cnn_dw   — MNIST digit DS-CNN (depthwise-separable peer)
   imagenet — MobileNetV4-Conv-Small on ImageNet (10-class fixture)
+  yolox    — YOLOX MNv4-PAFPN detect @ 320² (float32)
 
 Flash/RAM (MCU-style): netkit bench ELF TEXT/DATA minus hard-coded test-image
 `.o` fixtures; TF Lite = core LiteRT CPU libs. Models (`.nk` / `.tflite`) and
@@ -45,11 +46,13 @@ SUMMARY_RE = re.compile(r"^BENCHMARK_SUMMARY\s+(.*)$", re.M)
 CNN_RUNS = 10
 
 # Suite keys → human-readable labels (tables / banners).
-MODEL_CHOICES = ("cnn", "cnn_dw", "imagenet")
+MODEL_CHOICES = ("cnn", "cnn_dw", "imagenet", "yolox")
+DEFAULT_MODELS = ("cnn", "cnn_dw", "imagenet")
 MODEL_LABELS = {
     "cnn": "MNIST CNN",
     "cnn_dw": "MNIST DS-CNN",
     "imagenet": "MNv4-Small ImageNet",
+    "yolox": "YOLOX MNv4-PAFPN 320",
 }
 
 
@@ -248,6 +251,7 @@ def _netkit_fixture_image_objs(model: str, cfg: SuiteCfg) -> list[Path]:
             "cnn": [gen / "mnist_cnn_test_images.o"],
             "cnn_dw": [gen / "cnn_dw" / "mnist_cnn_test_images.o"],
             "imagenet": [gen / "imagenet_mnv4_test_images.o"],
+            "yolox": [gen / "yolox_test_images.o"],
         }[model]
     return {
         "cnn": [gen / "mnist_cnn_int8_test_images.o"],
@@ -283,16 +287,34 @@ def _ensure_venv() -> None:
         _run(["make", "venv"], cwd=TFLITE)
 
 
-def ensure_assets_float32() -> None:
-    needed = [
-        ROOT / "models" / "mnist_cnn.nk",
-        ROOT / "models" / "mnist_cnn_dw.nk",
-        ROOT / "models" / "mobilenetv4_imagenet_f32.nk",
-        ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn.tflite",
-        ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_dw.tflite",
-        ROOT / "benchmark" / "tflm" / "generated" / "mobilenetv4_imagenet_f32.tflite",
-        ROOT / "benchmark" / "tflm" / "generated" / "cnn_dw" / "mnist_cnn_test_images.cc",
-    ]
+def ensure_assets_float32(models: list[str] | None = None) -> None:
+    models = list(models) if models is not None else list(DEFAULT_MODELS)
+    needed: list[Path] = []
+    if any(m in models for m in ("cnn", "cnn_dw")):
+        needed.extend(
+            [
+                ROOT / "models" / "mnist_cnn.nk",
+                ROOT / "models" / "mnist_cnn_dw.nk",
+                ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn.tflite",
+                ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_dw.tflite",
+                ROOT / "benchmark" / "tflm" / "generated" / "cnn_dw" / "mnist_cnn_test_images.cc",
+            ]
+        )
+    if "imagenet" in models:
+        needed.extend(
+            [
+                ROOT / "models" / "mobilenetv4_imagenet_f32.nk",
+                ROOT / "benchmark" / "tflm" / "generated" / "mobilenetv4_imagenet_f32.tflite",
+            ]
+        )
+    if "yolox" in models:
+        needed.extend(
+            [
+                ROOT / "models" / "yolox_mnv4_pafpn_trained.nk",
+                ROOT / "benchmark" / "tflm" / "generated" / "yolox_mnv4_pafpn_320.tflite",
+                ROOT / "benchmark" / "tflm" / "generated" / "yolox_test_images.cc",
+            ]
+        )
     missing = [p for p in needed if not p.is_file()]
     if missing:
         raise SystemExit("missing assets:\n  " + "\n  ".join(str(p) for p in missing))
@@ -351,6 +373,7 @@ def _bench_name(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> str:
             "cnn": "mnist_cnn_bench",
             "cnn_dw": "mnist_cnn_dw_bench",
             "imagenet": "mobilenetv4_imagenet_bench",
+            "yolox": "yolox_bench",
         }[model]
     else:
         prefix = {
@@ -371,6 +394,7 @@ def _netkit_model_path(model: str, cfg: SuiteCfg) -> str:
             "cnn": "models/mnist_cnn.nk",
             "cnn_dw": "models/mnist_cnn_dw.nk",
             "imagenet": "models/mobilenetv4_imagenet_f32.nk",
+            "yolox": "models/yolox_mnv4_pafpn_trained.nk",
         }[model]
     return {
         "cnn": "models/mnist_cnn_int8.nk",
@@ -405,6 +429,12 @@ def _netkit_build_cmd(model: str, cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
                 f"MNV4_IMAGENET_BENCH={name}",
                 f"MNV4_IMAGENET_MAIN_OBJ=src/mobilenetv4_imagenet_main_ab_{tag}.o",
                 "build-mobilenetv4-imagenet",
+            ]
+        if model == "yolox":
+            return common + [
+                f"YOLOX_BENCH={name}",
+                f"YOLOX_MAIN_OBJ=src/yolox_main_ab_{tag}.o",
+                "build-yolox",
             ]
     else:
         if model == "cnn":
@@ -470,6 +500,14 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, mode: CompareMode) -> list[str]:
             return [
                 py,
                 str(TFLITE / "mobilenetv4_imagenet_bench.py"),
+                "--num-threads",
+                "1",
+                *backend_args,
+            ]
+        if model == "yolox":
+            return [
+                py,
+                str(TFLITE / "yolox_bench.py"),
                 "--num-threads",
                 "1",
                 *backend_args,
@@ -566,7 +604,7 @@ def _one_runtime(
     order: str,
     discard_first: bool,
 ) -> RunResult:
-    imagenet = model == "imagenet"
+    imagenet = model in ("imagenet", "yolox")
     if discard_first:
         print(
             f"  discard-1st [{order}] {runtime:6s} {model:8s} "
@@ -799,7 +837,7 @@ def build_arg_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument(
         "--models",
         nargs="+",
-        default=list(MODEL_CHOICES),
+        default=list(DEFAULT_MODELS),
         choices=list(MODEL_CHOICES),
     )
     parser.add_argument(
@@ -828,7 +866,10 @@ def main_for_dtype(
         f"\n######## HOST A/B SUITE — {dtype.header_label} TESTING ########\n",
         flush=True,
     )
-    ensure_assets()
+    try:
+        ensure_assets(args.models)
+    except TypeError:
+        ensure_assets()
 
     cfg = SuiteCfg(dtype=dtype)
     results, avgs = run_suite(args.models, cfg, do_warmup=not args.skip_warmup)

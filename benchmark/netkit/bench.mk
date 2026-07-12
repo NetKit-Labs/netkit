@@ -154,6 +154,7 @@ MLP_INT8_IMAGES_CC := $(SHARED_GEN)/mnist_mlp_int8_test_images.cc
 MNV4_INT8_IMAGES_CC := $(SHARED_GEN)/mobilenetv4_netkit_int8_test_images.cc
 IMAGENET_IMAGES_CC := $(SHARED_GEN)/imagenet_mnv4_test_images.cc
 IMAGENET_INT8_IMAGES_CC := $(SHARED_GEN)/imagenet_mnv4_netkit_int8_test_images.cc
+YOLOX_IMAGES_CC := $(SHARED_GEN)/yolox_test_images.cc
 MLP_IMAGES_OBJ := $(SHARED_GEN)/mnist_test_images.o
 CNN_IMAGES_OBJ := $(SHARED_GEN)/mnist_cnn_test_images.o
 CNN_INT8_IMAGES_OBJ := $(SHARED_GEN)/mnist_cnn_int8_test_images.o
@@ -161,6 +162,7 @@ MLP_INT8_IMAGES_OBJ := $(SHARED_GEN)/mnist_mlp_int8_test_images.o
 MNV4_INT8_IMAGES_OBJ := $(SHARED_GEN)/mobilenetv4_netkit_int8_test_images.o
 IMAGENET_IMAGES_OBJ := $(SHARED_GEN)/imagenet_mnv4_test_images.o
 IMAGENET_INT8_IMAGES_OBJ := $(SHARED_GEN)/imagenet_mnv4_netkit_int8_test_images.o
+YOLOX_IMAGES_OBJ := $(SHARED_GEN)/yolox_test_images.o
 
 CNN_PROFILE_BENCH ?= mnist_cnn_profile_bench
 CNN_PROFILE_MAIN_OBJ ?= src/mnist_cnn_profile_main.o
@@ -172,6 +174,9 @@ MNV4_IMAGENET_BENCH ?= mobilenetv4_imagenet_bench
 MNV4_IMAGENET_MAIN_OBJ ?= src/mobilenetv4_imagenet_main.o
 MNV4_IMAGENET_INT8_BENCH ?= mobilenetv4_imagenet_int8_bench
 MNV4_IMAGENET_INT8_MAIN_OBJ ?= src/mobilenetv4_imagenet_int8_main.o
+YOLOX_SRC := src/yolox_main.cc
+YOLOX_BENCH ?= yolox_bench
+YOLOX_MAIN_OBJ ?= src/yolox_main.o
 CNN_INT8_BENCH ?= mnist_cnn_int8_bench
 CNN_INT8_MAIN_OBJ ?= src/mnist_cnn_int8_main.o
 MLP_INT8_BENCH ?= mnist_mlp_int8_bench
@@ -180,8 +185,8 @@ MLP_INT8_MAIN_OBJ ?= src/mnist_mlp_int8_main.o
 BENCH_LIB_OBJS := $(addprefix $(BENCH_OBJDIR)/,$(BENCH_RUNTIME_SOURCES:.cpp=.o))
 
 .PHONY: build-mlp build-cnn build-cnn-profile build-mlp-profile build-lib build-mobilenetv4 \
-  build-mobilenetv4-imagenet build-mobilenetv4-imagenet-int8 build-cnn-int8 build-mlp-int8 \
-  run-mobilenetv4 run-mobilenetv4-imagenet run-mobilenetv4-imagenet-int8 run-cnn-int8 run-mlp-int8
+  build-mobilenetv4-imagenet build-mobilenetv4-imagenet-int8 build-yolox build-cnn-int8 build-mlp-int8 \
+  run-mobilenetv4 run-mobilenetv4-imagenet run-mobilenetv4-imagenet-int8 run-yolox run-cnn-int8 run-mlp-int8
 
 build-lib: $(BENCH_LIB)
 build-mlp: $(MLP_BENCH)
@@ -191,6 +196,7 @@ build-mlp-profile: $(MLP_PROFILE_BENCH)
 build-mobilenetv4: $(MNV4_BENCH)
 build-mobilenetv4-imagenet: $(MNV4_IMAGENET_BENCH)
 build-mobilenetv4-imagenet-int8: $(MNV4_IMAGENET_INT8_BENCH)
+build-yolox: $(YOLOX_BENCH)
 build-cnn-int8: $(CNN_INT8_BENCH)
 build-mlp-int8: $(MLP_INT8_BENCH)
 
@@ -222,6 +228,9 @@ $(IMAGENET_INT8_IMAGES_CC):
 	  (cd $(ROOT) && python3 tools/write_mobilenetv4_imagenet_int8.py)
 	@test -d $(SHARED_GEN)/imagenet_sample_cache || $(MAKE) -C ../tflm export-imagenet-mnv4-images
 	@cd ../tflm && python3 tools/export_imagenet_mnv4_int8_test_images.py --quant-source nk
+
+$(YOLOX_IMAGES_CC):
+	$(MAKE) -C ../tflm export-yolox-images
 
 $(BENCH_OBJDIR)/%.o: $(ROOT)/%.cpp
 	@mkdir -p $(dir $@)
@@ -268,6 +277,10 @@ $(MNV4_IMAGENET_INT8_BENCH): $(BENCH_LIB) $(MNV4_IMAGENET_INT8_MAIN_OBJ) $(IMAGE
 	  -o $@ $(MNV4_IMAGENET_INT8_MAIN_OBJ) $(IMAGENET_INT8_IMAGES_OBJ) $(BENCH_LIB) \
 	  $(TFLM_LDFLAGS) $(XNNPACK_LDFLAGS)
 
+$(YOLOX_BENCH): $(BENCH_LIB) $(YOLOX_MAIN_OBJ) $(YOLOX_IMAGES_OBJ)
+	$(TFLM_HOST_CXX) $(BENCH_LINK_CXXFLAGS) \
+	  -o $@ $(YOLOX_MAIN_OBJ) $(YOLOX_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS) $(XNNPACK_LDFLAGS)
+
 $(CNN_PROFILE_BENCH): $(BENCH_LIB) $(CNN_PROFILE_MAIN_OBJ) $(CNN_IMAGES_OBJ)
 	$(TFLM_HOST_CXX) $(BENCH_LINK_CXXFLAGS) \
 	  -o $@ $(CNN_PROFILE_MAIN_OBJ) $(CNN_IMAGES_OBJ) $(BENCH_LIB) $(TFLM_LDFLAGS) $(XNNPACK_LDFLAGS)
@@ -306,6 +319,9 @@ $(MNV4_IMAGENET_MAIN_OBJ): $(MNV4_IMAGENET_SRC) $(IMAGENET_IMAGES_CC) $(BENCH_ST
 $(MNV4_IMAGENET_INT8_MAIN_OBJ): $(MNV4_IMAGENET_INT8_SRC) $(IMAGENET_INT8_IMAGES_CC) $(BENCH_STATS_HPP)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
 
+$(YOLOX_MAIN_OBJ): $(YOLOX_SRC) $(YOLOX_IMAGES_CC) $(BENCH_STATS_HPP)
+	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
+
 $(CNN_PROFILE_MAIN_OBJ): $(CNN_PROFILE_SRC) $(CNN_IMAGES_CC) $(BENCH_STATS_HPP)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) $(BENCH_MAIN_CPPFLAGS) -c $< -o $@
 
@@ -325,6 +341,9 @@ $(IMAGENET_IMAGES_OBJ): $(IMAGENET_IMAGES_CC)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) -c $< -o $@
 
 $(IMAGENET_INT8_IMAGES_OBJ): $(IMAGENET_INT8_IMAGES_CC)
+	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) -c $< -o $@
+
+$(YOLOX_IMAGES_OBJ): $(YOLOX_IMAGES_CC)
 	$(TFLM_HOST_CXX) $(BENCH_CORE_CXXFLAGS) -c $< -o $@
 
 run-mlp: $(MLP_BENCH)
@@ -361,6 +380,11 @@ run-mobilenetv4-imagenet-int8: $(MNV4_IMAGENET_INT8_BENCH)
 	@test -f $(ROOT)/models/mobilenetv4_imagenet_int8.nk || \
 	  (cd $(ROOT) && python3 tools/write_mobilenetv4_imagenet_int8.py)
 	@cd $(ROOT) && ./benchmark/netkit/$(MNV4_IMAGENET_INT8_BENCH) models/mobilenetv4_imagenet_int8.nk
+
+run-yolox: $(YOLOX_BENCH)
+	@test -f $(ROOT)/models/yolox_mnv4_pafpn_trained.nk || \
+	  (echo "missing models/yolox_mnv4_pafpn_trained.nk" >&2; exit 1)
+	@cd $(ROOT) && ./benchmark/netkit/$(YOLOX_BENCH) models/yolox_mnv4_pafpn_trained.nk
 
 run-cnn-profile: $(CNN_PROFILE_BENCH)
 	@cd $(ROOT) && ./benchmark/netkit/$(CNN_PROFILE_BENCH) models/mnist_cnn.nk

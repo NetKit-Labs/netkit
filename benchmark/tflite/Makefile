@@ -14,6 +14,7 @@ PYTHON := $(VENV)/bin/python
 
 .PHONY: venv run-mobilenetv4-imagenet run-mobilenetv4-imagenet-ref \
   run-mobilenetv4-imagenet-int8 run-mobilenetv4-imagenet-int8-ref \
+  run-yolox run-yolox-ref \
   run-cnn run-cnn-ref run-cnn-int8 run-cnn-int8-ref \
   run-cnn-dw run-cnn-dw-int8 \
   run-mlp run-mlp-ref run-mlp-int8 run-mlp-int8-ref clean
@@ -48,6 +49,18 @@ run-mobilenetv4-imagenet-int8-ref: venv
 	@test -f $(ROOT)/benchmark/tflm/generated/mobilenetv4_imagenet_int8.tflite || \
 	  $(MAKE) -C $(ROOT)/benchmark/tflm export-mobilenetv4-imagenet-int8
 	@$(PYTHON) $(BENCH_DIR)/mobilenetv4_imagenet_int8_bench.py --num-threads 1 --no-xnnpack
+
+run-yolox: venv
+	@test -f $(ROOT)/benchmark/tflm/generated/yolox_mnv4_pafpn_320.tflite || \
+	  $(MAKE) -C $(ROOT)/benchmark/tflm export-yolox
+	@test -d $(ROOT)/benchmark/tflm/generated/yolox_sample_cache || \
+	  $(MAKE) -C $(ROOT)/benchmark/tflm export-yolox-images
+	@$(PYTHON) $(BENCH_DIR)/yolox_bench.py --num-threads 1
+
+run-yolox-ref: venv
+	@test -f $(ROOT)/benchmark/tflm/generated/yolox_mnv4_pafpn_320.tflite || \
+	  $(MAKE) -C $(ROOT)/benchmark/tflm export-yolox
+	@$(PYTHON) $(BENCH_DIR)/yolox_bench.py --num-threads 1 --no-xnnpack
 
 # MNIST CNN float32 — XNNPACK vs builtin-ref.
 run-cnn: venv

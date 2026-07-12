@@ -12,6 +12,7 @@ ROOT := $(abspath ../..)
   run-mobilenetv4 run-mobilenetv4-int8 \
   run-mobilenetv4-imagenet run-mobilenetv4-imagenet-xnnpack \
   run-mobilenetv4-imagenet-int8 run-mobilenetv4-imagenet-int8-xnnpack \
+  run-yolox run-yolox-xnnpack \
   run-aot run-aot-mlp run-aot-cnn run-all clean clean-all
 
 all: run
@@ -230,6 +231,24 @@ run-mobilenetv4-imagenet-int8-ref:
 	  MNV4_IMAGENET_INT8_BENCH=mobilenetv4_imagenet_int8_bench_ref \
 	  MNV4_IMAGENET_INT8_MAIN_OBJ=src/mobilenetv4_imagenet_int8_main_ref.o \
 	  run-mobilenetv4-imagenet-int8
+
+run-yolox:
+	$(MAKE) -f bench.mk BACKEND=reference XNNPACK=0 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_ref \
+	  BENCH_LIB=libnetkit_bench_tflite_ref.a \
+	  YOLOX_BENCH=yolox_bench \
+	  YOLOX_MAIN_OBJ=src/yolox_main.o \
+	  run-yolox
+
+run-yolox-xnnpack:
+	$(MAKE) -f bench.mk BACKEND=xnnpack XNNPACK=1 NETKIT_LOOP_UNROLL=0 \
+	  BENCH_FLAG_PROFILE=tflite \
+	  BENCH_OBJDIR=bench_obj_tflite_xnnpack \
+	  BENCH_LIB=libnetkit_bench_tflite_xnnpack.a \
+	  YOLOX_BENCH=yolox_bench_xnnpack \
+	  YOLOX_MAIN_OBJ=src/yolox_main_xnnpack.o \
+	  run-yolox
 
 run-cnn-profile:
 	$(MAKE) -f bench.mk BACKEND=reference NETKIT_LOOP_UNROLL=0 \

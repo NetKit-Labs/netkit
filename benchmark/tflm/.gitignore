@@ -19,6 +19,12 @@ generated/imagenet_mnv4_netkit_int8_test_images.o
 generated/mobilenetv4_netkit_int8_test_images.cc
 generated/mobilenetv4_netkit_int8_test_images.h
 generated/mobilenetv4_netkit_int8_test_images.o
+generated/yolox_mnv4_pafpn_320.tflite
+generated/yolox_saved_model/
+generated/yolox_sample_cache/
+generated/yolox_test_images.cc
+generated/yolox_test_images.h
+generated/yolox_test_images.o
 generated/mnist_test_images.o
 generated/mnist_cnn_test_images.o
 third_party/tflite-micro/

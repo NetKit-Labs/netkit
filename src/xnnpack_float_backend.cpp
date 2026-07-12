@@ -16,6 +16,8 @@
 #include "mlp.hpp"
 #include "mobilenetv4_uib.hpp"
 #include "nk_op_detail.hpp"
+#include "yolox_decoupled_head.hpp"
+#include "yolox_pafpn.hpp"
 
 #include <xnnpack.h>
 
@@ -575,6 +577,385 @@ bool AppendUibBody(xnn_subgraph_t subgraph,
     return true;
 }
 
+bool DefineSilu(xnn_subgraph_t subgraph,
+                uint32_t h,
+                uint32_t w,
+                uint32_t c,
+                uint32_t input_id,
+                uint32_t output_id)
+{
+    uint32_t sigmoid_id = 0;
+    if (!DefineActNhwc(subgraph, h, w, c, XNN_INVALID_VALUE_ID, 0, &sigmoid_id))
+        return false;
+    if (xnn_define_unary(subgraph,
+                         xnn_unary_sigmoid,
+                         /*params=*/nullptr,
+                         input_id,
+                         sigmoid_id,
+                         /*flags=*/0) != xnn_status_success)
+        return false;
+    return xnn_define_binary(subgraph,
+                             xnn_binary_multiply,
+                             /*params=*/nullptr,
+                             input_id,
+                             sigmoid_id,
+                             output_id,
+                             /*flags=*/0) == xnn_status_success;
+}
+
+bool DefineConv2dMaybeSilu(xnn_subgraph_t subgraph,
+                           const float* weights_ohwi,
+                           const float* bias,
+                           uint32_t kh,
+                           uint32_t pad,
+                           uint32_t stride,
+                           uint32_t in_c,
+                           uint32_t out_c,
+                           uint32_t in_h,
+                           uint32_t in_w,
+                           uint32_t input_id,
+                           uint32_t* output_id_out,
+                           uint32_t* out_h_out,
+                           uint32_t* out_w_out,
+                           bool apply_silu)
+{
+    const uint32_t out_h = CalcOutputDim(in_h, static_cast<int>(kh), static_cast<int>(stride),
+                                         static_cast<int>(pad));
+    const uint32_t out_w = CalcOutputDim(in_w, static_cast<int>(kh), static_cast<int>(stride),
+                                         static_cast<int>(pad));
+    uint32_t filter_id = 0;
+    uint32_t bias_id = 0;
+    if (!DefineFilterBiasConv(subgraph, weights_ohwi, bias, out_c, kh, kh, in_c, &filter_id,
+                              &bias_id))
+        return false;
+
+    uint32_t conv_out_id = 0;
+    if (!DefineActNhwc(subgraph, out_h, out_w, out_c, XNN_INVALID_VALUE_ID, 0, &conv_out_id))
+        return false;
+    if (!DefineConvNode(subgraph, pad, pad, kh, kh, stride, in_c, out_c, -FLT_MAX, FLT_MAX,
+                        input_id, filter_id, bias_id, conv_out_id))
+        return false;
+
+    if (!apply_silu)
+    {
+        *output_id_out = conv_out_id;
+        *out_h_out = out_h;
+        *out_w_out = out_w;
+        return true;
+    }
+
+    uint32_t silu_id = 0;
+    if (!DefineActNhwc(subgraph, out_h, out_w, out_c, XNN_INVALID_VALUE_ID, 0, &silu_id))
+        return false;
+    if (!DefineSilu(subgraph, out_h, out_w, out_c, conv_out_id, silu_id))
+        return false;
+    *output_id_out = silu_id;
+    *out_h_out = out_h;
+    *out_w_out = out_w;
+    return true;
+}
+
+bool DefineDwPwSilu(xnn_subgraph_t subgraph,
+                    XnnpackFloat::Runtime& runtime,
+                    Arena& arena,
+                    float* dw_w,
+                    float* dw_b,
+                    float* pw_w,
+                    float* pw_b,
+                    uint32_t channels,
+                    uint32_t stride,
+                    uint32_t in_h,
+                    uint32_t in_w,
+                    uint32_t input_id,
+                    uint32_t* output_id_out,
+                    uint32_t* out_h_out,
+                    uint32_t* out_w_out)
+{
+    const uint32_t pad = 1;
+    const uint32_t kh = 3;
+    const uint32_t dw_h = CalcOutputDim(in_h, static_cast<int>(kh), static_cast<int>(stride),
+                                        static_cast<int>(pad));
+    const uint32_t dw_w_out = CalcOutputDim(in_w, static_cast<int>(kh), static_cast<int>(stride),
+                                            static_cast<int>(pad));
+    float* hwc = OwnDwHwc(runtime, arena, dw_w, static_cast<int>(kh), static_cast<int>(kh),
+                          static_cast<int>(channels));
+    if (!hwc)
+        return false;
+
+    uint32_t filter_id = 0;
+    uint32_t bias_id = 0;
+    uint32_t dw_out_id = 0;
+    if (!DefineFilterBiasDw(subgraph, hwc, dw_b, channels, kh, kh, &filter_id, &bias_id))
+        return false;
+    if (!DefineActNhwc(subgraph, dw_h, dw_w_out, channels, XNN_INVALID_VALUE_ID, 0, &dw_out_id))
+        return false;
+    if (!DefineDwNode(subgraph, pad, pad, kh, kh, stride, channels, -FLT_MAX, FLT_MAX, input_id,
+                      filter_id, bias_id, dw_out_id))
+        return false;
+
+    return DefineConv2dMaybeSilu(subgraph, pw_w, pw_b, /*kh=*/1, /*pad=*/0, /*stride=*/1, channels,
+                                 channels, dw_h, dw_w_out, dw_out_id, output_id_out, out_h_out,
+                                 out_w_out, /*apply_silu=*/true);
+}
+
+bool DefineNearestUpsample2x(xnn_subgraph_t subgraph,
+                             uint32_t h,
+                             uint32_t w,
+                             uint32_t c,
+                             uint32_t input_id,
+                             uint32_t* output_id_out)
+{
+    // [1,H,W,C] -> [1,H,1,W,1,C] -> broadcast [1,H,2,W,2,C] -> [1,2H,2W,C]
+    uint32_t expanded_id = 0;
+    const size_t expand_dims[6] = {1, h, 1, w, 1, c};
+    if (!DefineFp32(subgraph, 6, expand_dims, nullptr, XNN_INVALID_VALUE_ID, 0, &expanded_id))
+        return false;
+    if (xnn_define_static_reshape(subgraph, 6, expand_dims, input_id, expanded_id, 0) !=
+        xnn_status_success)
+        return false;
+
+    uint32_t broadcast_id = 0;
+    const size_t bcast_dims[6] = {1, h, 2, w, 2, c};
+    if (!DefineFp32(subgraph, 6, bcast_dims, nullptr, XNN_INVALID_VALUE_ID, 0, &broadcast_id))
+        return false;
+    if (xnn_define_static_broadcast(subgraph, 6, bcast_dims, expanded_id, broadcast_id, 0) !=
+        xnn_status_success)
+        return false;
+
+    uint32_t out_id = 0;
+    const uint32_t out_h = h * 2u;
+    const uint32_t out_w = w * 2u;
+    if (!DefineActNhwc(subgraph, out_h, out_w, c, XNN_INVALID_VALUE_ID, 0, &out_id))
+        return false;
+    const size_t out_dims[4] = {1, out_h, out_w, c};
+    if (xnn_define_static_reshape(subgraph, 4, out_dims, broadcast_id, out_id, 0) !=
+        xnn_status_success)
+        return false;
+    *output_id_out = out_id;
+    return true;
+}
+
+bool DefineAdd(xnn_subgraph_t subgraph,
+               uint32_t h,
+               uint32_t w,
+               uint32_t c,
+               uint32_t a_id,
+               uint32_t b_id,
+               uint32_t* output_id_out)
+{
+    uint32_t out_id = 0;
+    if (!DefineActNhwc(subgraph, h, w, c, XNN_INVALID_VALUE_ID, 0, &out_id))
+        return false;
+    if (xnn_define_binary(subgraph, xnn_binary_add, nullptr, a_id, b_id, out_id, 0) !=
+        xnn_status_success)
+        return false;
+    *output_id_out = out_id;
+    return true;
+}
+
+bool AppendDecoupledHead(xnn_subgraph_t subgraph,
+                         const YoloxDecoupledHead& head,
+                         uint32_t h,
+                         uint32_t w,
+                         uint32_t input_id,
+                         uint32_t* output_id_out)
+{
+    const uint32_t hidden = static_cast<uint32_t>(head.hidden_dim);
+    const uint32_t in_c = static_cast<uint32_t>(head.in_channels);
+    const uint32_t num_classes = static_cast<uint32_t>(head.num_classes);
+    const uint32_t out_c = static_cast<uint32_t>(head.output_channels());
+
+    uint32_t stem_id = 0;
+    uint32_t sh = 0;
+    uint32_t sw = 0;
+    if (!DefineConv2dMaybeSilu(subgraph, head.stem_weights, head.stem_bias, 1, 0, 1, in_c, hidden, h,
+                               w, input_id, &stem_id, &sh, &sw, true))
+        return false;
+
+    uint32_t cls_id = stem_id;
+    for (int i = 0; i < head.num_convs; ++i)
+    {
+        uint32_t next = 0;
+        if (!DefineConv2dMaybeSilu(subgraph, head.cls_conv_weights[i], head.cls_conv_bias[i], 3, 1, 1,
+                                   hidden, hidden, sh, sw, cls_id, &next, &sh, &sw, true))
+            return false;
+        cls_id = next;
+    }
+    uint32_t cls_pred = 0;
+    uint32_t ph = 0;
+    uint32_t pw = 0;
+    if (!DefineConv2dMaybeSilu(subgraph, head.cls_pred_weights, head.cls_pred_bias, 1, 0, 1, hidden,
+                               num_classes, sh, sw, cls_id, &cls_pred, &ph, &pw, false))
+        return false;
+
+    // Reg/obj share the stem; spatial stays HxW through 3x3 pad1.
+    uint32_t reg_id = stem_id;
+    sh = h;
+    sw = w;
+    for (int i = 0; i < head.num_convs; ++i)
+    {
+        uint32_t next = 0;
+        if (!DefineConv2dMaybeSilu(subgraph, head.reg_conv_weights[i], head.reg_conv_bias[i], 3, 1, 1,
+                                   hidden, hidden, sh, sw, reg_id, &next, &sh, &sw, true))
+            return false;
+        reg_id = next;
+    }
+    uint32_t reg_pred = 0;
+    if (!DefineConv2dMaybeSilu(subgraph, head.reg_pred_weights, head.reg_pred_bias, 1, 0, 1, hidden, 4,
+                               sh, sw, reg_id, &reg_pred, &ph, &pw, false))
+        return false;
+    uint32_t obj_pred = 0;
+    if (!DefineConv2dMaybeSilu(subgraph, head.obj_pred_weights, head.obj_pred_bias, 1, 0, 1, hidden, 1,
+                               sh, sw, reg_id, &obj_pred, &ph, &pw, false))
+        return false;
+
+    // Channel order matches reference ScatterChannels: reg(4) | obj(1) | cls(C).
+    uint32_t head_out = 0;
+    if (!DefineActNhwc(subgraph, h, w, out_c, XNN_INVALID_VALUE_ID, 0, &head_out))
+        return false;
+    const uint32_t parts[3] = {reg_pred, obj_pred, cls_pred};
+    if (xnn_define_concatenate(subgraph, /*axis=*/3, 3, parts, head_out, 0) != xnn_status_success)
+        return false;
+    *output_id_out = head_out;
+    return true;
+}
+
+bool AppendYoloxPafpn(xnn_subgraph_t subgraph,
+                      XnnpackFloat::Runtime& runtime,
+                      Arena& arena,
+                      YoloxPafpnMultiscale& neck,
+                      uint32_t c5_h,
+                      uint32_t c5_w,
+                      uint32_t c5_id,
+                      uint32_t c3_id,
+                      uint32_t c4_id,
+                      uint32_t external_output_id,
+                      uint32_t* output_id_out,
+                      uint32_t* out_elems_out)
+{
+    if (c3_id == XNN_INVALID_VALUE_ID || c4_id == XNN_INVALID_VALUE_ID)
+        return false;
+    if (!neck.lat3_weights || !neck.lat4_weights || !neck.lat5_weights)
+        return false;
+
+    const uint32_t h5 = c5_h;
+    const uint32_t w5 = c5_w;
+    const uint32_t h4 = h5 * 2u;
+    const uint32_t w4 = w5 * 2u;
+    const uint32_t h3 = h5 * 4u;
+    const uint32_t w3 = w5 * 4u;
+    const uint32_t H = static_cast<uint32_t>(neck.hidden_dim);
+    const uint32_t c3 = static_cast<uint32_t>(neck.c3_channels);
+    const uint32_t c4 = static_cast<uint32_t>(neck.c4_channels);
+    const uint32_t c5 = static_cast<uint32_t>(neck.c5_channels);
+
+    uint32_t l5 = 0;
+    uint32_t th = 0;
+    uint32_t tw = 0;
+    if (!DefineConv2dMaybeSilu(subgraph, neck.lat5_weights, neck.lat5_bias, 1, 0, 1, c5, H, h5, w5,
+                               c5_id, &l5, &th, &tw, false))
+        return false;
+
+    uint32_t l4 = 0;
+    if (!DefineConv2dMaybeSilu(subgraph, neck.lat4_weights, neck.lat4_bias, 1, 0, 1, c4, H, h4, w4,
+                               c4_id, &l4, &th, &tw, false))
+        return false;
+
+    uint32_t up5 = 0;
+    if (!DefineNearestUpsample2x(subgraph, h5, w5, H, l5, &up5))
+        return false;
+    uint32_t l4_sum = 0;
+    if (!DefineAdd(subgraph, h4, w4, H, l4, up5, &l4_sum))
+        return false;
+
+    uint32_t p4 = 0;
+    if (!DefineDwPwSilu(subgraph, runtime, arena, neck.td_p4_dw_weights, neck.td_p4_dw_bias,
+                        neck.td_p4_pw_weights, neck.td_p4_pw_bias, H, /*stride=*/1, h4, w4, l4_sum,
+                        &p4, &th, &tw))
+        return false;
+
+    uint32_t l3 = 0;
+    if (!DefineConv2dMaybeSilu(subgraph, neck.lat3_weights, neck.lat3_bias, 1, 0, 1, c3, H, h3, w3,
+                               c3_id, &l3, &th, &tw, false))
+        return false;
+    uint32_t up4 = 0;
+    if (!DefineNearestUpsample2x(subgraph, h4, w4, H, p4, &up4))
+        return false;
+    uint32_t l3_sum = 0;
+    if (!DefineAdd(subgraph, h3, w3, H, l3, up4, &l3_sum))
+        return false;
+
+    uint32_t p3 = 0;
+    if (!DefineDwPwSilu(subgraph, runtime, arena, neck.td_p3_dw_weights, neck.td_p3_dw_bias,
+                        neck.td_p3_pw_weights, neck.td_p3_pw_bias, H, /*stride=*/1, h3, w3, l3_sum,
+                        &p3, &th, &tw))
+        return false;
+
+    // Bottom-up
+    uint32_t n4_body = 0;
+    if (!DefineDwPwSilu(subgraph, runtime, arena, neck.bu_n4_dw_weights, neck.bu_n4_dw_bias,
+                        neck.bu_n4_pw_weights, neck.bu_n4_pw_bias, H, /*stride=*/2, h3, w3, p3,
+                        &n4_body, &th, &tw))
+        return false;
+    uint32_t n4 = 0;
+    if (!DefineAdd(subgraph, h4, w4, H, n4_body, p4, &n4))
+        return false;
+
+    uint32_t n5_body = 0;
+    if (!DefineDwPwSilu(subgraph, runtime, arena, neck.bu_n5_dw_weights, neck.bu_n5_dw_bias,
+                        neck.bu_n5_pw_weights, neck.bu_n5_pw_bias, H, /*stride=*/2, h4, w4, n4,
+                        &n5_body, &th, &tw))
+        return false;
+    uint32_t n5 = 0;
+    if (!DefineAdd(subgraph, h5, w5, H, n5_body, l5, &n5))
+        return false;
+
+    const uint32_t scale_h[3] = {h3, h4, h5};
+    const uint32_t scale_w[3] = {w3, w4, w5};
+    const uint32_t scale_in[3] = {p3, n4, n5};
+    uint32_t flat_ids[3] = {};
+    const uint32_t out_c = static_cast<uint32_t>(neck.output_channels());
+    uint32_t total_elems = 0;
+
+    for (int s = 0; s < YoloxPafpnMultiscale::kNumScales; ++s)
+    {
+        neck.heads[s].in_channels = neck.hidden_dim;
+        neck.heads[s].hidden_dim = neck.hidden_dim;
+        neck.heads[s].num_classes = neck.num_classes;
+        neck.heads[s].num_convs = neck.num_convs;
+
+        uint32_t head_id = 0;
+        if (!AppendDecoupledHead(subgraph, neck.heads[s], scale_h[s], scale_w[s], scale_in[s],
+                                 &head_id))
+            return false;
+
+        const uint32_t spat = scale_h[s] * scale_w[s];
+        const uint32_t elems = spat * out_c;
+        total_elems += elems;
+        uint32_t flat_id = 0;
+        const size_t flat_dims[4] = {1, 1, 1, elems};
+        if (!DefineFp32(subgraph, 4, flat_dims, nullptr, XNN_INVALID_VALUE_ID, 0, &flat_id))
+            return false;
+        if (xnn_define_static_reshape(subgraph, 4, flat_dims, head_id, flat_id, 0) !=
+            xnn_status_success)
+            return false;
+        flat_ids[s] = flat_id;
+    }
+
+    uint32_t out_id = 0;
+    const uint32_t out_flags =
+        (external_output_id != XNN_INVALID_VALUE_ID) ? XNN_VALUE_FLAG_EXTERNAL_OUTPUT : 0;
+    const size_t out_dims[4] = {1, 1, 1, total_elems};
+    if (!DefineFp32(subgraph, 4, out_dims, nullptr, external_output_id, out_flags, &out_id))
+        return false;
+    if (xnn_define_concatenate(subgraph, /*axis=*/3, 3, flat_ids, out_id, 0) != xnn_status_success)
+        return false;
+
+    *output_id_out = out_id;
+    *out_elems_out = total_elems;
+    return true;
+}
+
 bool FinishAfterWeightsCache(XnnpackFloat::Runtime& runtime)
 {
     if (runtime.xnn_network_ready)
@@ -703,6 +1084,11 @@ bool BuildNetworkRuntime(CNNNetwork& network,
     uint32_t cur_w = in_w;
     uint32_t cur_c = in_c;
     const uint32_t n = network.layer_count();
+    // Feature taps (YOLOX C3/C4): identity in the subgraph; keep value IDs for PAFPN.
+    constexpr uint32_t kMaxTaps = 4;
+    uint32_t tap_value_ids[kMaxTaps];
+    for (uint32_t t = 0; t < kMaxTaps; ++t)
+        tap_value_ids[t] = XNN_INVALID_VALUE_ID;
 
     for (uint32_t i = 0; i < n; ++i)
     {
@@ -1149,6 +1535,59 @@ bool BuildNetworkRuntime(CNNNetwork& network,
                 cur_w = 1;
                 cur_c = static_cast<uint32_t>(out_features);
                 runtime->out_elements = static_cast<uint32_t>(out_features);
+                break;
+            }
+
+            case CnnBlockType::FeatureTap:
+            {
+                const FeatureTapLayer& tap = block.feature_tap;
+                if (tap.tap_id >= kMaxTaps)
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "feature_tap id %u out of range at layer %u",
+                                  static_cast<unsigned>(tap.tap_id), i);
+                    return fail_sg(layer_err);
+                }
+                if (static_cast<uint32_t>(tap.channels) != cur_c)
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "feature_tap channels mismatch at layer %u", i);
+                    return fail_sg(layer_err);
+                }
+                // Identity: PAFPN reads this activation via the stored value id.
+                tap_value_ids[tap.tap_id] = cur_id;
+                break;
+            }
+
+            case CnnBlockType::YoloxPafpnMultiscale:
+            {
+                YoloxPafpnMultiscale& neck = block.yolox_pafpn.block;
+                const uint32_t out_ext =
+                    is_last ? runtime->xnn_net_ext_out : XNN_INVALID_VALUE_ID;
+                uint32_t out_id = 0;
+                uint32_t out_elems = 0;
+                if (!AppendYoloxPafpn(subgraph,
+                                      *runtime,
+                                      arena,
+                                      neck,
+                                      cur_h,
+                                      cur_w,
+                                      cur_id,
+                                      tap_value_ids[0],
+                                      tap_value_ids[1],
+                                      out_ext,
+                                      &out_id,
+                                      &out_elems))
+                {
+                    std::snprintf(layer_err, sizeof(layer_err),
+                                  "yolox_pafpn failed layer %u", i);
+                    return fail_sg(layer_err);
+                }
+                cur_id = out_id;
+                cur_h = 1;
+                cur_w = 1;
+                cur_c = out_elems;
+                runtime->out_elements = out_elems;
                 break;
             }
 

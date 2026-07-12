@@ -14,6 +14,7 @@ endif
 
 .PHONY: all fetch-tflm export-assets export-mobilenetv4 export-mobilenetv4-int8 \
   export-imagenet-mnv4-images export-mobilenetv4-imagenet export-mobilenetv4-imagenet-int8 \
+  export-yolox-images export-yolox \
   install-benchmark build build-mlp build-cnn build-cnn-profile build-mlp-profile \
   build-mobilenetv4 build-mobilenetv4-int8 build-mobilenetv4-imagenet \
   build-mobilenetv4-imagenet-int8 \
@@ -50,6 +51,13 @@ export-imagenet-mnv4-images:
 export-mobilenetv4-imagenet:
 	@python3 tools/export_mobilenetv4_imagenet.py
 	@$(MAKE) export-imagenet-mnv4-images
+
+export-yolox-images:
+	@python3 tools/export_yolox_test_images.py
+
+export-yolox:
+	@python3 tools/export_yolox_mnv4_pafpn.py
+	@$(MAKE) export-yolox-images
 
 export-mobilenetv4-imagenet-int8:
 	@test -d generated/imagenet_sample_cache || $(MAKE) export-imagenet-mnv4-images
