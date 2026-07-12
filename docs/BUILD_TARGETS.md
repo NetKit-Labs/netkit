@@ -7,12 +7,12 @@ netkit builds for ISA-qualified deployment profiles. Select one with **`NETKIT_T
 | **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev, debug, CI | XNNPACK on (any host ISA); CMSIS-NN off |
 | **MCU_ARM** | `NETKIT_TARGET=mcu_arm` | Arm microcontroller firmware | CMSIS-NN (int8 production); XNNPACK forbidden |
 | **MPU_ARM** | `NETKIT_TARGET=mpu_arm` | Arm microprocessor / RTOS | XNNPACK |
-| **MCU_RISC** | `NETKIT_TARGET=mcu_risc` | RISC-V MCU | generic kernels only (CMSIS + XNNPACK forbidden) |
-| **MPU_RISC** | `NETKIT_TARGET=mpu_risc` | RISC-V MPU | XNNPACK on; CMSIS-NN forbidden |
+| **MCU_RISC** | `NETKIT_TARGET=mcu_risc` | RISC-V MCU | generic kernels only (fast; CMSIS + XNNPACK forbidden) |
+| **MPU_RISC** | `NETKIT_TARGET=mpu_risc` | RISC-V MPU | XNNPACK on (strong RISC-V MPU support); CMSIS-NN forbidden |
 
 Legacy `NETKIT_TARGET=mcu` / `mpu` are **rejected** — use `mcu_arm` / `mpu_arm`.
 
-**Maturity:** float32 + int8 are complete on cpu / Arm MCU / Arm MPU. RISC MPU is mostly done (XNNPACK). RISC MCU works on fast generic kernels; RISC-tuned MCU kernels are not implemented yet — [STATUS.md](STATUS.md).
+**Maturity:** float32 + int8 are **complete** on **cpu**, **Arm MCU/MPU**, and **RISC MCU/MPU**. RISC MPU uses XNNPACK (strong RISC-V MPU support). RISC MCU uses fast generic kernels today; a CMSIS-NN–class RISC MCU NN path is planned later — [STATUS.md](STATUS.md).
 
 Derived macros: `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` (firmware class), `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` (backend family).
 

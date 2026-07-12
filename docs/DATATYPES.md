@@ -1,6 +1,6 @@
 # Data Types and Numeric Precision
 
-Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md) and [STATUS.md](STATUS.md). **Float32** and **int8** inference are **complete** on cpu, Arm MCU, Arm MPU, and RISC MPU (XNNPACK); RISC MCU uses the same portable generic/reference kernels. float16 / int16 / int4 remain Phase 2.
+Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md) and [STATUS.md](STATUS.md). **Float32** and **int8** inference are **complete** on cpu, Arm MCU, Arm MPU, **RISC MPU** (XNNPACK), and **RISC MCU** (fast generic / reference kernels). float16 / int16 / int4 remain Phase 2.
 
 ## Float32 (default)
 

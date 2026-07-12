@@ -17,8 +17,8 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 | **cpu** | Desktop / CI / peer benches | XNNPACK (default); reference fallback | **Done** — float32 + int8 |
 | **mcu_arm** | Arm Cortex-M firmware | CMSIS-NN (int8 production); float32 via reference; XNNPACK **forbidden** | **Done** — float32 + int8 (NUCLEO-F446RE) |
 | **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default); CMSIS-NN off | **Done** — float32 + int8 |
-| **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Mostly done** — same portable XNNPACK + generic path as other MPUs |
-| **mcu_risc** | RISC-V MCU | Generic / reference kernels only; CMSIS + XNNPACK **forbidden** | **Works today** — no RISC-specific optimized kernels yet; **generic fallbacks are fast** and suitable until ISA-tuned kernels land |
+| **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Done** — float32 + int8; same XNNPACK LayerFast stack as other MPUs (XNNPACK has strong RISC-V MPU support) |
+| **mcu_risc** | RISC-V MCU | Generic / reference kernels only; CMSIS + XNNPACK **forbidden** | **Done** — float32 + int8 on **fast generic** kernels; a RISC MCU NN library (CMSIS-NN–class) is planned later |
 
 **Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels only (no optimized float32 MCU plan). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
 
@@ -108,12 +108,12 @@ With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). 
 ## What “done” means here
 
 - **Arm MCU / MPU:** production-oriented paths exist (CMSIS-NN on MCU; XNNPACK on MPU/cpu) with float32 and int8 models, benches, and docs.
-- **RISC MPU:** uses the same XNNPACK LayerFast stack as other MPUs; CMSIS is correctly unavailable.
-- **RISC MCU:** builds and runs on **generic reference kernels** only. Those kernels are the portable fallback used everywhere else when accelerators are off — they are already competitive on CPU “OFF” peers. Dedicated RISC-V vector / DSP microkernels are **not** implemented yet.
+- **RISC MPU (`mpu_risc`):** **fully functional** for float32 + int8 via the same **XNNPACK** LayerFast stack as Arm MPU / cpu. XNNPACK has strong RISC-V coverage on MPU-class cores; CMSIS-NN is correctly unavailable.
+- **RISC MCU (`mcu_risc`):** **fully functional** for float32 + int8 on **generic / reference kernels** only (CMSIS + XNNPACK forbidden). Those portable kernels are already fast and are the same fallbacks used when accelerators are off elsewhere. A dedicated RISC MCU NN library (analogous to Arm **CMSIS-NN**) is planned as a future acceleration layer; generics remain the production path until then.
 
 ## Open / next
 
-- RISC-V MCU-optimized kernels (optional; generic path remains the default)
+- RISC-V MCU NN kernels (CMSIS-NN–class accelerator; optional — generic path stays the default until it lands)
 - Broader int8 model coverage beyond MNIST + ImageNet MNv4 fixtures
 - float16 / int16 / int4 (Phase 2)
 - Voice modality fixtures; Kalman estimation (Phase 3)

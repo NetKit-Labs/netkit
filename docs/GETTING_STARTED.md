@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on Arm MCU/MPU and host cpu; RISC MPU uses XNNPACK; RISC MCU uses fast generic kernels — [STATUS.md](STATUS.md). **Kalman estimation and tracking** are on the roadmap.
+Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm and RISC** MCU/MPU targets and host cpu: RISC MPU uses **XNNPACK**; RISC MCU uses **fast generic** kernels (a CMSIS-NN–class RISC MCU NN path is planned) — [STATUS.md](STATUS.md). **Kalman estimation and tracking** are on the roadmap.
 
 **Two ways to run inference:** load a `.nk` and execute through the **`NkOpsResolver` interpreter** (flexible — swap models, use the CLI), or **compile for maximum speed** with `python -m netkit aot` (embed the model in flash, apply packager graph optimizations, trim linked ops, optional CMSIS / XNNPACK kernels). Both paths share the same kernels — see [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
@@ -83,8 +83,8 @@ Select target with **`NETKIT_TARGET`**:
 | **CPU** (default) | `make` | CLI + full library + tests (XNNPACK on) |
 | **MCU Arm** | `make NETKIT_TARGET=mcu_arm lib` | Lean runtime; CMSIS-NN (int8); float32 via reference |
 | **MPU Arm** | `make NETKIT_TARGET=mpu_arm lib` | Lean runtime; XNNPACK on |
-| **MCU RISC** | `make NETKIT_TARGET=mcu_risc lib` | Lean runtime; generic kernels only |
-| **MPU RISC** | `make NETKIT_TARGET=mpu_risc lib` | Lean runtime; XNNPACK on |
+| **MCU RISC** | `make NETKIT_TARGET=mcu_risc lib` | Lean runtime; fast generic kernels (fully functional) |
+| **MPU RISC** | `make NETKIT_TARGET=mpu_risc lib` | Lean runtime; XNNPACK on (fully functional) |
 
 Platform maturity: [STATUS.md](STATUS.md).
 
