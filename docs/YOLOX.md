@@ -140,6 +140,15 @@ Downloads Ultralytics **coco128**, official **COCO val2017**, or a boxed **train
 
 Layer kinds: `feature_tap` (**13**), `yolox_pafpn_multiscale` (**14**). Load and run like any CNN. Post-processing stays on the host (`python/netkit/yolox_decode.py`).
 
+Host sanity (packed trained weights vs torch EMA, decode+NMS):
+
+```bash
+make tools/nk_infer
+python tools/sanity_yolox_trained_host.py --images 3
+```
+
+`nk_infer` accepts `@in.bin` / `--out-bin out.bin` for large 320² tensors (argv float lists hit OS limits). `nk_model_run` views the caller buffer directly (no 16k stack cap).
+
 Manual construction: init backbone layers and `InitFeatureTapLayer` for tap ids 0/1, then `InitYoloxPafpnLayer` (wires heads after init via `GetBlock(...).yolox_pafpn.block.heads[i]`), then `InitActivationBuffers` with the **network input** shape.
 
 Arena: PAFPN scratch scales with `~8 × H3×W3×hidden` plus three head workspaces reused sequentially; tap buffers are side allocations sized to each tapped map. Nearest-2× upsample buffers are part of that neck scratch (not a separate op allocation).

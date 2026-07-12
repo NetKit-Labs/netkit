@@ -256,9 +256,6 @@ namespace
         info->weight_floats = info->arch.expected_weight_floats;
         info->flash_payload_bytes = WeightPayloadBytes(parsed);
 
-        if (info->arch.input_elements > NK_MAX_CASE_FLOATS)
-            return NK_ERR_INVALID_ARGUMENT;
-
         const uint8_t* load_data = buffer;
         std::size_t load_size = buffer_size;
 
@@ -324,7 +321,11 @@ namespace
             info->arena_bytes_after_load = nk_arena_used(arena);
             if (network->IsQuantized())
             {
-                int8_t zero_input_i8[NK_MAX_CASE_FLOATS] = {};
+                int8_t* zero_input_i8 = static_cast<int8_t*>(
+                    arena_ref.alloc(info->arch.input_elements * sizeof(int8_t), alignof(int8_t)));
+                if (!zero_input_i8)
+                    return NK_ERR_ARENA_OVERFLOW;
+                std::memset(zero_input_i8, 0, info->arch.input_elements * sizeof(int8_t));
                 Tensor input = MakeNhwcInputInt8(
                     zero_input_i8, input_shape[0], input_shape[1], input_shape[2]);
                 Tensor& output = network->forward(input, arena_ref);
@@ -333,9 +334,13 @@ namespace
             }
             else
             {
-                float zero_input[NK_MAX_CASE_FLOATS] = {};
-                Tensor input = MakeNhwcInput(
-                    zero_input, input_shape[0], input_shape[1], input_shape[2]);
+                float* zero_input = static_cast<float*>(
+                    arena_ref.alloc(info->arch.input_elements * sizeof(float), alignof(float)));
+                if (!zero_input)
+                    return NK_ERR_ARENA_OVERFLOW;
+                std::memset(zero_input, 0, info->arch.input_elements * sizeof(float));
+                Tensor input =
+                    MakeNhwcInput(zero_input, input_shape[0], input_shape[1], input_shape[2]);
                 Tensor& output = network->forward(input, arena_ref);
                 if (!output.data)
                     return NK_ERR_ARENA_OVERFLOW;
@@ -1726,12 +1731,9 @@ nk_status_t nk_model_run(const nk_model_t* model,
     }
     else if (state->kind == NK_NETWORK_CNN)
     {
-        float input_buffer[NK_MAX_CASE_FLOATS] = {};
-        if (input_count > NK_MAX_CASE_FLOATS)
-            return NK_ERR_INVALID_ARGUMENT;
-        for (uint32_t i = 0; i < input_count; ++i)
-            input_buffer[i] = input[i];
-        Tensor input_tensor = MakeNhwcInput(input_buffer,
+        // View caller buffer directly — no NK_MAX_CASE_FLOATS stack copy (needed for
+        // 224² / 320² detectors and other large CNN inputs).
+        Tensor input_tensor = MakeNhwcInput(const_cast<float*>(input),
                                             state->arch.input_shape[0],
                                             state->arch.input_shape[1],
                                             state->arch.input_shape[2]);

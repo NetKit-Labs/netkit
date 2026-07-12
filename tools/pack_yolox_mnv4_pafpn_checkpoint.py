@@ -32,7 +32,22 @@ from train_yolox_mnv4_pafpn_mini import MiniDetector
 
 
 def _conv_oihw_flat(w: torch.Tensor) -> np.ndarray:
+    """Flatten torch OIHW weights (used only where catalog stores depthwise as CxKxK)."""
     return w.detach().float().cpu().numpy().reshape(-1).astype(np.float32)
+
+
+def _conv_ohwi_flat(w: torch.Tensor) -> np.ndarray:
+    """Torch OIHW → catalog OHWI flatten (netkit Conv2dNhwc / YOLOX head/PAFPN)."""
+    return (
+        w.detach()
+        .float()
+        .cpu()
+        .permute(0, 2, 3, 1)
+        .contiguous()
+        .numpy()
+        .reshape(-1)
+        .astype(np.float32)
+    )
 
 
 def _bias_flat(b: torch.Tensor) -> np.ndarray:
@@ -41,28 +56,29 @@ def _bias_flat(b: torch.Tensor) -> np.ndarray:
 
 def pack_head(module: nn.Module) -> list[np.ndarray]:
     parts: list[np.ndarray] = []
-    parts.append(_conv_oihw_flat(module.stem.weight))
+    parts.append(_conv_ohwi_flat(module.stem.weight))
     parts.append(_bias_flat(module.stem.bias))
     for conv in module.cls_convs:
-        parts.append(_conv_oihw_flat(conv.weight))
+        parts.append(_conv_ohwi_flat(conv.weight))
         parts.append(_bias_flat(conv.bias))
     for conv in module.reg_convs:
-        parts.append(_conv_oihw_flat(conv.weight))
+        parts.append(_conv_ohwi_flat(conv.weight))
         parts.append(_bias_flat(conv.bias))
-    parts.append(_conv_oihw_flat(module.cls_pred.weight))
+    parts.append(_conv_ohwi_flat(module.cls_pred.weight))
     parts.append(_bias_flat(module.cls_pred.bias))
-    parts.append(_conv_oihw_flat(module.reg_pred.weight))
+    parts.append(_conv_ohwi_flat(module.reg_pred.weight))
     parts.append(_bias_flat(module.reg_pred.bias))
-    parts.append(_conv_oihw_flat(module.obj_pred.weight))
+    parts.append(_conv_ohwi_flat(module.obj_pred.weight))
     parts.append(_bias_flat(module.obj_pred.bias))
     return parts
 
 
 def pack_dwpw(module: nn.Module) -> list[np.ndarray]:
+    # Depthwise catalog layout is CxKxK (== OIHW with I=1 flattened); PW is OHWI.
     return [
         _conv_oihw_flat(module.dw.weight),
         _bias_flat(module.dw.bias),
-        _conv_oihw_flat(module.pw.weight),
+        _conv_ohwi_flat(module.pw.weight),
         _bias_flat(module.pw.bias),
     ]
 
@@ -70,7 +86,7 @@ def pack_dwpw(module: nn.Module) -> list[np.ndarray]:
 def pack_neck(neck: nn.Module) -> list[np.ndarray]:
     parts: list[np.ndarray] = []
     for lat in (neck.lat3, neck.lat4, neck.lat5):
-        parts.append(_conv_oihw_flat(lat.weight))
+        parts.append(_conv_ohwi_flat(lat.weight))
         parts.append(_bias_flat(lat.bias))
     for block in (neck.td_p4, neck.td_p3, neck.bu_n4, neck.bu_n5):
         parts.extend(pack_dwpw(block))

@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# Argv float lists blow past OS limits for large CNNs (e.g. 224² / 320²).
+_ARGV_FLOAT_LIMIT = 4096
 
 
 def nk_infer_bin(root: Path | None = None) -> Path:
@@ -25,10 +29,23 @@ def run_nk_infer(nk_path: str | Path, flat_input: np.ndarray, *, root: Path | No
     if not bin_path.is_file():
         raise FileNotFoundError(f"nk_infer not found: {bin_path} (run make tools/nk_infer)")
 
-    args = [str(bin_path), str(nk_path)] + [str(float(v)) for v in flat_input.reshape(-1)]
+    flat = np.asarray(flat_input, dtype=np.float32).reshape(-1)
+    cwd = root or ROOT
+    if flat.size > _ARGV_FLOAT_LIMIT:
+        with tempfile.TemporaryDirectory() as td:
+            in_bin = Path(td) / "in.bin"
+            out_bin = Path(td) / "out.bin"
+            flat.tofile(in_bin)
+            args = [str(bin_path), str(nk_path), f"@{in_bin}", "--out-bin", str(out_bin)]
+            proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
+            if proc.returncode != 0:
+                raise RuntimeError(f"nk_infer failed ({proc.returncode}):\n{proc.stderr}")
+            return np.fromfile(out_bin, dtype=np.float32)
+
+    args = [str(bin_path), str(nk_path)] + [str(float(v)) for v in flat]
     proc = subprocess.run(
         args,
-        cwd=root or ROOT,
+        cwd=cwd,
         capture_output=True,
         text=True,
         check=False,

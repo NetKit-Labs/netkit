@@ -398,12 +398,6 @@ namespace Cli
                 Arena& arena = arena_scope.Get();
 
                 const uint32_t input_elements = NkLoader::InputElements(parsed);
-                float input_values[kMaxInputFloats] = {};
-                if (input_elements > kMaxInputFloats)
-                {
-                    std::cerr << "Model input too large for inspect (" << input_elements << " floats)\n";
-                    return 1;
-                }
 
                 std::array<uint32_t, kMaxTensorRank> input_shape{};
                 uint32_t input_rank = 0;
@@ -464,7 +458,17 @@ namespace Cli
                     }
 
                     const std::size_t bytes_after_load = arena.offset;
-                    Tensor input = MakeNhwcInput(input_values, input_shape[0], input_shape[1], input_shape[2]);
+                    float* zero_input = static_cast<float*>(
+                        arena.alloc(input_elements * sizeof(float), alignof(float)));
+                    if (!zero_input)
+                    {
+                        std::cerr << "Arena overflow allocating zero input (" << input_elements
+                                  << " floats)\n";
+                        return 1;
+                    }
+                    std::memset(zero_input, 0, input_elements * sizeof(float));
+                    Tensor input =
+                        MakeNhwcInput(zero_input, input_shape[0], input_shape[1], input_shape[2]);
                     Tensor& output = network->forward(input, arena);
                     if (!output.data)
                     {
