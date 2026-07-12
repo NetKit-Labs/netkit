@@ -11,7 +11,12 @@ from pathlib import Path
 import numpy as np
 
 from netkit.format import FLAG_HAS_QUANT, HEADER_BYTES, unpack_header
-from netkit.quantize import forward_quantized_cnn, quantize_cnn, quantized_cnn_to_spec
+from netkit.quantize import (
+    forward_quantized_cnn,
+    quantize_cnn,
+    quantize_float_input,
+    quantized_cnn_to_spec,
+)
 from netkit.writer import RegressionCase, RegressionSuite, write_nk_bytes
 
 ARCH = {
@@ -82,13 +87,19 @@ class TestQuantizeCnn(unittest.TestCase):
         cal = np.random.default_rng(0).uniform(0.0, 1.0, (16, 16)).astype(np.float32)
         pack = quantize_cnn(ARCH, weights, cal)
         spec = quantized_cnn_to_spec(ARCH, pack)
+        q0 = pack.quant_layers[0]
+        probs = forward_quantized_cnn(cal[0], ARCH, pack, output_float=True)
+        input_i8 = quantize_float_input(
+            cal[0].reshape(-1), q0.input_scale, q0.input_zero_point
+        )
         spec.tests = RegressionSuite(
             tolerance=0.08,
             cases=[
                 RegressionCase(
                     name="tiny cnn quant",
-                    input=cal[0],
-                    expected=forward_quantized_cnn(cal[0], ARCH, pack, output_float=True),
+                    input=input_i8.astype(np.int8),
+                    expected=probs,
+                    label=int(np.argmax(probs)),
                 )
             ],
         )
@@ -97,10 +108,10 @@ class TestQuantizeCnn(unittest.TestCase):
         header = unpack_header(blob[:HEADER_BYTES])
         self.assertEqual(header["version"], 4)
         self.assertTrue(header["flags"] & FLAG_HAS_QUANT)
+        self.assertEqual(header["weights_bytes"] % 4, 0)
 
         if os.environ.get("NETKIT_FAST_TESTS") == "1":
-            # Host desktop builds lack CMSIS-NN quant runtime (see docs/DATATYPES.md).
-            # Python forward_quantized_cnn above validates pack math; MCU / test-full covers runtime.
+            # Fast CI skips the C++ round-trip; test-full / local covers host int8 runtime.
             return
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -119,13 +130,19 @@ class TestQuantizeCnn(unittest.TestCase):
         cal = np.random.default_rng(2).uniform(0.0, 1.0, (16, 256)).astype(np.float32)
         pack = quantize_cnn(DW_ARCH, weights, cal)
         spec = quantized_cnn_to_spec(DW_ARCH, pack)
+        q0 = pack.quant_layers[0]
+        probs = forward_quantized_cnn(cal[0], DW_ARCH, pack, output_float=True)
+        input_i8 = quantize_float_input(
+            cal[0].reshape(-1), q0.input_scale, q0.input_zero_point
+        )
         spec.tests = RegressionSuite(
             tolerance=0.08,
             cases=[
                 RegressionCase(
                     name="tiny dw cnn quant",
-                    input=cal[0],
-                    expected=forward_quantized_cnn(cal[0], DW_ARCH, pack, output_float=True),
+                    input=input_i8.astype(np.int8),
+                    expected=probs,
+                    label=int(np.argmax(probs)),
                 )
             ],
         )
@@ -133,6 +150,7 @@ class TestQuantizeCnn(unittest.TestCase):
         header = unpack_header(blob[:HEADER_BYTES])
         self.assertEqual(header["version"], 4)
         self.assertTrue(header["flags"] & FLAG_HAS_QUANT)
+        self.assertEqual(header["weights_bytes"] % 4, 0)
 
         if os.environ.get("NETKIT_FAST_TESTS") == "1":
             return

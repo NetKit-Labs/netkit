@@ -87,7 +87,7 @@ def weight_payload_bytes(header: dict) -> int:
 
 
 def payload_alignment_padding(meta_bytes: int) -> int:
-    """Zero bytes inserted before the weight payload so float data is 4-byte aligned."""
+    """Zero pad so the next byte is PAYLOAD_ALIGN-aligned (meta end or weight tail)."""
     return (-meta_bytes) % PAYLOAD_ALIGN
 
 

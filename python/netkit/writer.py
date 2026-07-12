@@ -143,6 +143,11 @@ def write_nk_bytes(spec: ModelSpec) -> bytes:
         np.ascontiguousarray(w, dtype=_dtype_to_numpy(dt)).tobytes()
         for w, dt in zip(spec.weight_tensors, weight_dtypes)
     )
+    # Bias payload is bound as int32/float32 from flash/mmap; pad weight bytes so
+    # biases start at a 4-byte boundary (int8 weight counts need not be % 4 == 0).
+    weight_tail_pad = payload_alignment_padding(len(weights_blob))
+    if weight_tail_pad:
+        weights_blob = weights_blob + (b"\x00" * weight_tail_pad)
     biases_blob = b"".join(
         np.ascontiguousarray(b, dtype=_dtype_to_numpy(dt)).tobytes()
         for b, dt in zip(spec.bias_tensors, bias_dtypes)

@@ -207,7 +207,9 @@ def _read_payload_arrays(blob: bytes, descs: list[dict]) -> list[np.ndarray]:
             raise ValueError("truncated tensor payload in .nk bytes")
         arrays.append(np.frombuffer(chunk, dtype=np.dtype(dtype_name)).copy())
         offset += nbytes
-    if offset != len(blob):
+    # Trailing zeros pad weight blobs so int32/float32 biases stay 4-byte aligned.
+    leftover = len(blob) - offset
+    if leftover < 0 or leftover >= 4:
         raise ValueError("weight payload size mismatch in .nk bytes")
     return arrays
 

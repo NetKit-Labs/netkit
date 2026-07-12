@@ -10,7 +10,12 @@ from pathlib import Path
 
 import numpy as np
 
-from netkit.quantize import forward_quantized_mlp, quantize_mlp, quantized_mlp_to_spec
+from netkit.quantize import (
+    forward_quantized_mlp,
+    quantize_float_input,
+    quantize_mlp,
+    quantized_mlp_to_spec,
+)
 from netkit.format import FLAG_HAS_QUANT, unpack_header, HEADER_BYTES
 from netkit.writer import RegressionCase, RegressionSuite, write_nk_bytes
 
@@ -51,13 +56,17 @@ class TestQuantizeMlp(unittest.TestCase):
         cal = np.random.default_rng(0).uniform(-0.5, 0.5, (32, 4)).astype(np.float32)
         pack = quantize_mlp(ARCH, weights, cal)
         spec = quantized_mlp_to_spec(ARCH, pack)
+        q0 = pack.quant_layers[0]
+        probs = forward_quantized_mlp(cal[0], ARCH, pack, output_float=True)
+        input_i8 = quantize_float_input(cal[0], q0.input_scale, q0.input_zero_point)
         spec.tests = RegressionSuite(
             tolerance=0.05,
             cases=[
                 RegressionCase(
                     name="tiny quant",
-                    input=cal[0],
-                    expected=forward_quantized_mlp(cal[0], ARCH, pack, output_float=True),
+                    input=input_i8.astype(np.int8),
+                    expected=probs,
+                    label=int(np.argmax(probs)),
                 )
             ],
         )
@@ -66,10 +75,10 @@ class TestQuantizeMlp(unittest.TestCase):
         header = unpack_header(blob[:HEADER_BYTES])
         self.assertEqual(header["version"], 4)
         self.assertTrue(header["flags"] & FLAG_HAS_QUANT)
+        self.assertEqual(header["weights_bytes"] % 4, 0)
 
         if os.environ.get("NETKIT_FAST_TESTS") == "1":
-            # Host desktop builds lack CMSIS-NN quant runtime (see docs/DATATYPES.md).
-            # Python forward_quantized_mlp above validates pack math; MCU / test-full covers runtime.
+            # Fast CI skips the C++ round-trip; test-full / local covers host int8 runtime.
             return
 
         with tempfile.TemporaryDirectory() as tmp:
