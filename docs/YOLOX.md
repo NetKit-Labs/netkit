@@ -116,19 +116,19 @@ python tools/train_yolox_mnv4_pafpn_mini.py --source coco_val --max-images 5000 
   --out models/checkpoints/yolox_mnv4_pafpn_coco_val.pt
 
 # train2017 subset (CDN per-image fetch), hold-out on val2017, light aug,
-# center-radius multi-positive assign
-python tools/train_yolox_mnv4_pafpn_mini.py --source coco_train --data data --max-images 4000 --holdout 200 \
-  --steps 25000 --unfreeze-after 8000 --batch 4 --size 320 \
-  --init-from models/checkpoints/yolox_mnv4_pafpn_coco_train.pt \
-  --out models/checkpoints/yolox_mnv4_pafpn_coco_train.pt
+# SimOTA (or --assign center for multi-positive only)
+python tools/train_yolox_mnv4_pafpn_mini.py --source coco_train --data data --max-images 15000 --holdout 200 \
+  --steps 40000 --unfreeze-after 5000 --batch 4 --size 320 --assign simota \
+  --init-from models/checkpoints/yolox_mnv4_pafpn_coco_train_15k.pt \
+  --out models/checkpoints/yolox_mnv4_pafpn_coco_train_simota.pt
 
 # pack only if holdout reports SUCCESS
 python tools/pack_yolox_mnv4_pafpn_checkpoint.py \
-  --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_train.pt \
+  --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_train_simota.pt \
   --out models/yolox_mnv4_pafpn_trained.nk
 ```
 
-Downloads Ultralytics **coco128**, official **COCO val2017**, or a boxed **train2017 subset** (no 18GB zip). For `coco_train`, hold-out comes from **val2017** (no overlap). Training uses freeze→unfreeze, flip+color jitter, **center-radius multi-positive** assignment, exp-LTRB + GIoU box loss, and hold-out scoring (confidence, non-degenerate boxes, rough greedy mAP@0.5). Pack writes `yolox_mnv4_pafpn_trained.nk` only (CI fixture untouched).
+Downloads Ultralytics **coco128**, official **COCO val2017**, or a boxed **train2017 subset** (no 18GB zip). For `coco_train`, hold-out comes from **val2017** (no overlap). Training uses freeze→unfreeze, flip+color jitter, **SimOTA** (default) or center-radius multi-positive (`--assign center`), exp-LTRB + GIoU box loss, and hold-out scoring (confidence, boxes, rough greedy mAP@0.5, and COCO-style AP@0.5 from a precision–recall curve). Pack writes `yolox_mnv4_pafpn_trained.nk` only (CI fixture untouched).
 
 ## C++ runtime
 
@@ -153,7 +153,7 @@ Python: `python/tests/test_yolox_pafpn.py`, `python/tests/test_yolox_detector.py
 
 - **No NMS in runtime** — host decode helper only  
 - **No standalone upsample layer** — nearest-2× is private to the PAFPN composite  
-- **Training is mini-scale** — center-radius positives (not full SimOTA); rough mAP is a greedy hold-out score, not COCO eval  
+- **Training is mini-scale** — SimOTA (default) or center-radius positives; hold-out reports both greedy rough mAP and COCO-style AP@0.5 (not a full pycocotools suite)  
 - **Depthwise Nano PAFPN** — add-based laterals/top-down/bottom-up (no extra bottom-up refine convs)
 
 See also: [MOBILENETV4.md](MOBILENETV4.md), [NK_FORMAT.md](NK_FORMAT.md).
