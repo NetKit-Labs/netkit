@@ -103,13 +103,19 @@ python tools/train_yolox_mnv4_pafpn_mini.py --source coco_val --max-images 5000 
   --steps 10000 --unfreeze-after 5000 --batch 4 --size 320 \
   --out models/checkpoints/yolox_mnv4_pafpn_coco_val.pt
 
+# train2017 subset (downloads images on demand), hold-out on val2017, light aug
+python tools/train_yolox_mnv4_pafpn_mini.py --source coco_train --data data --max-images 4000 --holdout 200 \
+  --steps 10000 --unfreeze-after 5000 --batch 4 --size 320 \
+  --init-from models/checkpoints/yolox_mnv4_pafpn_coco_val.pt \
+  --out models/checkpoints/yolox_mnv4_pafpn_coco_train.pt
+
 # pack only if holdout reports SUCCESS
 python tools/pack_yolox_mnv4_pafpn_checkpoint.py \
-  --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_val.pt \
+  --ckpt models/checkpoints/yolox_mnv4_pafpn_coco_train.pt \
   --out models/yolox_mnv4_pafpn_trained.nk
 ```
 
-Downloads Ultralytics **coco128** or official **COCO val2017** into `data/`, freezes the ImageNet backbone then optionally unfreezes, and scores hold-out max detection confidence **plus non-degenerate decoded boxes** (exp-LTRB + GIoU box loss). Pack writes a separate trained `.nk` (does not replace the random-weight CI fixture `yolox_mnv4_small.nk`).
+Downloads Ultralytics **coco128**, official **COCO val2017**, or a boxed **train2017 subset** (per-image CDN fetch; no 18GB zip). For `coco_train`, hold-out comes from **val2017** (no overlap). Freeze→unfreeze, flip+color jitter, and scores hold-out max confidence **plus non-degenerate decoded boxes** and a rough greedy mAP@0.5. Pack writes a separate trained `.nk` (does not replace the random-weight CI fixture `yolox_mnv4_small.nk`).
 
 Host decode (`yolox_decode.py`) treats the 4 box channels as **log-distances** and applies `exp` before LTRB→xyxy (YOLOX-style positive distances).
 

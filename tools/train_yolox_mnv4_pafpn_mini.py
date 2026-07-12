@@ -40,6 +40,7 @@ COCO_VAL_IMAGES_URL = "http://images.cocodataset.org/zips/val2017.zip"
 COCO_ANNOTATIONS_URL = (
     "http://images.cocodataset.org/annotations/annotations_trainval2017.zip"
 )
+COCO_TRAIN_IMAGE_URL = "http://images.cocodataset.org/train2017/{name}"
 STRIDES = (8, 16, 32)
 NUM_CLASSES = 80
 
@@ -291,6 +292,155 @@ def list_coco_val_samples(root: Path, max_images: int) -> list[tuple[Path, Path]
     return pairs
 
 
+def _write_yolo_labels_from_coco_json(
+    ann_path: Path, lab_dir: Path, *, image_ids: set[int] | None = None
+) -> dict[int, dict]:
+    """Write YOLO txt labels; return image-id → image dict for selected images."""
+    data = json.loads(ann_path.read_text())
+    cats = sorted(c["id"] for c in data["categories"])
+    cat_to_idx = {c: i for i, c in enumerate(cats)}
+    images = {im["id"]: im for im in data["images"]}
+    if image_ids is not None:
+        images = {i: images[i] for i in image_ids if i in images}
+    by_img: dict[int, list[str]] = {i: [] for i in images}
+    for ann in data["annotations"]:
+        if ann.get("iscrowd", 0):
+            continue
+        if ann["image_id"] not in images:
+            continue
+        cls = cat_to_idx.get(ann["category_id"])
+        if cls is None:
+            continue
+        im = images[ann["image_id"]]
+        x, y, w, h = ann["bbox"]
+        if w <= 1 or h <= 1:
+            continue
+        cx = (x + w / 2.0) / im["width"]
+        cy = (y + h / 2.0) / im["height"]
+        bw = w / im["width"]
+        bh = h / im["height"]
+        by_img[ann["image_id"]].append(f"{cls} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}")
+
+    lab_dir.mkdir(parents=True, exist_ok=True)
+    for im_id, im in images.items():
+        stem = Path(im["file_name"]).stem
+        lines = by_img[im_id]
+        (lab_dir / f"{stem}.txt").write_text("\n".join(lines) + ("\n" if lines else ""))
+    return images
+
+
+def ensure_coco_train_subset(data_root: Path, max_images: int) -> Path:
+    """Download a boxed train2017 image subset (no full 18GB zip).
+
+    Reuses annotations_trainval2017.zip; fetches images one-by-one from the COCO CDN.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    root = data_root / "coco_train_subset"
+    img_dir = root / "images"
+    lab_dir = root / "labels"
+    ann_file = root / "annotations" / "instances_train2017.json"
+    manifest = root / f"subset_{max_images}.json"
+
+    if (
+        manifest.is_file()
+        and img_dir.is_dir()
+        and lab_dir.is_dir()
+        and len(list(img_dir.glob("*.jpg"))) >= max_images
+        and len(list(lab_dir.glob("*.txt"))) >= max_images
+    ):
+        print(f"using existing {root} ({max_images} target)")
+        return root
+
+    root.mkdir(parents=True, exist_ok=True)
+    ann_zip = data_root / "annotations_trainval2017.zip"
+    if not ann_zip.is_file():
+        print(f"downloading {COCO_ANNOTATIONS_URL} ...")
+        urllib.request.urlretrieve(COCO_ANNOTATIONS_URL, ann_zip)
+    if not ann_file.is_file():
+        print("extracting instances_train2017.json ...")
+        with zipfile.ZipFile(ann_zip, "r") as zf:
+            zf.extract("annotations/instances_train2017.json", root)
+
+    print(f"selecting {max_images} boxed train2017 images ...")
+    data = json.loads(ann_file.read_text())
+    images = {im["id"]: im for im in data["images"]}
+    boxed: set[int] = set()
+    for ann in data["annotations"]:
+        if ann.get("iscrowd", 0):
+            continue
+        x, y, w, h = ann["bbox"]
+        if w > 1 and h > 1 and ann["image_id"] in images:
+            boxed.add(ann["image_id"])
+    # Stable order by file name
+    ordered = sorted(boxed, key=lambda i: images[i]["file_name"])
+    selected_ids = ordered[:max_images]
+    selected = [images[i] for i in selected_ids]
+
+    img_dir.mkdir(parents=True, exist_ok=True)
+
+    def _fetch(im: dict) -> tuple[str, bool, str]:
+        name = im["file_name"]
+        dest = img_dir / name
+        if dest.is_file() and dest.stat().st_size > 1000:
+            return name, True, "exists"
+        url = COCO_TRAIN_IMAGE_URL.format(name=name)
+        try:
+            urllib.request.urlretrieve(url, dest)
+            return name, True, "ok"
+        except Exception as exc:  # noqa: BLE001
+            return name, False, str(exc)
+
+    missing = [im for im in selected if not (img_dir / im["file_name"]).is_file()]
+    print(f"downloading {len(missing)} / {len(selected)} train images ...")
+    fails = 0
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        futs = [pool.submit(_fetch, im) for im in missing]
+        done = 0
+        for fut in as_completed(futs):
+            name, ok, msg = fut.result()
+            done += 1
+            if not ok:
+                fails += 1
+                print(f"  fail {name}: {msg}")
+            if done % 200 == 0 or done == len(futs):
+                print(f"  fetched {done}/{len(futs)}", flush=True)
+    if fails:
+        print(f"warning: {fails} image downloads failed")
+
+    print("writing YOLO labels for subset ...")
+    _write_yolo_labels_from_coco_json(ann_file, lab_dir, image_ids=set(selected_ids))
+    manifest.write_text(
+        json.dumps(
+            {
+                "max_images": max_images,
+                "selected": [im["file_name"] for im in selected],
+                "count": len(selected),
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    print(
+        f"coco train subset ready: images={len(list(img_dir.glob('*.jpg')))} "
+        f"labels={len(list(lab_dir.glob('*.txt')))}"
+    )
+    return root
+
+
+def list_coco_subset_samples(root: Path, max_images: int) -> list[tuple[Path, Path]]:
+    images = sorted((root / "images").glob("*.jpg"))
+    pairs = []
+    for img in images:
+        lab = root / "labels" / f"{img.stem}.txt"
+        if not lab.is_file() or lab.stat().st_size == 0:
+            continue
+        pairs.append((img, lab))
+        if len(pairs) >= max_images:
+            break
+    return pairs
+
+
 def letterbox(
     rgb: np.ndarray, size: int
 ) -> tuple[np.ndarray, float, int, int]:
@@ -306,6 +456,79 @@ def letterbox(
     pad_x = (size - nw) // 2
     canvas[pad_y : pad_y + nh, pad_x : pad_x + nw] = resized
     return canvas, scale, pad_x, pad_y
+
+
+def color_jitter(rgb: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Light brightness / contrast jitter in float, return uint8."""
+    x = rgb.astype(np.float32)
+    # brightness
+    x = x * float(rng.uniform(0.7, 1.3))
+    # contrast around per-image mean
+    mean = float(x.mean())
+    x = (x - mean) * float(rng.uniform(0.7, 1.3)) + mean
+    return np.clip(x, 0, 255).astype(np.uint8)
+
+
+def flip_lr_boxes(
+    boxes: list[tuple[int, float, float, float, float]], size: int
+) -> list[tuple[int, float, float, float, float]]:
+    out = []
+    for cls, x1, y1, x2, y2 in boxes:
+        out.append((cls, size - 1 - x2, y1, size - 1 - x1, y2))
+    return out
+
+
+def box_iou_xyxy(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """IoU between sets of boxes [N,4] and [M,4]."""
+    if a.size == 0 or b.size == 0:
+        return np.zeros((a.shape[0], b.shape[0]), dtype=np.float32)
+    ax1, ay1, ax2, ay2 = a[:, 0:1], a[:, 1:2], a[:, 2:3], a[:, 3:4]
+    bx1, by1, bx2, by2 = b[:, 0], b[:, 1], b[:, 2], b[:, 3]
+    inter_x1 = np.maximum(ax1, bx1)
+    inter_y1 = np.maximum(ay1, by1)
+    inter_x2 = np.minimum(ax2, bx2)
+    inter_y2 = np.minimum(ay2, by2)
+    inter = np.maximum(0.0, inter_x2 - inter_x1) * np.maximum(0.0, inter_y2 - inter_y1)
+    area_a = np.maximum(0.0, ax2 - ax1) * np.maximum(0.0, ay2 - ay1)
+    area_b = np.maximum(0.0, bx2 - bx1) * np.maximum(0.0, by2 - by1)
+    union = area_a + area_b - inter + 1e-7
+    return (inter / union).astype(np.float32)
+
+
+def rough_map50(
+    pred_boxes: list[tuple[int, float, float, float, float, float]],
+    gt_boxes: list[tuple[int, float, float, float, float]],
+    *,
+    iou_thr: float = 0.5,
+) -> tuple[int, int]:
+    """Greedy class-aware matching. Returns (tp, n_gt) for one image.
+
+    pred_boxes: (cls, score, x1, y1, x2, y2) sorted by score desc.
+    """
+    if not gt_boxes:
+        return 0, 0
+    gt = list(gt_boxes)
+    used = [False] * len(gt)
+    tp = 0
+    for cls, _score, x1, y1, x2, y2 in pred_boxes:
+        best_j = -1
+        best_iou = 0.0
+        for j, (gcls, gx1, gy1, gx2, gy2) in enumerate(gt):
+            if used[j] or gcls != cls:
+                continue
+            iou = float(
+                box_iou_xyxy(
+                    np.array([[x1, y1, x2, y2]], dtype=np.float32),
+                    np.array([[gx1, gy1, gx2, gy2]], dtype=np.float32),
+                )[0, 0]
+            )
+            if iou > best_iou:
+                best_iou = iou
+                best_j = j
+        if best_j >= 0 and best_iou >= iou_thr:
+            used[best_j] = True
+            tp += 1
+    return tp, len(gt)
 
 
 def boxes_to_xyxy_pixels(
@@ -485,6 +708,8 @@ def load_batch(
     *,
     size: int,
     device: torch.device,
+    rng: np.random.Generator | None = None,
+    augment: bool = False,
 ) -> tuple[torch.Tensor, list[list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]]]:
     imgs = []
     tgts = []
@@ -492,11 +717,16 @@ def load_batch(
         img_path, lab_path = samples[idx]
         rgb = np.asarray(Image.open(img_path).convert("RGB"), dtype=np.uint8)
         oh, ow = rgb.shape[:2]
+        if augment and rng is not None:
+            rgb = color_jitter(rgb, rng)
         canvas, scale, pad_x, pad_y = letterbox(rgb, size)
         labels = load_yolo_label(lab_path)
         boxes = boxes_to_xyxy_pixels(
             labels, size=size, scale=scale, pad_x=pad_x, pad_y=pad_y, orig_w=ow, orig_h=oh
         )
+        if augment and rng is not None and float(rng.random()) < 0.5:
+            canvas = np.ascontiguousarray(canvas[:, ::-1, :])
+            boxes = flip_lr_boxes(boxes, size)
         tensor = torch.from_numpy(canvas).permute(2, 0, 1).float() / 255.0
         imgs.append(tensor)
         tgts.append(assign_targets(boxes, size=size, device=device))
@@ -545,9 +775,9 @@ def main() -> None:
     parser.add_argument("--data", type=Path, default=ROOT / "data" / "coco_mini")
     parser.add_argument(
         "--source",
-        choices=("coco128", "coco_val"),
+        choices=("coco128", "coco_val", "coco_train"),
         default="coco128",
-        help="coco128 mini set, or COCO val2017 (~5k boxed images)",
+        help="coco128 mini, COCO val2017, or a boxed train2017 subset",
     )
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--batch", type=int, default=4)
@@ -561,8 +791,19 @@ def main() -> None:
         help="Unfreeze backbone after this many steps (-1 = keep frozen)",
     )
     parser.add_argument("--resume", type=Path, default=None)
+    parser.add_argument(
+        "--init-from",
+        type=Path,
+        default=None,
+        help="Warm-start weights only (resets step counter)",
+    )
     parser.add_argument("--max-images", type=int, default=128)
     parser.add_argument("--holdout", type=int, default=8)
+    parser.add_argument(
+        "--no-aug",
+        action="store_true",
+        help="Disable flip + color jitter on the training stream",
+    )
     parser.add_argument("--hidden", type=int, default=64)
     parser.add_argument(
         "--out",
@@ -582,28 +823,48 @@ def main() -> None:
     device = pick_device()
     print(f"device={device} source={args.source}")
 
+    holdout: list[tuple[Path, Path]]
     if args.source == "coco_val":
         data_root = ensure_coco_val(args.data)
         samples = list_coco_val_samples(data_root, args.max_images)
+        if len(samples) < args.holdout + args.batch:
+            raise SystemExit(f"need more images than holdout+batch; got {len(samples)}")
+        holdout = samples[-args.holdout :]
+        train = samples[: -args.holdout]
+    elif args.source == "coco_train":
+        data_root = ensure_coco_train_subset(args.data, args.max_images)
+        train = list_coco_subset_samples(data_root, args.max_images)
+        # Fresh hold-out from val2017 (no train overlap).
+        val_root = ensure_coco_val(args.data)
+        holdout = list_coco_val_samples(val_root, args.holdout)
+        if len(train) < args.batch:
+            raise SystemExit(f"need at least --batch train images; got {len(train)}")
+        if len(holdout) < max(1, args.holdout // 2):
+            raise SystemExit(f"need holdout val images; got {len(holdout)}")
     else:
         data_root = ensure_coco128(args.data)
         samples = list_samples(data_root, args.max_images)
-    if len(samples) < args.holdout + args.batch:
-        raise SystemExit(f"need more images than holdout+batch; got {len(samples)}")
-
-    holdout = samples[-args.holdout :]
-    train = samples[: -args.holdout]
+        if len(samples) < args.holdout + args.batch:
+            raise SystemExit(f"need more images than holdout+batch; got {len(samples)}")
+        holdout = samples[-args.holdout :]
+        train = samples[: -args.holdout]
     print(f"train images={len(train)}  holdout={len(holdout)}")
 
     model = MiniDetector(hidden=args.hidden, freeze_backbone=True).to(device)
     losses: list[float] = []
     start_step = 0
-    if args.resume is not None and args.resume.is_file():
-        ckpt = torch.load(args.resume, map_location="cpu", weights_only=False)
+    warm = args.init_from if args.init_from is not None else None
+    if warm is None and args.resume is not None:
+        warm = args.resume
+    if warm is not None and warm.is_file():
+        ckpt = torch.load(warm, map_location="cpu", weights_only=False)
         model.load_state_dict(ckpt["state_dict"])
-        losses = list(ckpt.get("losses", []))
-        start_step = int(ckpt.get("steps", len(losses)))
-        print(f"resumed {args.resume} at step={start_step}")
+        if args.resume is not None and args.init_from is None:
+            losses = list(ckpt.get("losses", []))
+            start_step = int(ckpt.get("steps", len(losses)))
+            print(f"resumed {warm} at step={start_step}")
+        else:
+            print(f"init-from {warm} (steps reset)")
 
     def make_opt(*, include_backbone: bool) -> torch.optim.Optimizer:
         if include_backbone:
@@ -623,6 +884,7 @@ def main() -> None:
 
     model.train()
     rng = np.random.default_rng(0)
+    use_aug = not args.no_aug
     total_steps = args.steps
     for step in range(start_step, total_steps):
         if (
@@ -637,7 +899,12 @@ def main() -> None:
 
         idx = rng.choice(len(train), size=args.batch, replace=len(train) < args.batch)
         images, targets = load_batch(
-            train, [int(i) for i in idx], size=args.size, device=device
+            train,
+            [int(i) for i in idx],
+            size=args.size,
+            device=device,
+            rng=rng,
+            augment=use_aug,
         )
         opt.zero_grad()
         preds = model(images)
@@ -665,6 +932,7 @@ def main() -> None:
         "backbone_frozen_end": frozen,
         "hidden": args.hidden,
         "num_classes": NUM_CLASSES,
+        "augment": use_aug,
     }
     torch.save({"state_dict": model.state_dict(), **meta}, args.out)
     (args.out.with_suffix(".json")).write_text(
@@ -673,18 +941,28 @@ def main() -> None:
     print(f"saved {args.out}")
 
     decreased = losses[0] > 0 and losses[-1] < losses[0] * 0.5
-    print(f"loss start={losses[0]:.4f} end={losses[-1]:.4f} decreased={decreased}")
+    # Warm-starts often begin mid-loss; accept non-explosion if hold-out is strong.
+    loss_ok = decreased or (
+        losses[0] > 0 and losses[-1] <= losses[0] * 1.05 and losses[-1] < 5.0
+    )
+    print(
+        f"loss start={losses[0]:.4f} end={losses[-1]:.4f} "
+        f"decreased={decreased} loss_ok={loss_ok}"
+    )
 
-    # Hold-out scoreboard (scores + non-degenerate decoded boxes)
+    # Hold-out scoreboard (scores + non-degenerate decoded boxes + rough mAP@0.5)
     model.eval()
     hold_max: list[float] = []
     hold_hits = 0
     hold_box_ok = 0
+    map_tp = 0
+    map_gt = 0
     min_box_side = 4.0
     demo_thr = 0.05
-    for img_path, _lab in holdout:
+    for img_path, lab_path in holdout:
         rgb = np.asarray(Image.open(img_path).convert("RGB"), dtype=np.uint8)
-        canvas, *_ = letterbox(rgb, args.size)
+        oh, ow = rgb.shape[:2]
+        canvas, scale, pad_x, pad_y = letterbox(rgb, args.size)
         tensor = (
             torch.from_numpy(canvas).permute(2, 0, 1).float().unsqueeze(0).to(device)
             / 255.0
@@ -711,13 +989,34 @@ def main() -> None:
             (d.x2 - d.x1) >= min_box_side and (d.y2 - d.y1) >= min_box_side for d in dets
         ):
             hold_box_ok += 1
+        gt = boxes_to_xyxy_pixels(
+            load_yolo_label(lab_path),
+            size=args.size,
+            scale=scale,
+            pad_x=pad_x,
+            pad_y=pad_y,
+            orig_w=ow,
+            orig_h=oh,
+        )
+        pred_tuples = [
+            (d.class_id, d.score, d.x1, d.y1, d.x2, d.y2)
+            for d in dets
+            if d.score >= 0.1
+            and (d.x2 - d.x1) >= min_box_side
+            and (d.y2 - d.y1) >= min_box_side
+        ]
+        tp, n_gt = rough_map50(pred_tuples, gt, iou_thr=0.5)
+        map_tp += tp
+        map_gt += n_gt
     hold_mean = float(np.mean(hold_max)) if hold_max else 0.0
     hold_frac = hold_hits / max(1, len(holdout))
     hold_box_frac = hold_box_ok / max(1, len(holdout))
+    rough_map = map_tp / max(1, map_gt)
     print(
         f"holdout mean_max_score={hold_mean:.3f} "
         f"frac_ge_0.1={hold_frac:.2f} ({hold_hits}/{len(holdout)}) "
-        f"frac_box_side>={min_box_side:.0f}={hold_box_frac:.2f} ({hold_box_ok}/{len(holdout)})"
+        f"frac_box_side>={min_box_side:.0f}={hold_box_frac:.2f} ({hold_box_ok}/{len(holdout)}) "
+        f"rough_map50={rough_map:.3f} ({map_tp}/{map_gt})"
     )
 
     # Demo on best holdout image
@@ -770,7 +1069,7 @@ def main() -> None:
     print(f"strong_dets(score>=0.1)={strong} strong_boxes(side>={min_box_side:.0f})={strong_box}")
 
     sane = (
-        decreased
+        loss_ok
         and hold_frac >= 0.30
         and hold_box_frac >= 0.30
         and strong_box > 0
@@ -781,7 +1080,9 @@ def main() -> None:
             "holdout_mean_max_score": hold_mean,
             "holdout_frac_ge_0.1": hold_frac,
             "holdout_frac_box_ok": hold_box_frac,
+            "holdout_rough_map50": rough_map,
             "holdout_sane": sane,
+            "loss_ok": loss_ok,
             "box_decode": "exp_ltrb",
             "box_loss": "l1_exp+giou",
         }
@@ -790,10 +1091,10 @@ def main() -> None:
 
     if sane:
         print("SUCCESS: hold-out looks sane (ready to pack)")
-    elif decreased and hold_frac >= 0.15 and hold_box_frac >= 0.15:
+    elif loss_ok and hold_frac >= 0.15 and hold_box_frac >= 0.15:
         print("PARTIAL: some hold-out signal but below pack threshold")
-    elif decreased:
-        print("PARTIAL: loss down but hold-out still weak")
+    elif loss_ok:
+        print("PARTIAL: loss ok but hold-out still weak")
     else:
         print("WARNING: loss did not clearly decrease")
 
