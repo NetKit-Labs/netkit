@@ -27,9 +27,11 @@ Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NET
 |---------------|-------|--------|
 | *(CPU default)* | `NETKIT_ARENA_HEAP` | `nk_arena_init_heap()` available; default CPU examples use heap |
 | `NETKIT_GLOBAL_ARENA=1` (CPU) | `NETKIT_GLOBAL_ARENA` | Static arena only on CPU; no heap helpers |
-| `NETKIT_HEAP_ARENA=1` (MCU/MPU class) | `NETKIT_HEAP_ARENA` → `NETKIT_ARENA_HEAP` | Optional heap API on embedded |
+| `NETKIT_HEAP_ARENA=1` (**MPU only**) | `NETKIT_HEAP_ARENA` → `NETKIT_ARENA_HEAP` | Optional heap API on MPU; **forbidden on MCU** |
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
 | `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` + any MPU LayerFast; forbidden on MCU |
+| *(MCU default)* | `NETKIT_DISABLE_IOSTREAM` | No iostream; `nk_arch_print` is a no-op |
+| *(MCU + CMSIS production)* | `NETKIT_MCU_CMSIS_ONLY` | QuantOps reference loops omitted (flash) |
 
 | `NK_ARENA_DEFAULT_CAPACITY` | MCU class | CPU / MPU class |
 |-----------------------------|-----------|-----------------|
@@ -49,7 +51,7 @@ int nk_cli_run(int argc, char** argv);
 
 ### Heap arena symbols (`NETKIT_ARENA_HEAP`)
 
-When compiled in (CPU default, or MCU/MPU with `NETKIT_HEAP_ARENA=1`):
+When compiled in (CPU default, or **MPU** with `NETKIT_HEAP_ARENA=1`):
 
 ```c
 nk_status_t nk_arena_init_heap(nk_arena_t* arena, size_t capacity);
@@ -125,10 +127,12 @@ Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. Inference use
 | `NK_CNN_BLOCK_MOBILENETV4_UIB` | `MobilenetV4Uib` |
 | `NK_CNN_BLOCK_RESNET_BASIC_BLOCK` | `ResNetBasicBlock` |
 | `NK_CNN_BLOCK_YOLOX_DECOUPLED_HEAD` | `YoloxDecoupledHead` |
+| `NK_CNN_BLOCK_FEATURE_TAP` | `FeatureTap` |
+| `NK_CNN_BLOCK_YOLOX_PAFPN_MULTISCALE` | `YoloxPafpnMultiscale` |
 
 Numeric values match C++ `CnnBlockType` member order (starting at 0).
 
-Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from the `.nk` layer list.
+Used when building CNN pipelines manually. File-loaded models (`nk_cnn_load`) configure blocks from the `.nk` layer list. After `nk_cnn_forward`, YOLOX feature maps are available via `nk_cnn_get_feature_tap_buffer` / `nk_cnn_get_feature_tap_elems`.
 
 ### `nk_tensor_t`, `nk_conv2d_t`
 
@@ -206,7 +210,7 @@ typedef struct nk_inspect_info {
 
 ```c
 void nk_arena_init(nk_arena_t* arena, void* memory, size_t size);
-#if defined(NETKIT_ARENA_HEAP)   /* CPU default; MCU/MPU when NETKIT_HEAP_ARENA=1 */
+#if defined(NETKIT_ARENA_HEAP)   /* CPU default; MPU when NETKIT_HEAP_ARENA=1 — never MCU */
 nk_status_t nk_arena_init_heap(nk_arena_t* arena, size_t capacity);
 void nk_arena_destroy_heap(nk_arena_t* arena);
 #endif
@@ -230,7 +234,7 @@ Returns `NULL` when the arena is uninitialized, arguments are invalid (`size == 
 
 **Backing memory** passed to `nk_arena_init` should be declared `alignas(max_align_t)`. This is the **default on MCU and MPU**, and on CPU when built with `NETKIT_GLOBAL_ARENA=1`. The default **CPU** build uses `nk_arena_init_heap()` instead — see [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
-`nk_arena_init_heap()` performs **one** `malloc` for the backing buffer; inference uses bump allocation inside it. `nk_arena_destroy_heap()` frees that buffer on **CPU only**; on MCU/MPU it is a no-op.
+`nk_arena_init_heap()` performs **one** `malloc` for the backing buffer; inference uses bump allocation inside it. `nk_arena_destroy_heap()` frees that buffer on **CPU only**; on MPU (when heap is enabled) it is a no-op. **MCU never compiles heap arena helpers.**
 
 **Sizing:** CPU examples use `NK_ARENA_DEFAULT_CAPACITY` (**64 MiB**). MCU uses **64 KiB**. For custom firmware, use `nk_inspect_model()` and read `arena_bytes_after_forward`. Coefs stay in flash — use `flash_payload_bytes` plus arena peaks (see [ARENA.md](ARENA.md)).
 
@@ -344,6 +348,9 @@ C++ equivalent: [cpp-api.md](cpp-api.md#manual-construction-call-order).
 | `nk_cnn_init_mobilenetv4_uib_layer` | `CNNNetwork::InitMobilenetV4UibLayer` |
 | `nk_cnn_init_resnet_basic_block_layer` | `CNNNetwork::InitResNetBasicBlockLayer` |
 | `nk_cnn_init_yolox_decoupled_head_layer` | `CNNNetwork::InitYoloxDecoupledHeadLayer` |
+| `nk_cnn_init_feature_tap_layer` | `CNNNetwork::InitFeatureTapLayer` |
+| `nk_cnn_init_yolox_pafpn_layer` | `CNNNetwork::InitYoloxPafpnLayer` |
+| `nk_cnn_get_feature_tap_buffer` / `nk_cnn_get_feature_tap_elems` | `GetFeatureTapBuffer` / `GetFeatureTapElems` |
 | `nk_cnn_init_flatten_layer` | `CNNNetwork::InitFlattenLayer` |
 | `nk_cnn_init_dense_layer` | `CNNNetwork::InitDenseLayer` |
 | `nk_cnn_init_activation_buffers` | `CNNNetwork::InitActivationBuffers` |
@@ -375,7 +382,7 @@ nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn, uint32_t layer_idx,
 
 1. `nk_arena_init` — bind memory.
 2. `nk_cnn_create(&arena, num_layers, &cnn)` — allocate block table.
-3. `nk_cnn_init_*_layer(&cnn, …)` for each **`layer_idx` from `0` to `num_layers - 1` in forward order** — one init function per block type (see `nk_cnn_block_type_t`). Composite inits (`nk_cnn_init_convnextv2_block_layer`, `nk_cnn_init_mobilenetv4_uib_layer`, `nk_cnn_init_resnet_basic_block_layer`, `nk_cnn_init_yolox_decoupled_head_layer`) also take `&arena` and **`spatial_h` / `spatial_w`** (feature-map size at that layer's input); fused scratch is allocated during the init call.
+3. `nk_cnn_init_*_layer(&cnn, …)` for each **`layer_idx` from `0` to `num_layers - 1` in forward order** — one init function per block type (see `nk_cnn_block_type_t`). Composite inits (`nk_cnn_init_convnextv2_block_layer`, `nk_cnn_init_mobilenetv4_uib_layer`, `nk_cnn_init_resnet_basic_block_layer`, `nk_cnn_init_yolox_decoupled_head_layer`, `nk_cnn_init_feature_tap_layer`, `nk_cnn_init_yolox_pafpn_layer`) also take `&arena` and **`spatial_h` / `spatial_w`** (feature-map size at that layer's input) where applicable; fused scratch is allocated during the init call.
 4. `nk_cnn_init_activation_buffers(&cnn, &arena, in_h, in_w, in_c)` — **after all layers**; `in_h`, `in_w`, `in_c` are the **network input** NHWC shape (same tensor you pass to forward). Allocates ping-pong buffers and CMSIS kernel workspace when applicable.
 5. `nk_cnn_forward(&cnn, &arena, &input, &output)` — `input` rank-3 NHWC until flatten; `output` is filled from the network result.
 

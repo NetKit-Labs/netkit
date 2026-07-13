@@ -22,9 +22,10 @@ Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NET
 |------|-------|-----------------|
 | CPU default | `NETKIT_ARENA_HEAP` | Heap API; CLI uses model-sized allocation |
 | `NETKIT_GLOBAL_ARENA=1` | `NETKIT_GLOBAL_ARENA` | Static buffer on CPU |
-| `NETKIT_HEAP_ARENA=1` (MCU/MPU class) | `NETKIT_ARENA_HEAP` | Optional heap on embedded |
+| `NETKIT_HEAP_ARENA=1` (**MPU only**) | `NETKIT_ARENA_HEAP` | Optional heap on MPU; **forbidden on MCU** |
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
 | `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` + any MPU LayerFast; forbidden on MCU |
+| *(MCU default)* | `NETKIT_DISABLE_IOSTREAM` / `NETKIT_MCU_CMSIS_ONLY` | No iostream; CMSIS-only quant when reference loops off |
 
 `Arena::kDefaultCapacity` / `NK_ARENA_DEFAULT_CAPACITY`: **64 KiB** (MCU class), **64 MiB** (CPU and MPU class).
 
@@ -86,12 +87,12 @@ namespace ArenaUtil {
 
     std::size_t CapacityForInputElements(uint32_t input_elements, bool is_cnn);
     bool Init(Arena& arena, std::size_t capacity, void* global_buffer = nullptr);
-    void Release(Arena& arena);  // CPU only: frees heap backing; no-op on MCU/MPU
+    void Release(Arena& arena);  // CPU only: frees heap backing; no-op on MPU; MCU never has heap API
     class Scoped;  // RAII — calls Release on destruction (CPU heap builds)
 }
 ```
 
-On CPU (heap default), `Init(capacity, nullptr)` calls `arena.init_heap()` once. Regression reuses one heap buffer for the full suite (`NkRegression::BeginRegressionArena` / `EndRegressionArena`). On MCU/MPU, pass your static buffer pointer; `destroy_heap()` never frees memory.
+On CPU (heap default), `Init(capacity, nullptr)` calls `arena.init_heap()` once. Regression reuses one heap buffer for the full suite (`NkRegression::BeginRegressionArena` / `EndRegressionArena`). On **MCU**, pass your static buffer only — heap helpers are not compiled. On **MPU**, pass a static buffer by default, or enable `NETKIT_HEAP_ARENA=1` for optional `init_heap()`. `destroy_heap()` frees memory on **CPU only**.
 
 When `NETKIT_ARENA_HEAP` is defined, `Arena` also provides:
 
@@ -255,13 +256,13 @@ C equivalent: [c-api.md](c-api.md#mlp-manual-construction-call-order) (`nk_mlp_c
 
 ## CNNNetwork (`cnn.hpp`)
 
-CNN pipelines support mixed blocks: conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, layernorm2d, convnextv2_block, mobilenetv4_uib, resnet_basic_block, yolox_decoupled_head, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md), [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), [RESNET18.md](RESNET18.md), and [YOLOX.md](YOLOX.md).
+CNN pipelines support mixed blocks: conv2d, depthwise_conv2d, max_pool2d, avg_pool2d, batch_norm2d, layernorm2d, convnextv2_block, mobilenetv4_uib, resnet_basic_block, yolox_decoupled_head, feature_tap, yolox_pafpn_multiscale, flatten, and dense (classification head). See [NK_FORMAT.md](NK_FORMAT.md), [CONVNEXTV2.md](CONVNEXTV2.md), [MOBILENETV4.md](MOBILENETV4.md), [RESNET18.md](RESNET18.md), and [YOLOX.md](YOLOX.md).
 
 ```cpp
 enum class CnnBlockType {
     Conv2D, DepthwiseConv2D, MaxPool2D, AvgPool2D, BatchNorm2d, LayerNorm2d,
     Flatten, Dense, ConvNeXtV2Block, MobilenetV4Uib, ResNetBasicBlock,
-    YoloxDecoupledHead
+    YoloxDecoupledHead, FeatureTap, YoloxPafpnMultiscale
 };
 
 class CNNNetwork {

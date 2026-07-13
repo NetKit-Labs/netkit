@@ -83,14 +83,15 @@ Default capacity constant:
 
 CLI/regression on CPU use the default heap capacity (`Arena::kDefaultCapacity`). Override with `./netkit --arena <size> …` at run time, or the compile-time knobs above for the constant.
 
-### Heap-backed arena (CPU default; MCU/MPU optional)
+### Heap-backed arena (CPU default; MPU optional; MCU never)
 
 When `NETKIT_ARENA_HEAP` is defined ( **CPU builds by default**, or MPU with `NETKIT_HEAP_ARENA=1` ), `init_heap()` performs **one** `malloc` for the backing buffer. All inference allocations are bump-pointer inside that buffer — no `realloc`, no per-tensor heap calls. **MCU never enables `NETKIT_ARENA_HEAP`** — arena memory is always a caller-owned static/global buffer, and weights stay in the flash `.nk` image.
 
 | Target | `init_heap` | `destroy_heap` / `ArenaUtil::Release` |
 |--------|-------------|----------------------------------------|
 | **CPU** | Once per session (CLI command or full test suite) | Frees backing memory when the session ends |
-| **MCU / MPU** | Optional once at startup | **No-op** — heap backing is never freed |
+| **MPU** | Optional once at startup (`NETKIT_HEAP_ARENA=1`) | **No-op** — heap backing is never freed |
+| **MCU** | **Forbidden** — not compiled | N/A |
 
 Regression on CPU (`make test-cpp`) uses **one** heap arena for all 89 cases (`BeginRegressionArena` / `EndRegressionArena`), resetting the bump offset between cases instead of malloc/free per case.
 

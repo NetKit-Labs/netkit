@@ -539,6 +539,10 @@ nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            const nk_tensor_t* input,
                            nk_tensor_t* output);
 
+/* YOLOX / multi-scale: read a FeatureTap buffer after forward (nullptr / 0 if unset). */
+float* nk_cnn_get_feature_tap_buffer(const nk_cnn_t* cnn, uint8_t tap_id);
+uint32_t nk_cnn_get_feature_tap_elems(const nk_cnn_t* cnn, uint8_t tap_id);
+
 /* -------------------------------------------------------------------------- */
 /* Model loader (.nk format)                                                  */
 /* -------------------------------------------------------------------------- */

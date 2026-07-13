@@ -167,7 +167,7 @@ python tools/sanity_yolox_trained_host.py --images 3
 
 `nk_infer` accepts `@in.bin` / `--out-bin out.bin` for large 320² tensors (argv float lists hit OS limits). `nk_model_run` views the caller buffer directly (no 16k stack cap).
 
-Manual construction: init backbone layers and `InitFeatureTapLayer` for tap ids 0/1, then `InitYoloxPafpnLayer` (wires heads after init via `GetBlock(...).yolox_pafpn.block.heads[i]`), then `InitActivationBuffers` with the **network input** shape.
+Manual construction: init backbone layers and `InitFeatureTapLayer` / `nk_cnn_init_feature_tap_layer` for tap ids 0/1, then `InitYoloxPafpnLayer` / `nk_cnn_init_yolox_pafpn_layer` (wires heads after init via `GetBlock(...).yolox_pafpn.block.heads[i]` in C++, or load from `.nk` in C), then `InitActivationBuffers` with the **network input** shape. After forward, read taps with `GetFeatureTapBuffer` / `nk_cnn_get_feature_tap_buffer`.
 
 Arena: PAFPN scratch scales with `~8 × H3×W3×hidden` plus three head workspaces reused sequentially; tap buffers are side allocations sized to each tapped map. Nearest-2× upsample buffers are part of that neck scratch (not a separate op allocation).
 

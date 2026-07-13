@@ -153,6 +153,17 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8`; DS-CNN twins `
 
 **MCU heap policy:** forbidden forever (`NETKIT_HEAP_ARENA` error; aborting `new`/`malloc`; static arena only).
 
+**Float32 MNIST CNN / DS-CNN on this MCU:** deferred — models exceed 512 KiB flash; on-device digit peers remain int8.
+
+### YOLOX detection (host CPU, float32)
+
+`benchmark/host_ab_suite_results_yolox_f32.txt` — YOLOX MNv4-PAFPN 320 warm mean:
+
+| Mode | netkit | TF Lite | TF÷nk |
+|------|--------|---------|------:|
+| XNNPACK ON | 18.0 ms | 18.3 ms | 1.02× |
+| Reference | 119.7 ms | 260.9 ms | 2.18× |
+
 ## What “done” means here
 
 - **Arm MCU / MPU:** production-oriented paths exist (CMSIS-NN on MCU; XNNPACK on MPU/cpu) with float32 and int8 models, benches, and docs.

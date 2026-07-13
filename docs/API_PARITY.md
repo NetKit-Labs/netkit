@@ -50,7 +50,7 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | C++ | C |
 |-----|---|
 | `Arena::init` | `nk_arena_init` |
-| `Arena::init_heap` / `destroy_heap` (`NETKIT_ARENA_HEAP`) | `nk_arena_init_heap` / `nk_arena_destroy_heap` |
+| `Arena::init_heap` / `destroy_heap` (`NETKIT_ARENA_HEAP`) | `nk_arena_init_heap` / `nk_arena_destroy_heap` — **CPU default**; **MPU** via `NETKIT_HEAP_ARENA=1`; **MCU forbidden** (`#error`) |
 | `Arena::alloc` | `nk_arena_alloc` (size + alignment) |
 | `Arena::reset` | `nk_arena_reset` |
 | `Arena::capacity` / `offset` / `remaining` | `nk_arena_capacity`, `nk_arena_used`, `nk_arena_remaining` |
@@ -150,6 +150,9 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | `InitMobilenetV4UibLayer` | `nk_cnn_init_mobilenetv4_uib_layer` |
 | `InitResNetBasicBlockLayer` | `nk_cnn_init_resnet_basic_block_layer` |
 | `InitYoloxDecoupledHeadLayer` | `nk_cnn_init_yolox_decoupled_head_layer` |
+| `InitFeatureTapLayer` | `nk_cnn_init_feature_tap_layer` |
+| `InitYoloxPafpnLayer` | `nk_cnn_init_yolox_pafpn_layer` |
+| `GetFeatureTapBuffer` / `GetFeatureTapElems` | `nk_cnn_get_feature_tap_buffer` / `nk_cnn_get_feature_tap_elems` |
 | `InitFlattenLayer` | `nk_cnn_init_flatten_layer` |
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |
 | `InitActivationBuffers` | `nk_cnn_init_activation_buffers` |
@@ -196,6 +199,17 @@ High-level combined handle (C convenience):
 | File load without mmap (MCU; or MPU with `NETKIT_MMAP=0`) | Copies `.nk` into arena (prefer buffer/flash instead) |
 | Arena peaks | Exclude weight/bias payload (`flash_payload_bytes` reports flash budget) |
 
+### MCU deployment constraints
+
+| Topic | Policy |
+|-------|--------|
+| Arena | Caller-owned **static/global** buffer only — `NETKIT_HEAP_ARENA` is a compile error |
+| Heap | No `malloc` / `new` / `delete` / `free` on MCU firmware paths |
+| Weights | Stay in the flash `.nk` image (zero-copy scales); arena holds activations + metadata |
+| `NETKIT_MCU_CMSIS_ONLY` | Default when CMSIS production path (`REFERENCE_QUANT_LOOPS=0`) — QuantOps reference loops omitted |
+| `NETKIT_DISABLE_IOSTREAM` | Default on MCU — `nk_arch_print` / `PrintNetworkSummary` are no-ops |
+| NUCLEO-F446RE peers | **int8** CNN / DS-CNN vs TFLM; float32 CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md) |
+
 ### AOT deployment
 
 | Path | C++ | C |
@@ -212,7 +226,7 @@ Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `bo
 | `NkOpsResolver`, `NkOpList`, `CNNNetwork::SetOpsResolver` / `GetOpsResolver` | Firmware op trimming — compile-time `NkOpList<Ops...>::View()` in C++ only; file load uses default resolver internally |
 | `ArenaUtil`, `BeginRegressionArena`, `EndRegressionArena` | CLI/regression sizing helpers |
 | `TensorFactory::ViewND` | ND tensor views — use `nk_tensor_view_2d` or load from `.nk` |
-| `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput`, `CNNNetwork::layer_count` | In-memory network introspection after manual construction |
+| `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput`, `CNNNetwork::layer_count` | In-memory network introspection after manual construction (feature taps: use `nk_cnn_get_feature_tap_*`) |
 | `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` (`InitQuantizedConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedActivationBuffers`), `SetQuantized`, `Set`/`GetQuantOutputFormat` (Int8 only; float↔int8 is Python-side), `CNNNetwork::SetQuantRuntime` / `forward_quantized` | Quantized manual construction + low-level runtime — C callers load `.nk` and use `nk_model_run_int8` (or typed `nk_mlp_*` / `nk_cnn_*` forward after load); query with `nk_*_is_quantized` |
 | `CNNNetwork::forward_timed`, `MLPNetwork::forward_timed` | Benchmark-only profilers |
 | `CmsisQuantPlan::Runtime` field access | C updates `omit_final_softmax` via `nk_model_set_omit_final_softmax` only |

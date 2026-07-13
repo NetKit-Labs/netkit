@@ -1236,6 +1236,20 @@ nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
     return NK_OK;
 }
 
+float* nk_cnn_get_feature_tap_buffer(const nk_cnn_t* cnn, uint8_t tap_id)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return nullptr;
+    return CnnPtr(cnn)->net->GetFeatureTapBuffer(tap_id);
+}
+
+uint32_t nk_cnn_get_feature_tap_elems(const nk_cnn_t* cnn, uint8_t tap_id)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return 0;
+    return CnnPtr(cnn)->net->GetFeatureTapElems(tap_id);
+}
+
 nk_status_t nk_parse_architecture(const char* nk_path, nk_arch_info_t* info)
 {
     if (!nk_path || !info)

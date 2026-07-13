@@ -11,13 +11,15 @@ netkit is a **multi-modal inference engine** (voice, image, vision) with an **em
 
 Both APIs share:
 
-- Bump-pointer **arena** memory management (no heap in layer code paths on MCU/MPU)
-- **`.nk`** single-file model loading
-- **MLP** and **CNN** forward-only inference (conv with symmetric padding, max/avg pool, batch norm, flatten, dense)
+- Bump-pointer **arena** memory management (MCU: static buffer only — no heap; MPU/CPU may use heap arena backing)
+- **`.nk`** single-file model loading (MCU: prefer flash/buffer; mmap forbidden)
+- **MLP** and **CNN** forward-only inference (conv with symmetric padding, max/avg pool, batch norm, flatten, dense, fused blocks, YOLOX)
 - **NHWC** tensor layout for convolutions
 - **Float32 and int8** today — float16, int16, int4 planned ([DATATYPES.md](DATATYPES.md)); C uses `nk_model_run` vs `nk_model_run_int8`
 
-Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (network introspection, op trimming, detailed header dumps) remain C++-only.
+Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap / PAFPN), regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (block introspection, op trimming, timed forward) remain C++-only.
+
+**MCU on NUCLEO-F446RE:** production peers are **int8** CNN/DS-CNN vs TFLM (CMSIS-NN). Float32 MNIST CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md).
 
 ## Documentation map
 
@@ -54,7 +56,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction, regression, and CLI e
 |------|--------|
 | *(CPU default)* | Heap arena — `nk_arena_init_heap` / CLI default 64 MiB |
 | `NETKIT_GLOBAL_ARENA=1` (CPU) | Static/global arena only |
-| `NETKIT_HEAP_ARENA=1` (MCU/MPU class) | Compile in optional heap arena API |
+| `NETKIT_HEAP_ARENA=1` (**MPU only**) | Compile in optional heap arena API (forbidden on MCU) |
 
 ## Quick comparison
 
