@@ -1404,6 +1404,12 @@ def main() -> None:
         type=Path,
         default=ROOT / "models" / "checkpoints" / "yolox_mnv4_pafpn_mini_demo.jpg",
     )
+    parser.add_argument(
+        "--ckpt-every",
+        type=int,
+        default=5000,
+        help="Write a resumable partial checkpoint every N steps (0 disables)",
+    )
     args = parser.parse_args()
 
     if args.size % 32 != 0:
@@ -1458,12 +1464,17 @@ def main() -> None:
     scale_choices = (
         multiscale_sizes_for(args.size) if args.multiscale else (int(args.size),)
     )
+    resume_ckpt = None
     warm = args.init_from if args.init_from is not None else None
     if warm is None and args.resume is not None:
         warm = args.resume
     if warm is not None and warm.is_file():
         ckpt = torch.load(warm, map_location="cpu", weights_only=False)
-        sd = ckpt["state_dict"]
+        resume_ckpt = (
+            ckpt if (args.resume is not None and args.init_from is None) else None
+        )
+        # Prefer live train weights when resuming a partial mid-run checkpoint.
+        sd = ckpt.get("train_state_dict", ckpt["state_dict"])
         model_sd = model.state_dict()
         compatible = {
             k: v
@@ -1476,7 +1487,7 @@ def main() -> None:
             f"(shape-compatible; neck/heads stay fresh if hidden/size changed) "
             f"unexpected={len(missing.unexpected_keys)} missing={len(missing.missing_keys)}"
         )
-        if args.resume is not None and args.init_from is None:
+        if resume_ckpt is not None:
             losses = list(ckpt.get("losses", []))
             start_step = int(ckpt.get("steps", len(losses)))
             print(f"resumed at step={start_step}")
@@ -1506,6 +1517,9 @@ def main() -> None:
         ema_model = copy.deepcopy(model)
         for p in ema_model.parameters():
             p.requires_grad = False
+        if resume_ckpt is not None and "ema_state_dict" in resume_ckpt:
+            ema_model.load_state_dict(resume_ckpt["ema_state_dict"], strict=False)
+            print("restored EMA weights from resume checkpoint")
         print(f"EMA enabled decay={args.ema_decay}")
 
     model.train()
@@ -1513,6 +1527,32 @@ def main() -> None:
     use_aug = not args.no_aug
     total_steps = args.steps
     mosaic_close_step = int(total_steps * (1.0 - args.mosaic_close_frac))
+    partial_path = args.out.with_suffix(".partial.pt")
+
+    def save_partial(step_done: int) -> None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "state_dict": (ema_model if ema_model is not None else model).state_dict(),
+            "train_state_dict": model.state_dict(),
+            "losses": losses,
+            "steps": step_done,
+            "size": args.size,
+            "batch": args.batch,
+            "device": str(device),
+            "hidden": args.hidden,
+            "num_classes": NUM_CLASSES,
+            "assign": args.assign,
+            "mosaic_prob": args.mosaic_prob,
+            "mosaic_close_frac": args.mosaic_close_frac,
+            "multiscale": args.multiscale,
+            "ema_decay": args.ema_decay,
+            "partial": True,
+        }
+        if ema_model is not None:
+            payload["ema_state_dict"] = ema_model.state_dict()
+        torch.save(payload, partial_path)
+        print(f"partial checkpoint step={step_done} -> {partial_path}", flush=True)
+
     for step in range(start_step, total_steps):
         if (
             args.unfreeze_after >= 0
@@ -1576,6 +1616,12 @@ def main() -> None:
                 f"mosaic={mosaic_prob:.2f}  ({tag})",
                 flush=True,
             )
+        if (
+            args.ckpt_every > 0
+            and (step + 1) % args.ckpt_every == 0
+            and (step + 1) < total_steps
+        ):
+            save_partial(step + 1)
 
     eval_model = ema_model if ema_model is not None else model
     args.out.parent.mkdir(parents=True, exist_ok=True)
