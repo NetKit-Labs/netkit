@@ -78,6 +78,8 @@ benchmark/mpu_pi/bin/
 benchmark/mpu_pi/stage/
 benchmark/mpu_pi/stage_int8/
 benchmark/host_ab_suite_results*.txt
+!benchmark/host_ab_suite_results_float32_pi_zero2w.txt
+!benchmark/host_ab_suite_results_int8_pi_zero2w.txt
 benchmark/host_ab_suite_results*.pdf
 benchmark/host_ab_linkedin_summary.png
 .netkit_pi_pass

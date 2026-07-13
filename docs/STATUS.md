@@ -93,6 +93,36 @@ Flash/RAM = **runtime image only** (`size` TEXT≈flash, DATA≈static RAM). Mod
 
 **Takeaways:** With XNNPACK ON, netkit is slightly ahead on every model (float and int8; TF÷nk ≈ 1.02–1.09×). With XNNPACK OFF (TF `BUILTIN_REF` vs netkit reference), netkit is clearly ahead. **Runtime flash/RAM favor netkit** — ~1.3 MiB TEXT (XNN) or ~194–200 KiB (reference) vs ~12.4 MiB LiteRT CPU libs. Absolute MobileNetV4-Small ImageNet warm means: float32 ~1.09 ms (netkit XNN) vs ~1.17 ms (TF); int8 ~0.68 ms vs ~0.71 ms.
 
+### MPU — Raspberry Pi Zero 2 W (aarch64, Jul 2026)
+
+Same fairness policy as the host suite (discard 1st process, order swaps, 1 thread). Cross-built on host (`tools/build_mpu_pi_aarch64.sh`), lean payload over SSH (`tools/run_mpu_pi_{float32,int8}_ab.sh`). Raw UART-style logs (local): `benchmark/host_ab_suite_results_{float32,int8}_pi_zero2w.txt`.
+
+**FLOAT32** (order-avg latency; TF÷nk):
+
+| model | XNNPACK | netkit | TF Lite | TF÷nk |
+|-------|---------|--------|---------|-------|
+| MNIST CNN | ON | 1.66 ms | 1.78 ms | 1.07× |
+| MNIST DS-CNN | ON | 1.22 ms | 1.33 ms | 1.09× |
+| MNv4-Small ImageNet | ON | 100.0 ms | 100.7 ms | 1.01× |
+| MNIST CNN | OFF | 14.4 ms | 22.3 ms | 1.55× |
+| MNIST DS-CNN | OFF | 7.7 ms | 12.1 ms | 1.57× |
+| MNv4-Small ImageNet | OFF | 1056 ms | 1342 ms | 1.27× |
+
+ImageNet float32 top-1: **9/10** both runtimes.
+
+**INT8** (order-avg latency; TF÷nk):
+
+| model | XNNPACK | netkit | TF Lite | TF÷nk |
+|-------|---------|--------|---------|-------|
+| MNIST CNN | ON | 1.09 ms | 1.11 ms | 1.02× |
+| MNIST DS-CNN | ON | 0.61 ms | 0.62 ms | 1.01× |
+| MNv4-Small ImageNet | ON | 70.1 ms | 70.0 ms | ~1.00× |
+| MNIST CNN | OFF | 5.55 ms | 15.2 ms | 2.74× |
+| MNIST DS-CNN | OFF | 5.29 ms | 13.7 ms | 2.59× |
+| MNv4-Small ImageNet | OFF | 348 ms | 783 ms | 2.25× |
+
+MNIST int8 top-1: **10/10**. ImageNet int8 XNNPACK: **8/10** both. ImageNet int8 **reference**: netkit **7/10**, TF Lite **8/10** — the extra netkit miss is a **retrain-only** issue (weights / quant calibration), **deferred** (not a runtime parity bug; XNNPACK path already matches).
+
 ### `NETKIT_IM2COL` note (from earlier host sweep)
 
 With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). With XNNPACK OFF, **`NETKIT_IM2COL=1` (partial)** can give a **small** float CNN reference bump on MPU/cpu; **`2` (full)** was not a clear win. **Default and recommendation: leave `NETKIT_IM2COL=0`.** At most try `1` on MCU or reference-only MPU builds.
@@ -104,6 +134,8 @@ With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). 
 | MNIST CNN int8 (CMSIS-NN) | 10/10 @ ~95 ms (10×10 methodology) |
 | MNIST MLP int8 (CMSIS-NN) | 10/10 @ ~3.4 ms |
 | XNNPACK in MCU ELF | **None** — `nm` shows no `xnn*` / XNNPACK symbols on nucleo CNN int8 firmware |
+
+**Float32 MNIST CNN / DS-CNN on this MCU:** **deferred — flash.** `mnist_cnn.nk` ≈ 933 KiB and `mnist_cnn_dw.nk` ≈ 870 KiB exceed the STM32F446RE **512 KiB** flash (same class of limit as float32 MNv4). On-device digit CNN peers remain **int8** (`nucleo-f446re-cnn-int8` / TFLM twin; DS-CNN int8 when present). Float32 MCU path stays reference kernels only (no XNNPACK); CMSIS-NN production acceleration is **int8**.
 
 ## What “done” means here
 
@@ -117,3 +149,5 @@ With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). 
 - Broader int8 model coverage beyond MNIST + ImageNet MNv4 fixtures
 - float16 / int16 / int4 (Phase 2)
 - Voice modality fixtures; Kalman estimation (Phase 3)
+- **Deferred:** Pi ImageNet int8 reference top-1 gap (netkit 7/10 vs TF Lite 8/10) — retrain / recalibrate only
+- **Deferred:** float32 MNIST CNN / DS-CNN on NUCLEO-F446RE — models exceed 512 KiB flash; use int8 on-device peers

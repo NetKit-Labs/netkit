@@ -1,0 +1,65 @@
+spawn ssh -o StrictHostKeyChecking=accept-new pi@192.168.0.176 bash -lc /home/pi/netkit_mpu_ab/run_ab_float32.sh
+pi@192.168.0.176's password: 
+######## MPU A/B SUITE — FLOAT32 (Raspberry Pi Zero 2 W) ########
+host=pi arch=aarch64 Model  : Raspberry Pi Zero 2 W Rev 1.0
+               total        used        free      shared  buff/cache   available
+Mem:           415Mi       151Mi       163Mi       1.7Mi       157Mi       263Mi
+
+======== MODE: XNNPACK ON ========
+---- model=cnn mode=xnn order=nk_then_tf ----
+netkit: XnnpackFloat: network xnn_subgraph ready
+BENCHMARK_SUMMARY runtime=netkit model=cnn backend=xnnpack mean_us=1666.543 runs=9
+tflite: INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=xnnpack mean_us=1790.545 runs=9 top1_correct=10 top1_total=10
+---- model=cnn mode=xnn order=tf_then_nk ----
+tflite: INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=xnnpack mean_us=1775.826 runs=9 top1_correct=10 top1_total=10
+netkit: XnnpackFloat: network xnn_subgraph ready
+BENCHMARK_SUMMARY runtime=netkit model=cnn backend=xnnpack mean_us=1656.219 runs=9
+
+---- model=cnn_dw mode=xnn order=nk_then_tf ----
+netkit: XnnpackFloat: network xnn_subgraph ready
+BENCHMARK_SUMMARY runtime=netkit model=cnn backend=xnnpack mean_us=1217.763 runs=9
+tflite: INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=xnnpack mean_us=1322.871 runs=9 top1_correct=10 top1_total=10
+---- model=cnn_dw mode=xnn order=tf_then_nk ----
+tflite: INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=xnnpack mean_us=1328.698 runs=9 top1_correct=10 top1_total=10
+netkit: XnnpackFloat: network xnn_subgraph ready
+BENCHMARK_SUMMARY runtime=netkit model=cnn backend=xnnpack mean_us=1214.768 runs=9
+
+---- model=imagenet mode=xnn order=nk_then_tf ----
+netkit: XnnpackFloat: network xnn_subgraph ready
+BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=float32 backend=xnnpack top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=100168.946 warm_median_us=99995.835 warm_mean_us=100020.999 cold_us=101206.189 invokes=50
+tflite: INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=float32 backend=xnnpack threads=1 top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=100693.516 warm_median_us=100608.223 warm_mean_us=100649.483 cold_us=101129.127 invokes=50
+---- model=imagenet mode=xnn order=tf_then_nk ----
+tflite: INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=float32 backend=xnnpack threads=1 top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=100708.962 warm_median_us=100676.289 warm_mean_us=100707.844 cold_us=101042.585 invokes=50
+netkit: XnnpackFloat: network xnn_subgraph ready
+BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=float32 backend=xnnpack top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=99922.220 warm_median_us=99847.923 warm_mean_us=99932.993 cold_us=100698.069 invokes=50
+
+======== MODE: XNNPACK OFF (reference) ========
+---- model=cnn mode=ref order=nk_then_tf ----
+netkit: BENCHMARK_SUMMARY runtime=netkit model=cnn backend=reference mean_us=14413.968 runs=9
+tflite: BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=builtin-ref mean_us=22291.986 runs=9 top1_correct=10 top1_total=10
+---- model=cnn mode=ref order=tf_then_nk ----
+tflite: BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=builtin-ref mean_us=22309.014 runs=9 top1_correct=10 top1_total=10
+netkit: BENCHMARK_SUMMARY runtime=netkit model=cnn backend=reference mean_us=14435.606 runs=9
+
+---- model=cnn_dw mode=ref order=nk_then_tf ----
+netkit: BENCHMARK_SUMMARY runtime=netkit model=cnn backend=reference mean_us=7698.674 runs=9
+tflite: BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=builtin-ref mean_us=12060.328 runs=9 top1_correct=10 top1_total=10
+---- model=cnn_dw mode=ref order=tf_then_nk ----
+tflite: BENCHMARK_SUMMARY runtime=tflite model=cnn_f32 backend=builtin-ref mean_us=12076.116 runs=9 top1_correct=10 top1_total=10
+netkit: BENCHMARK_SUMMARY runtime=netkit model=cnn backend=reference mean_us=7690.491 runs=9
+
+---- model=imagenet mode=ref order=nk_then_tf ----
+netkit: BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=float32 backend=reference top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=1055538.969 warm_median_us=1052913.895 warm_mean_us=1052865.802 cold_us=1079480.181 invokes=50
+tflite: BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=float32 backend=builtin-ref threads=1 top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=1341273.033 warm_median_us=1340447.771 warm_mean_us=1340680.747 cold_us=1349115.917 invokes=50
+---- model=imagenet mode=ref order=tf_then_nk ----
+tflite: BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=float32 backend=builtin-ref threads=1 top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=1342301.989 warm_median_us=1341522.863 warm_mean_us=1341574.399 cold_us=1350202.125 invokes=50
+netkit: BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=float32 backend=reference top1_correct=9 top1_total=10 top1_pct=90.0 ten_image_mean_us=1055623.367 warm_median_us=1053004.933 warm_mean_us=1052912.704 cold_us=1080626.366 invokes=50
+
+DONE
+# wall_s=582 exit=
