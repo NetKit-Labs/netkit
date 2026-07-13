@@ -37,8 +37,13 @@ constexpr uint32_t kInH = kImagenetMnv4BenchmarkHeight;
 constexpr uint32_t kInW = kImagenetMnv4BenchmarkWidth;
 constexpr uint32_t kInC = kImagenetMnv4BenchmarkChannels;
 // Generous host arena: ImageNet 224 activations + scratch need far more than the
-// default 64 KiB / even the 64 MiB 56x56 tier. 256 MiB is ample headroom.
+// default 64 KiB / even the 64 MiB 56x56 tier. 256 MiB is ample headroom on
+// desktop; Pi Zero-class MPUs can override with -DNETKIT_BENCH_ARENA_MB=96.
+#if defined(NETKIT_BENCH_ARENA_MB)
+constexpr size_t kArenaCapacity = static_cast<size_t>(NETKIT_BENCH_ARENA_MB) * 1024ull * 1024ull;
+#else
 constexpr size_t kArenaCapacity = 256 * 1024 * 1024;
+#endif
 
 int ArgMax(const float* values, int count)
 {

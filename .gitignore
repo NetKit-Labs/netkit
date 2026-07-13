@@ -73,5 +73,14 @@ models/mobilenetv4_imagenet_int8.nk
 # Large optional third-party builds (fetched locally)
 third_party/XNNPACK/
 
+# Pi Zero MPU remote A/B staging + results (local only)
+benchmark/mpu_pi/bin/
+benchmark/mpu_pi/stage/
+benchmark/host_ab_suite_results*.txt
+benchmark/host_ab_suite_results*.pdf
+benchmark/host_ab_linkedin_summary.png
+.netkit_pi_pass
+
 /data/
 calibration_image_sample_data_20x128x128x3_float32.npy
+benchmark/mpu_pi/stage/.netkit_pi_pass
