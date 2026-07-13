@@ -31,13 +31,27 @@ from export_int8_test_images import (  # noqa: E402
 
 
 def _load_interpreter(model_path: Path, *, num_threads: int, use_xnnpack: bool):
-    from ai_edge_litert.interpreter import Interpreter, OpResolverType
+    try:
+        from ai_edge_litert.interpreter import Interpreter, OpResolverType
+    except ImportError:
+        try:
+            from tflite_runtime.interpreter import Interpreter, OpResolverType  # type: ignore
+        except ImportError:
+            from tensorflow.lite.python.interpreter import Interpreter  # type: ignore
+            try:
+                from tensorflow.lite.python.interpreter import OpResolverType  # type: ignore
+            except ImportError:
+                OpResolverType = None  # type: ignore
 
     kwargs = {
         "model_path": str(model_path),
         "num_threads": num_threads,
     }
     if not use_xnnpack:
+        if OpResolverType is None:
+            raise SystemExit(
+                "XNNPACK-off requires OpResolverType (ai-edge-litert or tflite-runtime)"
+            )
         kwargs["experimental_op_resolver_type"] = OpResolverType.BUILTIN_REF
     return Interpreter(**kwargs)
 

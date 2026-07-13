@@ -76,6 +76,7 @@ third_party/XNNPACK/
 # Pi Zero MPU remote A/B staging + results (local only)
 benchmark/mpu_pi/bin/
 benchmark/mpu_pi/stage/
+benchmark/mpu_pi/stage_int8/
 benchmark/host_ab_suite_results*.txt
 benchmark/host_ab_suite_results*.pdf
 benchmark/host_ab_linkedin_summary.png

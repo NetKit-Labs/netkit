@@ -20,8 +20,13 @@ set pass $env(NETKIT_PI_PASS)
 set rcmd $env(NETKIT_PI_REMOTE_CMD)
 set user $env(NETKIT_PI_USER)
 set host $env(NETKIT_PI_HOST)
-# list keeps rcmd as a single argv even with spaces/metacharacters
-set argv_list [list ssh -o StrictHostKeyChecking=accept-new $user@$host bash -lc $rcmd]
+# ssh joins remote argv with spaces and drops quoting, so pass ONE remote
+# string: bash -lc '<shell-quoted rcmd>'.
+proc sh_single_quote {s} {
+  return '[string map {' '{'\''}'} $s]'
+}
+set remote "bash -lc [sh_single_quote $rcmd]"
+set argv_list [list ssh -o StrictHostKeyChecking=accept-new $user@$host $remote]
 spawn {*}$argv_list
 expect {
   -re "(?i)are you sure you want to continue connecting" {

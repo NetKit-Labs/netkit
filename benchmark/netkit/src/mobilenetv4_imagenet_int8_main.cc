@@ -36,7 +36,11 @@ constexpr int kLoops = 5;
 constexpr uint32_t kInH = kImagenetMnv4Int8BenchmarkHeight;
 constexpr uint32_t kInW = kImagenetMnv4Int8BenchmarkWidth;
 constexpr uint32_t kInC = kImagenetMnv4Int8BenchmarkChannels;
+#if defined(NETKIT_BENCH_ARENA_MB)
+constexpr size_t kArenaCapacity = static_cast<size_t>(NETKIT_BENCH_ARENA_MB) * 1024ull * 1024ull;
+#else
 constexpr size_t kArenaCapacity = 256 * 1024 * 1024;
+#endif
 
 Tensor MakeNhwcViewInt8(int8_t* data, uint32_t h, uint32_t w, uint32_t c)
 {
