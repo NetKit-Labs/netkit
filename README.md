@@ -1,19 +1,31 @@
 # netkit — Neural Network Kit
 
-netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. It is written in **C++26** using modern C++ patterns and type safety (primary API), with a **C23** API for firmware and FFI. Develop and validate on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
+netkit is a **multi-modal inference engine** (image / vision today; voice next) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. Primary API is **C++26**; firmware and FFI use a matching **C23** API. Develop on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/jameslavrenz/memkit) for memory management.
 
-**Status:** Active development. **Float32** and **int8** inference are complete on **cpu**, **Arm MCU**, and **Arm MPU**. **RISC MPU** uses XNNPACK by default; **RISC MCU** runs on fast generic kernels (no RISC-tuned microkernels yet). See [docs/STATUS.md](docs/STATUS.md) for platform maturity and recent peer-bench results. float16 / int16 / int4 and **Kalman estimation** remain on the roadmap.
+**Status:** **Float32** and **int8** inference are **complete** on **cpu**, **Arm MCU**, and **Arm MPU** (RISC MPU via XNNPACK; RISC MCU on fast generic kernels). The inference engine is **peer-benched end-to-end** across **CPU** (Apple M4 vs TF Lite), **MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **MCU** (NUCLEO-F446RE vs TFLM) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Next: voice fixtures, broader quantization, and **Kalman estimation / tracking**.
 
 Models are loaded from binary **`.nk`** files (single-file architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
 Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at runtime) for development and flexible deployment, or **compile for maximum speed** (AOT embed, packager graph optimizations, trimmed op tables, CMSIS backends) for production firmware. See [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
+
+## Peer benchmarks (CPU · MPU · MCU)
+
+Fair A/B vs TF Lite (CPU/MPU) and TFLM (MCU). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
+
+| Int8 suite | Float32 suite |
+|------------|---------------|
+| ![netkit int8 peer suite](benchmark/linkedin/netkit_linkedin_int8_suite.png) | ![netkit float32 peer suite](benchmark/linkedin/netkit_linkedin_float32_suite.png) |
+
+![Host A/B LinkedIn summary](benchmark/linkedin/host_ab_linkedin_summary.png)
+
+Raw logs and scripts: [benchmark/README.md](benchmark/README.md), `benchmark/linkedin/`.
 
 ## Documentation
 
 | Guide | Description |
 |-------|-------------|
 | **[Philosophy](docs/PHILOSOPHY.md)** | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager |
-| **[Status](docs/STATUS.md)** | Dtype + platform maturity; recent CPU/MCU peer-bench results |
+| **[Status](docs/STATUS.md)** | Dtype + platform maturity; CPU / MPU / MCU peer-bench results |
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, CLI, and first inference for new users |
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
@@ -26,6 +38,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | **[Python packager](python/README.md)** | `python -m netkit convert` (ONNX → `.nk`), `aot` (embed `.nk` in C/C++) |
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
+| **[Peer-suite infographics](benchmark/linkedin/)** | CPU / MPU / MCU float32 + int8 A/B images |
 | **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-NN / reference, lowered AOT) |
 | **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 benchmark (CMSIS-NN, interpreter embed) |
 | **[NUCLEO-F446RE MLP int8](boards/nucleo-f446re-mlp-int8/README.md)** | On-device MNIST MLP int8 benchmark (CMSIS-NN, interpreter embed) |
@@ -39,7 +52,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 | **[ResNet-18](docs/RESNET18.md)** | Fused BasicBlock + full ResNet-18 backbone fixture |
 | **[ConvNeXt V2](docs/CONVNEXTV2.md)** | Fused block + LayerNorm2d + full Atto backbone fixture |
 | **[MobileNetV4](docs/MOBILENETV4.md)** | Fused UIB block + full MNv4-Conv-Small backbone fixture |
-| **[YOLOX detector](docs/YOLOX.md)** | Single-scale YOLOX decoupled head on MobileNetV4-Small backbone |
+| **[YOLOX detector](docs/YOLOX.md)** | YOLOX PAFPN + decoupled head on MobileNetV4 (latency ready; accuracy needs more training) |
 | **[MLP Background](docs/nn.md)** | Optional theory (training/backprop); netkit is inference-only |
 
 ## Language standards
@@ -53,16 +66,18 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 ## Features
 
-- **Multi-modal** — voice, image, and vision inference (embedded-first for MCU, MPU, NPU)
+- **Multi-modal (image / vision first)** — classification and detection fixtures today; voice planned (embedded-first for MCU, MPU, NPU)
+- **Peer-benched inference** — float32 + int8 A/B on CPU, Arm MPU, and Arm MCU vs TF Lite / TFLM ([STATUS.md](docs/STATUS.md))
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed ([PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled))
 - **Dual API** — C23 (`netkit.h`) and C++26 (native headers, modern patterns and type safety)
 - **CLI** — `test`, `run`, and `inspect` commands for desktop development
-- **MLP & CNN** — conv (with padding), max/avg pool, batch norm, flatten, dense; `.nk` loading
-- **Arena allocator** — Bump-pointer memory with aligned allocation (no heap in layer paths)
+- **MLP & CNN** — conv (with padding), depthwise, max/avg pool, batch norm, flatten, dense; fused ResNet / MobileNetV4 / ConvNeXt / YOLOX blocks; `.nk` loading
+- **Detection** — YOLOX decoupled head + PAFPN on MobileNetV4 (latency ready; accuracy needs more training)
+- **Arena allocator** — Bump-pointer memory; **MCU: static arena only — no heap ever**
 - **Regression tests** — 88 embedded `.nk` cases (C++/C) plus Python AOT/unit tests via `make test`; full ONNX parity (82) and backbone tests via `make test-full`
 - **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
-- **Float32 inference** — complete default path on cpu / MCU / MPU
+- **Float32 inference** — complete on cpu / MCU / MPU
 - **Int8 inference** — complete end-to-end int8 I/O (MNIST CNN/MLP MCU CMSIS-NN; host/MPU XNNPACK qs8 or QuantOps; ImageNet MNv4 int8)
 - **Optional backends** — CMSIS-NN (Arm MCU int8); XNNPACK (cpu + any MPU, forbidden on MCU); reference everywhere else. CMSIS-DSP is not used. ([STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md))
 
@@ -251,8 +266,8 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [interpreter vs compiled deployment](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). In brief:
 
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed
-- **Phase 1 (today)** — Float32 and int8 forward paths, ONNX → `.nk` packager, desktop CLI, CMSIS-NN/DSP MCU firmware
-- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload
+- **Phase 1 (today)** — Float32 and int8 inference complete; CPU/MPU/MCU peer benches done; ONNX → `.nk` packager; desktop CLI; CMSIS-NN MCU int8; YOLOX path in (accuracy training open)
+- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload; YOLOX accuracy / voice fixtures
 - **Phase 3 (planned)** — Kalman estimation and tracking alongside neural inference
 - **Lightweight** — Standard C/C++ only, no external dependencies in the engine
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (CPU/MPU 64 MiB / MCU 64 KiB; overridable)
@@ -261,10 +276,12 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 ## Roadmap
 
-**Phase 1 (today):** Multi-modal **float32** and **int8** inference are **complete** for image/vision fixtures — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNet, ConvNeXt), depthwise conv, asymmetric padding. **Arm MCU** (CMSIS-NN/DSP) and **Arm MPU** / **cpu** (XNNPACK) are done; **RISC MPU** uses XNNPACK; **RISC MCU** uses fast generic kernels until ISA-tuned kernels exist — [STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md).
+**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B benchmarking of the inference engine is finished** across **CPU**, **Arm MPU** (Pi Zero 2 W), and **Arm MCU** (NUCLEO-F446RE) vs TF Lite / TFLM. **Arm MCU** uses CMSIS-NN for int8 (no heap; static arena); **cpu / MPU** use XNNPACK; **RISC MCU** stays on fast generic kernels until ISA-tuned kernels exist — [STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md).
 
-**Phase 2 (planned):**
+**Phase 2 (next):**
 
+- **YOLOX / detection accuracy** — more training and calibration (runtime and latency path already land)
+- **Voice modality** fixtures
 - **Numeric types:** float16, int16, int4; broader **int8** model coverage ([DATATYPES.md](docs/DATATYPES.md))
 - **Packager:** fusion, layout, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
 - **Import / runtime:** broader ONNX op coverage, NPU offload paths
