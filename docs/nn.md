@@ -436,7 +436,6 @@ Training is:
 
 This is very similar to:
 - adaptive filters (LMS algorithm)
-- Kalman filter tuning
 - system identification loops
 
 ---

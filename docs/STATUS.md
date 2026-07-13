@@ -176,6 +176,6 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8`; DS-CNN twins `
 - RISC-V MCU NN kernels (CMSIS-NN–class accelerator; optional — generic path stays the default until it lands)
 - Broader int8 model coverage beyond MNIST + ImageNet MNv4 fixtures
 - float16 / int16 / int4 (Phase 2)
-- Voice modality fixtures; Kalman estimation (Phase 3)
+- Voice modality fixtures
 - **Deferred:** Pi ImageNet int8 reference top-1 gap (netkit 7/10 vs TF Lite 8/10) — retrain / recalibrate only
 - **Deferred:** float32 MNIST CNN / DS-CNN on NUCLEO-F446RE — models exceed 512 KiB flash; use int8 on-device peers

@@ -73,7 +73,7 @@ python3 benchmark/tools/run_host_ab_suite_int8.py
 python3 benchmark/tools/run_host_ab_suite_float32.py
 ```
 
-Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency plus MCU-style **runtime** flash/RAM (ELF TEXT/DATA minus fixture images vs LiteRT CPU libs; models excluded), each as TF÷netkit. MNIST CNN/DS-CNN use per-invoke warm discards; MobileNetV4-Small ImageNet uses `warm_mean` (discard full first image pass). `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary); printable summary: [host_ab_suite_results.pdf](host_ab_suite_results.pdf). Suite infographics (CPU / MPU / MCU): [linkedin/](linkedin/).
+Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency plus MCU-style **runtime** flash/RAM (ELF TEXT/DATA minus fixture images vs LiteRT CPU libs; models excluded), each as TF÷netkit. MNIST CNN/DS-CNN use per-invoke warm discards; MobileNetV4-Small ImageNet uses `warm_mean` (discard full first image pass). `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary); printable summary: [host_ab_suite_results.pdf](host_ab_suite_results.pdf). Suite infographics (MCU / MPU / CPU): [linkedin/](linkedin/).
 
 ## Run comparison (recommended)
 

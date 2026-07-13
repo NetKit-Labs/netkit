@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm and RISC** MCU/MPU targets and host cpu: RISC MPU uses **XNNPACK**; RISC MCU uses **fast generic** kernels (a CMSIS-NN–class RISC MCU NN path is planned) — [STATUS.md](STATUS.md). **Kalman estimation and tracking** are on the roadmap.
+Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm and RISC** MCU/MPU targets and host cpu: RISC MPU uses **XNNPACK**; RISC MCU uses **fast generic** kernels (a CMSIS-NN–class RISC MCU NN path is planned) — [STATUS.md](STATUS.md).
 
 **Two ways to run inference:** load a `.nk` and execute through the **`NkOpsResolver` interpreter** (flexible — swap models, use the CLI), or **compile for maximum speed** with `python -m netkit aot` (embed the model in flash, apply packager graph optimizations, trim linked ops, optional CMSIS / XNNPACK kernels). Both paths share the same kernels — see [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
