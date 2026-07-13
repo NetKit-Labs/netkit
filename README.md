@@ -16,8 +16,6 @@ Fair A/B vs TFLM (MCU) and TF Lite (MPU/CPU). Full tables and methodology: [docs
 |------------|---------------|
 | ![netkit int8 peer suite](benchmark/linkedin/netkit_linkedin_int8_suite.png) | ![netkit float32 peer suite](benchmark/linkedin/netkit_linkedin_float32_suite.png) |
 
-![Host A/B LinkedIn summary](benchmark/linkedin/host_ab_linkedin_summary.png)
-
 Raw logs and scripts: [benchmark/README.md](benchmark/README.md), `benchmark/linkedin/`.
 
 ## Documentation

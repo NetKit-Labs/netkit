@@ -4,8 +4,8 @@ PNG summaries of the completed float32 / int8 inference A/B across **MCU** (NUCL
 
 | File | Contents |
 |------|----------|
-| `netkit_linkedin_int8_suite.png` | Int8 latency (+ MCU flash/RAM) |
-| `netkit_linkedin_float32_suite.png` | Float32 latency |
-| `host_ab_linkedin_summary.png` | Host-oriented LinkedIn summary card |
+| `netkit_linkedin_int8_suite.png` | Int8 latency (+ MCU flash/RAM) — shown on [repo README](../../README.md#peer-benchmarks-mcu--mpu--cpu) |
+| `netkit_linkedin_float32_suite.png` | Float32 latency — shown on [repo README](../../README.md#peer-benchmarks-mcu--mpu--cpu) |
+| `host_ab_linkedin_summary.png` | Older host-oriented LinkedIn summary card (not on README) |
 
-Numbers and methodology: [docs/STATUS.md](../../docs/STATUS.md). Also shown on the [repo README](../../README.md#peer-benchmarks-cpu--mpu--mcu).
+Numbers and methodology: [docs/STATUS.md](../../docs/STATUS.md).
