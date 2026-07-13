@@ -25,6 +25,7 @@ libnetkit_trim.a
 
 # Logs
 *.log
+!benchmark/mcu_ab_logs/*.log
 
 # Local training checkpoints
 models/checkpoints/

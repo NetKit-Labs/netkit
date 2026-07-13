@@ -1,0 +1,33 @@
+
+  per-digit results (final run, int8 only — dequant in Python):
+    image  label  pred  pred_i8  ok
+        0      0     0       17  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=0 label=0 pred=0 pred_i8=17 ok=1 out_i8=17,-9,-3,-10,-7,-6,6,-7,1,2
+        1      1     1       12  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=1 label=1 pred=1 pred_i8=12 ok=1 out_i8=-5,12,-6,-10,-2,-3,-5,1,-4,-8
+        2      2     2       21  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=2 label=2 pred=2 pred_i8=21 ok=1 out_i8=1,1,21,-5,-4,-13,-3,-7,-3,-6
+        3      3     3        5  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=3 label=3 pred=3 pred_i8=5 ok=1 out_i8=-3,-6,0,5,-14,4,-4,-6,1,0
+        4      4     4       19  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=4 label=4 pred=4 pred_i8=19 ok=1 out_i8=-10,-4,-2,-13,19,-9,-6,-6,2,4
+        5      5     5       13  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=5 label=5 pred=5 pred_i8=13 ok=1 out_i8=-1,-10,-3,-8,-3,13,4,-10,4,2
+        6      6     6       22  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=6 label=6 pred=6 pred_i8=22 ok=1 out_i8=5,-9,-6,-9,-4,0,22,-11,4,-5
+        7      7     7       18  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=7 label=7 pred=7 pred_i8=18 ok=1 out_i8=-4,-3,-1,0,-6,-3,-20,18,-7,-1
+        8      8     8       19  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=8 label=8 pred=8 pred_i8=19 ok=1 out_i8=-7,-16,8,-2,-5,-3,-8,-10,19,5
+        9      9     9       19  yes
+DIGIT_SUMMARY runtime=netkit model=cnn_dw_int8 image=9 label=9 pred=9 pred_i8=19 ok=1 out_i8=-11,-3,-1,-2,2,-4,-14,-10,5,19
+  accuracy:    10/10 on final run
+
+netkit MNIST cnn_dw int8 benchmark summary (reference-int8)
+  method:      10 runs x 10 images, discard first invoke each run
+  per-run avg: avg of images 1-9 (us)
+
+  mean:   128890.951 us (128.891 ms)
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=reference-int8 mean_us=128890.951 runs=10
+
+DONE
