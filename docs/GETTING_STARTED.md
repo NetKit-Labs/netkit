@@ -28,7 +28,7 @@ Inference supports **float32** and **int8** today (`nk_model_run` / `nk_model_ru
 ## 1. Clone and build (desktop)
 
 ```bash
-git clone https://github.com/jameslavrenz/netkit.git
+git clone https://github.com/NetKit-Labs/netkit.git
 cd netkit
 make              # NETKIT_TARGET=cpu (default): netkit CLI + libnetkit.a
 ```
