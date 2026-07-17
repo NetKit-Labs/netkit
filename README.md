@@ -44,7 +44,7 @@ Canonical logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/).
 | MNIST DS-CNN int8 | ref | 205 µs | 450 µs | 31.8 µs |
 | MobileNetV4-Small ImageNet int8 | ref | 7.42 ms | 28.3 ms | 1.63 ms |
 
-With XNNPACK, netkit ≈ TF Lite and beats ORT on all six models. ORT “ref” is still **MLAS** (not a slow reference) — **MLAS is not needed for netkit**; host production stays on XNNPACK. Full tables: [`benchmark/host_ab_suite_results_float32.txt`](benchmark/host_ab_suite_results_float32.txt), [`benchmark/host_ab_suite_results_int8.txt`](benchmark/host_ab_suite_results_int8.txt), [docs/STATUS.md](docs/STATUS.md). Scripts: [benchmark/README.md](benchmark/README.md).
+With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the production peer. TF Lite OFF is `BUILTIN_REF` (slowest path); ORT OFF stays on **MLAS** and is still faster on all six, but with XNNPACK ON those optimized builtins / MLAS paths are moot. **MLAS is not needed for netkit.** Full tables: [`benchmark/host_ab_suite_results_float32.txt`](benchmark/host_ab_suite_results_float32.txt), [`benchmark/host_ab_suite_results_int8.txt`](benchmark/host_ab_suite_results_int8.txt), [docs/STATUS.md](docs/STATUS.md). Scripts: [benchmark/README.md](benchmark/README.md).
 
 ## Documentation
 

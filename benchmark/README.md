@@ -79,7 +79,7 @@ python3 benchmark/tools/run_host_ab_suite_float32.py
 
 Three-way: **netkit vs TF Lite vs ONNX Runtime**, XNNPACK ON/OFF. Prebuild + discarded first process + order swaps (`nk→tf→ort` / `ort→tf→nk`). ORT is source-built with the same `gcc`/`g++` / `-O3` / `-fpermissive` / Darwin `-ld_classic` policy as LiteRT-matched netkit (`tools/build_onnxruntime_litert_matched.sh`); stock pip ORT lacks the XNNPACK EP. See [`benchmark/onnxruntime/`](onnxruntime/).
 
-**Ref-mode caveat:** TF Lite OFF uses `BUILTIN_REF` (intentionally slow); ORT OFF stays on **MLAS** (`CPUExecutionProvider`) and is not a slow peer. **MLAS is not needed for netkit** — host production is XNNPACK, where netkit already matches TF Lite. Numbers: [docs/STATUS.md](../docs/STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime). Suite infographics (MCU / MPU / CPU): [linkedin/](linkedin/).
+**Ref-mode caveat:** TF Lite OFF is `BUILTIN_REF` (slowest CPU path), so that column is netkit reference vs TF Lite’s slow reference. ORT OFF still runs **MLAS** and stays faster on all six — but with XNNPACK ON, optimized TF Lite builtins and MLAS are moot. **MLAS is not needed for netkit.** Numbers: [docs/STATUS.md](../docs/STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime). Suite infographics (MCU / MPU / CPU): [linkedin/](linkedin/).
 
 ## Run comparison (recommended)
 

@@ -7,7 +7,7 @@ Third host CPU peer alongside **netkit** and **TF Lite / LiteRT**.
 | **xnn** | XNNPACK | XNNPACK (default) | `XNNPACKExecutionProvider` |
 | **ref** | reference | `BUILTIN_REF` (intentionally slow) | `CPUExecutionProvider` (**MLAS**) |
 
-**MLAS is not needed for netkit.** Host production compares XNNPACK paths (netkit ≈ TF Lite; both beat ORT XNNPACK EP on the suite models). ORT “ref” never turns optimization off — MLAS stays on — so that column is not an apples-to-apples slow-reference peer. netkit does not plan to ship or integrate MLAS.
+**MLAS is not needed for netkit.** With XNNPACK ON (the production peer), netkit ≈ TF Lite and both beat ORT’s XNNPACK EP here — optimized TF Lite builtins and ORT MLAS are moot. ORT OFF never drops to a slow reference (MLAS stays on), so that column is not an apples-to-apples “ref” peer; TF Lite OFF is `BUILTIN_REF` (its slowest path).
 
 ## Build (required)
 

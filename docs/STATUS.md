@@ -86,10 +86,11 @@ Absolute warm latency (µs). MNIST = `mean_us`; ImageNet = `warm_mean_us`. Full 
 
 **Takeaways (Jul 2026 host Apple Silicon):**
 
-- **XNNPACK ON (production peer):** netkit ≈ TF Lite on all six models; netkit beats ORT XNNPACK EP on all six (about 1.1–4.9×). TF Lite edges MNIST CNN int8 clearly and DS-CNN int8 by a hair; netkit leads or ties the rest.
-- **XNNPACK OFF:** netkit reference beats TF Lite `BUILTIN_REF` on all six. ORT “ref” is **not** a slow fallback — it stays on **MLAS** (`CPUExecutionProvider`) and remains much faster than both netkit reference and TF Lite `BUILTIN_REF`. Treat ORT ref as a separate optimized CPU path, not an apples-to-apples reference peer.
-- **MLAS is not needed for netkit.** Host production is XNNPACK; netkit already matches TF Lite there. Shipping or integrating ORT’s MLAS (or a similar vendor CPU GEMM stack) is out of scope — it would only chase the non-production “accel OFF” column where ORT never turns optimization off.
-- ORT int8 assets are QDQ (float graph I/O); TF Lite optimized builtins without XNNPACK were not pursued further (XNNPACK is the fair host peer).
+- **XNNPACK ON (production peer):** netkit ≈ TF Lite on all six models; netkit beats ORT XNNPACK EP on all six (about 1.1–4.9×). TF Lite edges MNIST CNN int8 clearly and DS-CNN int8 by a hair; netkit leads or ties the rest. This is the column that matters for host shipping.
+- **XNNPACK OFF — TF Lite:** OFF uses `BUILTIN_REF` (TF Lite’s slowest CPU path), not optimized builtins. So that comparison is netkit reference vs TF Lite’s slow reference — netkit wins all six.
+- **XNNPACK OFF — ORT:** ORT never drops to a slow reference; OFF still runs **MLAS** (`CPUExecutionProvider`) and stays faster than netkit reference on all six. That is a separate optimized CPU stack, not an apples-to-apples “ref” peer.
+- **With XNNPACK ON, optimized TF Lite builtins and ORT MLAS are moot.** Host production for netkit and TF Lite is XNNPACK; ORT’s competitive XNNPACK path is already covered (and slower here). **MLAS is not needed for netkit** — integrating it would only chase the non-production OFF column.
+- ORT int8 assets are QDQ (float graph I/O).
 
 ### MPU — Raspberry Pi Zero 2 W (aarch64, Jul 2026)
 

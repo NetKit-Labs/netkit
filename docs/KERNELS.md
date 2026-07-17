@@ -74,7 +74,7 @@ On **MCU with CMSIS-NN**, CMSIS-NN owns layer kernels; vector ops and ops withou
 
 **Float32 on MCU:** supported via reference kernels only. There is **no plan** for an optimized float32 MCU path; production MCU is int8 + CMSIS-NN.
 
-**Host CPU:** production accel is XNNPACK. **MLAS (ONNX Runtime’s CPU EP) is not needed for netkit** — peer benches show netkit ≈ TF Lite with XNNPACK; ORT’s MLAS path only wins the non-production “accel OFF” column where ORT never disables optimization. See [STATUS.md](STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime).
+**Host CPU:** production accel is XNNPACK. With XNNPACK ON, TF Lite’s optimized builtins and ORT **MLAS** are moot — netkit ≈ TF Lite there. **MLAS is not needed for netkit** (ORT OFF keeps MLAS on; that is not a slow-reference peer). See [STATUS.md](STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime).
 
 **Depthwise conv** is **2D-only** in the API (`DepthwiseConv2D`, NHWC `[H,W,C]`, weights `[C,Kh,Kw]`). **1D** along time/height is expressed as a degenerate 2D kernel (e.g. `kernel_h=5`, `kernel_w=1` on input `[T,1,C]`). See [NK_FORMAT.md](NK_FORMAT.md) and `python/README.md`.
 
