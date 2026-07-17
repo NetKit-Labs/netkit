@@ -10,7 +10,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 
 ## Peer benchmarks (MCU · MPU · CPU)
 
-Fair A/B vs TFLM + microTVM (MCU) and TF Lite + ONNX Runtime (host CPU; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
+Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and **CPU** (TF Lite + ONNX Runtime; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
 
 | Int8 suite | Float32 suite |
 |------------|---------------|
@@ -26,6 +26,25 @@ Fair A/B vs TFLM + microTVM (MCU) and TF Lite + ONNX Runtime (host CPU; XNNPACK 
 | MNIST DS-CNN | reference | **140.3 ms** | 826.8 ms | 236.0 ms |
 
 Canonical logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/).
+
+**MPU (Raspberry Pi Zero 2 W, aarch64; order-avg warm latency)** — netkit vs TF Lite (XNNPACK ON / OFF):
+
+| Model | Mode | netkit | TF Lite |
+|-------|------|-------:|--------:|
+| MNIST CNN f32 | xnn | 1.66 ms | 1.78 ms |
+| MNIST DS-CNN f32 | xnn | 1.22 ms | 1.33 ms |
+| MobileNetV4-Small ImageNet f32 | xnn | 100.0 ms | 100.7 ms |
+| MNIST CNN f32 | ref | 14.4 ms | 22.3 ms |
+| MNIST DS-CNN f32 | ref | 7.7 ms | 12.1 ms |
+| MobileNetV4-Small ImageNet f32 | ref | 1056 ms | 1342 ms |
+| MNIST CNN int8 | xnn | 1.09 ms | 1.11 ms |
+| MNIST DS-CNN int8 | xnn | 0.61 ms | 0.62 ms |
+| MobileNetV4-Small ImageNet int8 | xnn | 70.1 ms | 70.0 ms |
+| MNIST CNN int8 | ref | 5.55 ms | 15.2 ms |
+| MNIST DS-CNN int8 | ref | 5.29 ms | 13.7 ms |
+| MobileNetV4-Small ImageNet int8 | ref | 348 ms | 783 ms |
+
+With XNNPACK, netkit ≈ TF Lite on all six. Without XNNPACK, netkit reference beats TF Lite `BUILTIN_REF` on all six. Logs: [`benchmark/host_ab_suite_results_float32_pi_zero2w.txt`](benchmark/host_ab_suite_results_float32_pi_zero2w.txt), [`benchmark/host_ab_suite_results_int8_pi_zero2w.txt`](benchmark/host_ab_suite_results_int8_pi_zero2w.txt).
 
 **Host CPU three-way (Apple Silicon; warm latency)** — netkit vs TF Lite vs ONNX Runtime (XNNPACK ON / OFF):
 
