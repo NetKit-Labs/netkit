@@ -94,7 +94,7 @@ Absolute warm latency (µs). MNIST = `mean_us`; ImageNet = `warm_mean_us`. Full 
 
 ### MPU — Raspberry Pi Zero 2 W (aarch64, Jul 2026)
 
-Same fairness policy as the host suite (discard 1st process, order swaps, 1 thread). Cross-built on host (`tools/build_mpu_pi_aarch64.sh`), lean payload over SSH (`tools/run_mpu_pi_{float32,int8}_ab.sh`). Raw UART-style logs (local): `benchmark/host_ab_suite_results_{float32,int8}_pi_zero2w.txt`.
+Same fairness policy as the host suite (discard 1st process, order swaps, 1 thread). Cross-built on host (`tools/build_mpu_pi_aarch64.sh`), lean payload over SSH (`tools/run_mpu_pi_{float32,int8}_ab.sh`). Setup guide: [`boards/pi-zero-2w/README.md`](../boards/pi-zero-2w/README.md). Raw logs (local): `benchmark/host_ab_suite_results_{float32,int8}_pi_zero2w.txt`.
 
 **FLOAT32** (order-avg latency; TF÷nk):
 

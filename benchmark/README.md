@@ -81,6 +81,17 @@ Three-way: **netkit vs TF Lite vs ONNX Runtime**, XNNPACK ON/OFF. Prebuild + dis
 
 **Ref-mode caveat:** TF Lite OFF is `BUILTIN_REF` (slowest CPU path), so that column is netkit reference vs TF Lite’s slow reference. ORT OFF still runs **MLAS** and stays faster on all six — but with XNNPACK ON, optimized TF Lite builtins and MLAS are moot. **MLAS is not needed for netkit.** Numbers: [docs/STATUS.md](../docs/STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime). Suite infographics (MCU / MPU / CPU): [linkedin/](linkedin/).
 
+## MPU A/B (Raspberry Pi Zero 2 W)
+
+Same models and XNNPACK ON/OFF policy, cross-built for `linux/aarch64` and run over SSH vs TF Lite on the Pi. Guide: [`boards/pi-zero-2w/README.md`](../boards/pi-zero-2w/README.md).
+
+```bash
+./tools/fetch_xnnpack.sh
+./tools/build_mpu_pi_aarch64.sh
+NETKIT_PI_PASS='...' ./tools/run_mpu_pi_float32_ab.sh
+NETKIT_PI_PASS='...' ./tools/run_mpu_pi_int8_ab.sh
+```
+
 ## Run comparison (recommended)
 
 ```bash

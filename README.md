@@ -35,7 +35,7 @@ Deferred on this board — MNIST CNN / DS-CNN float models exceed 512 KiB flas
 
 ### MPU — Raspberry Pi Zero 2 W (aarch64)
 
-netkit vs TF Lite (XNNPACK ON / OFF). Order-averaged warm latency. Logs: [`benchmark/host_ab_suite_results_int8_pi_zero2w.txt`](benchmark/host_ab_suite_results_int8_pi_zero2w.txt), [`benchmark/host_ab_suite_results_float32_pi_zero2w.txt`](benchmark/host_ab_suite_results_float32_pi_zero2w.txt).
+netkit vs TF Lite (XNNPACK ON / OFF). Order-averaged warm latency. Setup / rebuild: [`boards/pi-zero-2w/README.md`](boards/pi-zero-2w/README.md). Logs: [`benchmark/host_ab_suite_results_int8_pi_zero2w.txt`](benchmark/host_ab_suite_results_int8_pi_zero2w.txt), [`benchmark/host_ab_suite_results_float32_pi_zero2w.txt`](benchmark/host_ab_suite_results_float32_pi_zero2w.txt).
 
 #### Int8
 
@@ -112,6 +112,7 @@ With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the pro
 | **[Testing](docs/TESTING.md)** | Regression suites, Make targets, CI on push/PR + manual full suite |
 | **[MNIST benchmarks](benchmark/README.md)** | Host invoke latency + per-op profiles: netkit vs TFLM |
 | **[Peer-suite infographics](benchmark/linkedin/)** | MCU / MPU / CPU float32 + int8 A/B images |
+| **[Raspberry Pi Zero 2 W (MPU)](boards/pi-zero-2w/README.md)** | Cross-build + SSH A/B vs TF Lite (float32 + int8, XNNPACK ON/OFF) |
 | **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-NN / reference, lowered AOT) |
 | **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 (CMSIS-NN / reference, interpreter embed) |
 | **[NUCLEO-F446RE DS-CNN int8](boards/nucleo-f446re-cnn-dw-int8/README.md)** | On-device MNIST DS-CNN int8 (CMSIS-NN / reference, interpreter embed) |
