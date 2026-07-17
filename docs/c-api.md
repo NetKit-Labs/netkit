@@ -109,7 +109,7 @@ const char* nk_last_error(void);  // detail after failed call; thread-local
 
 ### `nk_dtype_t`, `nk_activation_t`, `nk_conv_activation_t`
 
-Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType`. Inference uses **`NK_DTYPE_FLOAT32`** or **`NK_DTYPE_INT8`** (int8 models: `nk_model_run_int8`, int8 tensor views). float16 / int16 / int4 remain on the roadmap — [DATATYPES.md](DATATYPES.md).
+Mirror C++ `DataType`, `ActivationType`, and `ConvActivationType` (`NK_DTYPE_FLOAT32` … `NK_DTYPE_INT32`). Inference uses **`NK_DTYPE_FLOAT32`** or **`NK_DTYPE_INT8`** (int8 models: `nk_model_run_int8`, int8 tensor views). `NK_DTYPE_INT32` is for int8 bias views (`nk_tensor_view_1d_int32`). float16 / int16 / int4 remain on the roadmap — [DATATYPES.md](DATATYPES.md).
 
 ### `nk_cnn_block_type_t`
 
@@ -253,6 +253,7 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_tensor_view_2d` | `TensorFactory::View2D` |
 | `nk_tensor_view_2d_int8` | `TensorFactory::View2DInt8` |
 | `nk_tensor_view_3d_int8` | `TensorFactory::View3DInt8` |
+| `nk_tensor_view_1d_int32` | `TensorFactory::View1DInt32` |
 | `nk_tensor_fill` | `TensorFactory::Fill` (`std::span<const float>`) |
 | `nk_tensor_print` | `TensorFactory::Print` |
 | `nk_tensor_print_labeled` | `TensorFactory::PrintLabeled` |
@@ -265,6 +266,8 @@ Full signatures are in [`netkit.h`](../include/netkit.h). Each group mirrors the
 | `nk_tensor_data_f32_const` | `tensor_data_f32` (const; nullptr if not float32) |
 | `nk_tensor_data_i8` | `tensor_data_i8` (nullptr if not int8) |
 | `nk_tensor_data_i8_const` | `tensor_data_i8` (const; nullptr if not int8) |
+| `nk_tensor_data_i32` | `tensor_data_i32` (nullptr if not int32) |
+| `nk_tensor_data_i32_const` | `tensor_data_i32` (const; nullptr if not int32) |
 | `nk_tensor_index_nhwc` | `index_nhwc` |
 
 ### Ops (`ops.hpp`)
@@ -355,6 +358,8 @@ C++ equivalent: [cpp-api.md](cpp-api.md#manual-construction-call-order).
 | `nk_cnn_init_dense_layer` | `CNNNetwork::InitDenseLayer` |
 | `nk_cnn_init_activation_buffers` | `CNNNetwork::InitActivationBuffers` |
 | `nk_cnn_has_activation_buffers` | `CNNNetwork::HasActivationBuffers` |
+| `nk_cnn_kernel_workspace_bytes` | `CNNNetwork::KernelWorkspaceBytes` |
+| `nk_cnn_set_omit_final_softmax` / `nk_cnn_omit_final_softmax` | quant `Runtime::omit_final_softmax` |
 | `nk_cnn_forward` | `CNNNetwork::forward` |
 
 ```c
@@ -372,11 +377,12 @@ nk_status_t nk_cnn_init_batch_norm_layer(nk_cnn_t* cnn, uint32_t layer_idx,
     int channels, float* scale, float* bias);
 ```
 
-### Conv2D (`conv2d.hpp`)
+### Conv2D (`conv2d.hpp`) / DepthwiseConv2D (`depthwise_conv2d.hpp`)
 
 | C function | C++ equivalent |
 |------------|----------------|
 | `nk_conv2d_forward` | `Conv2D::forward` |
+| `nk_depthwise_conv2d_forward` | `DepthwiseConv2D::forward` |
 
 #### CNN manual construction (call order)
 

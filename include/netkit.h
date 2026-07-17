@@ -80,7 +80,8 @@ typedef enum nk_dtype
     NK_DTYPE_FLOAT32 = 0,
     NK_DTYPE_INT8,
     NK_DTYPE_UINT8,
-    NK_DTYPE_INT16
+    NK_DTYPE_INT16,
+    NK_DTYPE_INT32
 } nk_dtype_t;
 
 typedef enum nk_activation
@@ -172,6 +173,21 @@ typedef struct nk_conv2d
     float* bias;
 } nk_conv2d_t;
 
+/** Standalone depthwise conv (mirrors `DepthwiseConv2D`). Weights `[ch][kh][kw]`. */
+typedef struct nk_depthwise_conv2d
+{
+    int kernel_h;
+    int kernel_w;
+    int stride;
+    int pad_h;
+    int pad_w;
+    int pad_h_end;
+    int pad_w_end;
+    int channels;
+    float* weights;
+    float* bias;
+} nk_depthwise_conv2d_t;
+
 typedef struct nk_arch_info
 {
     uint32_t version;
@@ -243,6 +259,8 @@ void nk_tensor_view_2d(float* data, uint32_t rows, uint32_t cols, nk_tensor_t* o
 void nk_tensor_view_2d_int8(int8_t* data, uint32_t rows, uint32_t cols, nk_tensor_t* out);
 /** Int8 NHWC view: rank-3 `[h, w, c]` (no ownership). */
 void nk_tensor_view_3d_int8(int8_t* data, uint32_t h, uint32_t w, uint32_t c, nk_tensor_t* out);
+/** Int32 bias-style view: length elements as rank-2 `[1, length]` (no ownership). */
+void nk_tensor_view_1d_int32(int32_t* data, uint32_t length, nk_tensor_t* out);
 nk_status_t nk_tensor_fill(nk_tensor_t* tensor, const float* values, uint32_t count);
 void nk_tensor_print(const nk_tensor_t* tensor);
 void nk_tensor_print_labeled(const char* label, const nk_tensor_t* tensor);
@@ -257,6 +275,9 @@ const float* nk_tensor_data_f32_const(const nk_tensor_t* tensor);
 /** Returns nullptr if tensor is null or dtype is not `NK_DTYPE_INT8`. */
 int8_t* nk_tensor_data_i8(nk_tensor_t* tensor);
 const int8_t* nk_tensor_data_i8_const(const nk_tensor_t* tensor);
+/** Returns nullptr if tensor is null or dtype is not `NK_DTYPE_INT32`. */
+int32_t* nk_tensor_data_i32(nk_tensor_t* tensor);
+const int32_t* nk_tensor_data_i32_const(const nk_tensor_t* tensor);
 uint32_t nk_tensor_index_nhwc(const nk_tensor_t* tensor, uint32_t h, uint32_t w, uint32_t c);
 
 /* -------------------------------------------------------------------------- */
@@ -289,6 +310,14 @@ void nk_ops_softmax(const nk_tensor_t* a, nk_tensor_t* c);
 /* -------------------------------------------------------------------------- */
 
 void nk_conv2d_forward(const nk_conv2d_t* conv, const nk_tensor_t* input, nk_tensor_t* output);
+
+/* -------------------------------------------------------------------------- */
+/* DepthwiseConv2D (depthwise_conv2d.hpp)                                     */
+/* -------------------------------------------------------------------------- */
+
+void nk_depthwise_conv2d_forward(const nk_depthwise_conv2d_t* conv,
+                                 const nk_tensor_t* input,
+                                 nk_tensor_t* output);
 
 /* -------------------------------------------------------------------------- */
 /* MLP (mlp.hpp)                                                              */
@@ -533,6 +562,14 @@ nk_status_t nk_cnn_init_activation_buffers(nk_cnn_t* cnn,
                                            uint32_t in_w,
                                            uint32_t in_c);
 bool nk_cnn_has_activation_buffers(const nk_cnn_t* cnn);
+/** CMSIS-NN / kernel scratch sized at `InitActivationBuffers` (0 if none). */
+size_t nk_cnn_kernel_workspace_bytes(const nk_cnn_t* cnn);
+/**
+ * Same classification knob as `nk_mlp_set_omit_final_softmax`.
+ * For quantized CNNs, updates `CmsisQuantPlan::Runtime::omit_final_softmax`.
+ */
+void nk_cnn_set_omit_final_softmax(nk_cnn_t* cnn, bool omit);
+bool nk_cnn_omit_final_softmax(const nk_cnn_t* cnn);
 
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,
                            nk_arena_t* arena,

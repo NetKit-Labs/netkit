@@ -2,6 +2,8 @@
 
 Peer of [`nucleo-f446re-tvm-cnn-int8`](../nucleo-f446re-tvm-cnn-int8/README.md) for `mnist_cnn_dw_int8.tflite`.
 
+**License:** Apache TVM / microTVM are Apache-2.0 (ASF). Attribution and license texts: [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md), [`third_party/licenses/apache-tvm*`](../../third_party/licenses/).
+
 ## Fair-compare toolchain
 
 Uses `boards/nucleo-f446re/mcu_tflm_toolchain.mk`:

@@ -136,7 +136,7 @@ See the full core table in [BUILD_TARGETS.md](BUILD_TARGETS.md#target-architectu
 
 ### Optional CMSIS backends
 
-`make cmsis-init` fetches **CMSIS-Core** (device headers for MCU cross-builds) and **CMSIS-NN** as git submodules. CMSIS-DSP is not used. CMSIS-NN is **opt-in** at compile time (`NETKIT_CMSIS_NN=1`) — not inferred from `NETKIT_ARCH` alone.
+`make cmsis-init` fetches **CMSIS-Core** (device headers for MCU cross-builds) and **CMSIS-NN** as git submodules. CMSIS-DSP is not used. CMSIS-NN is **opt-in** at compile time (`NETKIT_CMSIS_NN=1`) — not inferred from `NETKIT_ARCH` alone. Third-party license texts and attribution (CMSIS, XNNPACK, ONNX/ORT, TF Lite / TFLM, TVM, …): [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 **Profile defaults** (after `cmsis-init` / `xnnpack-init` as needed):
 

@@ -106,7 +106,7 @@ void destroy_heap();
 ## Tensor (`tensor.hpp`)
 
 ```cpp
-enum class DataType : uint8_t { Float32, Int8, UInt8, Int16 };
+enum class DataType : uint8_t { Float32, Int8, UInt8, Int16, Int32 };
 
 constexpr uint32_t kMaxTensorRank = 4;
 
@@ -135,6 +135,9 @@ namespace TensorFactory {
     Tensor Create2D(Arena& arena, uint32_t rows, uint32_t cols);
     Tensor CreateND(Arena& arena, uint32_t rank, std::span<const uint32_t> shape);
     Tensor View2D(float* data, uint32_t rows, uint32_t cols);
+    Tensor View2DInt8(int8_t* data, uint32_t rows, uint32_t cols);
+    Tensor View3DInt8(int8_t* data, uint32_t depth, uint32_t rows, uint32_t cols);
+    Tensor View1DInt32(int32_t* data, uint32_t length);
     Tensor ViewND(float* data, uint32_t rank, std::span<const uint32_t> shape);
     void Fill(Tensor& t, std::span<const float> values);
     void Print(const Tensor& t);
@@ -455,7 +458,7 @@ LoadResult Load(const char* nk_path, Arena& arena, NetworkKind& kind,
 }
 ```
 
-**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_mlp_load_memory` / `nk_cnn_load_memory`, or `nk_model_load_memory` for the combined handle). `IsQuantized()` → `nk_mlp_is_quantized` / `nk_cnn_is_quantized` / `nk_model_is_quantized`. Int8 run → `nk_model_run_int8`; int8 views → `nk_tensor_view_2d_int8` / `nk_tensor_view_3d_int8`; omit Softmax → `nk_model_set_omit_final_softmax`.
+**C equivalents:** `nk_parse_architecture` / `nk_parse_architecture_memory` fill `nk_arch_info_t`. `PrintNetworkSummary` → `nk_arch_print`. Embedded firmware uses `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (C: `nk_mlp_load_memory` / `nk_cnn_load_memory`, or `nk_model_load_memory` for the combined handle). `IsQuantized()` → `nk_mlp_is_quantized` / `nk_cnn_is_quantized` / `nk_model_is_quantized`. Int8 run → `nk_model_run_int8`; int8 / int32 views → `nk_tensor_view_2d_int8` / `nk_tensor_view_3d_int8` / `nk_tensor_view_1d_int32`; omit Softmax → `nk_mlp_*` / `nk_cnn_*` / `nk_model_set_omit_final_softmax`; standalone depthwise → `nk_depthwise_conv2d_forward`.
 
 **High-level C++ usage** loads with `Load` / `LoadMLP` / `LoadCNN` (file) or `LoadMLPFromBuffer` / `LoadCNNFromBuffer` (embedded `.nk` bytes) and calls `forward` directly — the **interpreter path** via `NkOpsResolver`. The C API adds `nk_model_t` + `nk_model_run` (float32) / `nk_model_run_int8` (int8) as convenience wrappers, plus typed `nk_mlp_load_memory` / `nk_cnn_load_memory` — see [c-api.md](c-api.md).
 

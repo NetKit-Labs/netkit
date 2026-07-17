@@ -1,5 +1,11 @@
 # Third-party dependencies
 
+**Licenses / attribution:** see repo-root
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) and vendored texts in
+[`licenses/`](licenses/) (CMSIS, XNNPACK, ONNX/ORT, TFLM, **Apache TVM /
+microTVM**, …). netkit is MIT; each dependency keeps its own license.
+**CMSIS-DSP is not used.**
+
 ## CMSIS-Core (MCU firmware)
 
 [ARM CMSIS 6](https://github.com/ARM-software/CMSIS_6) provides **CMSIS-Core** device headers (`core_cm4.h`, `cmsis_compiler.h`, …) used when cross-compiling Cortex-M firmware with `NETKIT_ARCH` set.

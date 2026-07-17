@@ -189,6 +189,45 @@ static void TestConv2dSymmetricPadding(void)
     ExpectFloatEq(out[0], 1.0f, "conv2d center preserved with symmetric pad");
 }
 
+static void TestDepthwiseConv2d(void)
+{
+    printf("\n--- depthwise conv2d (C API) ---\n");
+
+    alignas(max_align_t) unsigned char memory[4096];
+    nk_arena_t arena;
+    nk_arena_init(&arena, memory, sizeof(memory));
+
+    uint32_t shape[3] = {3, 3, 1};
+    nk_tensor_t input = {0};
+    nk_tensor_t output = {0};
+    ExpectStatus(nk_tensor_create_nd(&arena, 3, shape, &input), NK_OK, "dw input tensor");
+    ExpectStatus(nk_tensor_create_nd(&arena, 3, shape, &output), NK_OK, "dw output tensor");
+
+    const float input_values[9] = {
+        1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f,
+    };
+    ExpectStatus(nk_tensor_fill(&input, input_values, 9), NK_OK, "dw input fill");
+
+    /* 1x1 identity depthwise: out == in */
+    static float weights[1] = {1.0f};
+    static float bias[1] = {0.0f};
+    nk_depthwise_conv2d_t dw = {
+        .kernel_h = 1,
+        .kernel_w = 1,
+        .stride = 1,
+        .pad_h = 0,
+        .pad_w = 0,
+        .pad_h_end = NK_PAD_MIRROR,
+        .pad_w_end = NK_PAD_MIRROR,
+        .channels = 1,
+        .weights = weights,
+        .bias = bias,
+    };
+    nk_depthwise_conv2d_forward(&dw, &input, &output);
+    const float* out = nk_tensor_data_f32_const(&output);
+    ExpectFloatEq(out[4], 5.0f, "depthwise 1x1 preserves center");
+}
+
 static void TestParseArchitecture(void)
 {
     printf("\n--- parse architecture ---\n");
@@ -356,6 +395,10 @@ static void TestBufferLoad(void)
     ExpectStatus(nk_cnn_load_memory(cnn_blob, cnn_bytes, &arena, &cnn, nullptr), NK_OK, "cnn buffer load");
     ExpectTrue(nk_cnn_is_valid(&cnn), "cnn buffer load valid");
     ExpectTrue(!nk_cnn_is_quantized(&cnn), "test cnn not quantized");
+    /* Float CNN has no quant runtime — omit toggle is a no-op (false). */
+    nk_cnn_set_omit_final_softmax(&cnn, true);
+    ExpectTrue(!nk_cnn_omit_final_softmax(&cnn), "float cnn omit stays false without quant runtime");
+    (void)nk_cnn_kernel_workspace_bytes(&cnn); /* smoke: callable after load */
 }
 
 static void TestInt8Parity(void)
@@ -378,6 +421,15 @@ static void TestInt8Parity(void)
     ExpectTrue(t3.dtype == NK_DTYPE_INT8 && t3.rank == 3, "view3d int8 dtype/rank");
     ExpectTrue(t3.shape[0] == 2 && t3.shape[1] == 2 && t3.shape[2] == 3, "view3d int8 shape");
     ExpectTrue(nk_tensor_index_nhwc(&t3, 1, 0, 2) == 1u * 2u * 3u + 2u, "nhwc index on int8");
+
+    int32_t bias32[3] = {10, -20, 30};
+    nk_tensor_t ti32 = {0};
+    nk_tensor_view_1d_int32(bias32, 3, &ti32);
+    ExpectTrue(ti32.dtype == NK_DTYPE_INT32, "view1d int32 dtype");
+    ExpectTrue(ti32.rank == 2 && ti32.shape[0] == 1 && ti32.shape[1] == 3, "view1d int32 shape");
+    ExpectTrue(nk_tensor_data_i32(&ti32) == bias32, "view1d int32 data ptr");
+    ExpectTrue(nk_tensor_data_i8(&ti32) == NULL, "i8 accessor null on int32");
+    ExpectTrue(nk_tensor_data_i32_const(&ti32) == bias32, "view1d int32 const data");
 
     FILE* file = fopen("models/mnist_mlp_int8.nk", "rb");
     if (!file)
@@ -671,6 +723,7 @@ int main(void)
     TestArenaAlignment();
     TestTensorOps();
     TestConv2dSymmetricPadding();
+    TestDepthwiseConv2d();
     TestParseArchitecture();
     TestArchPrint();
     TestModelMetadata();

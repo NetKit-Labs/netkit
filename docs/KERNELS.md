@@ -2,6 +2,8 @@
 
 netkit routes all numeric work through a **compile-time kernel facade**. Layer code (`ops`, `conv2d`, `cnn`, `mlp`) calls `Kernels::Op(...)` only — no `#if CMSIS` and no runtime backend switching in those paths.
 
+How the **generic / reference** path is tuned for 32-bit+ devices (multi-accumulator dots, NHWC loops, im2col, int8 MAC+requant, portability limits): [GENERIC_KERNELS.md](GENERIC_KERNELS.md).
+
 ## Architecture
 
 ```

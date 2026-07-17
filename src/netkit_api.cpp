@@ -5,6 +5,7 @@
 #include "tensor_access.hpp"
 #include "ops.hpp"
 #include "conv2d.hpp"
+#include "depthwise_conv2d.hpp"
 #include "mlp.hpp"
 #include "cnn.hpp"
 #include "cmsis_quant_plan.hpp"
@@ -46,8 +47,8 @@ namespace
             case NkLoader::LoadStatus::FileOpenFailed: return NK_ERR_MODEL_OPEN;
             case NkLoader::LoadStatus::ReadFailed: return NK_ERR_MODEL_READ;
             case NkLoader::LoadStatus::InvalidMagic:
-            case NkLoader::LoadStatus::UnsupportedVersion:
             case NkLoader::LoadStatus::TruncatedFile: return NK_ERR_MODEL_PARSE;
+            case NkLoader::LoadStatus::UnsupportedVersion: return NK_ERR_VERSION_MISMATCH;
             case NkLoader::LoadStatus::UnsupportedLayer: return NK_ERR_LAYER_CONFIG;
             case NkLoader::LoadStatus::SizeMismatch: return NK_ERR_WEIGHT_MISMATCH;
             case NkLoader::LoadStatus::ArenaOverflow: return NK_ERR_ARENA_OVERFLOW;
@@ -73,6 +74,7 @@ namespace
             case DataType::Int8: return NK_DTYPE_INT8;
             case DataType::UInt8: return NK_DTYPE_UINT8;
             case DataType::Int16: return NK_DTYPE_INT16;
+            case DataType::Int32: return NK_DTYPE_INT32;
         }
         return NK_DTYPE_FLOAT32;
     }
@@ -510,6 +512,13 @@ void nk_tensor_view_3d_int8(int8_t* data, uint32_t h, uint32_t w, uint32_t c, nk
     ToNkTensor(TensorFactory::View3DInt8(data, h, w, c), out);
 }
 
+void nk_tensor_view_1d_int32(int32_t* data, uint32_t length, nk_tensor_t* out)
+{
+    if (!out)
+        return;
+    ToNkTensor(TensorFactory::View1DInt32(data, length), out);
+}
+
 nk_status_t nk_tensor_fill(nk_tensor_t* tensor, const float* values, uint32_t count)
 {
     if (!tensor || !values || count == 0)
@@ -550,6 +559,16 @@ int8_t* nk_tensor_data_i8(nk_tensor_t* tensor)
 const int8_t* nk_tensor_data_i8_const(const nk_tensor_t* tensor)
 {
     return tensor ? tensor_data_i8(*AsTensor(tensor)) : nullptr;
+}
+
+int32_t* nk_tensor_data_i32(nk_tensor_t* tensor)
+{
+    return tensor ? tensor_data_i32(*AsTensor(tensor)) : nullptr;
+}
+
+const int32_t* nk_tensor_data_i32_const(const nk_tensor_t* tensor)
+{
+    return tensor ? tensor_data_i32(*AsTensor(tensor)) : nullptr;
 }
 
 uint32_t nk_tensor_index_nhwc(const nk_tensor_t* tensor, uint32_t h, uint32_t w, uint32_t c)
@@ -672,6 +691,26 @@ void nk_conv2d_forward(const nk_conv2d_t* conv, const nk_tensor_t* input, nk_ten
     c.pad_w_end = conv->pad_w_end < 0 ? conv->pad_w : conv->pad_w_end;
     c.in_channels = conv->in_channels;
     c.out_channels = conv->out_channels;
+    c.weights = conv->weights;
+    c.bias = conv->bias;
+    c.forward(*AsTensor(input), *AsTensor(output));
+}
+
+void nk_depthwise_conv2d_forward(const nk_depthwise_conv2d_t* conv,
+                                 const nk_tensor_t* input,
+                                 nk_tensor_t* output)
+{
+    if (!conv || !input || !output)
+        return;
+    DepthwiseConv2D c{};
+    c.kernel_h = conv->kernel_h;
+    c.kernel_w = conv->kernel_w;
+    c.stride = conv->stride;
+    c.pad_h = conv->pad_h;
+    c.pad_w = conv->pad_w;
+    c.pad_h_end = conv->pad_h_end < 0 ? conv->pad_h : conv->pad_h_end;
+    c.pad_w_end = conv->pad_w_end < 0 ? conv->pad_w : conv->pad_w_end;
+    c.channels = conv->channels;
     c.weights = conv->weights;
     c.bias = conv->bias;
     c.forward(*AsTensor(input), *AsTensor(output));
@@ -1218,6 +1257,30 @@ nk_status_t nk_cnn_init_activation_buffers(nk_cnn_t* cnn,
 bool nk_cnn_has_activation_buffers(const nk_cnn_t* cnn)
 {
     return cnn && CnnPtr(cnn)->net && CnnPtr(cnn)->net->HasActivationBuffers();
+}
+
+size_t nk_cnn_kernel_workspace_bytes(const nk_cnn_t* cnn)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return 0;
+    return CnnPtr(cnn)->net->KernelWorkspaceBytes();
+}
+
+void nk_cnn_set_omit_final_softmax(nk_cnn_t* cnn, bool omit)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return;
+    CmsisQuantPlan::Runtime* runtime = CnnPtr(cnn)->net->quant_runtime();
+    if (runtime)
+        runtime->omit_final_softmax = omit;
+}
+
+bool nk_cnn_omit_final_softmax(const nk_cnn_t* cnn)
+{
+    if (!nk_cnn_is_valid(cnn))
+        return false;
+    const CmsisQuantPlan::Runtime* runtime = CnnPtr(cnn)->net->quant_runtime();
+    return runtime && runtime->omit_final_softmax;
 }
 
 nk_status_t nk_cnn_forward(nk_cnn_t* cnn,

@@ -2,6 +2,8 @@
 
 Bare-metal microTVM ahead-of-time (C runtime) peer for the netkit / TFLM MNIST CNN int8 boards.
 
+**License:** Apache TVM / microTVM are Apache-2.0 (ASF). Attribution and license texts: [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md), [`third_party/licenses/apache-tvm*`](../../third_party/licenses/).
+
 ## Prerequisites
 
 1. Relay-era TVM **v0.14** built with `USE_MICRO=ON` and (for CMSIS path) `USE_CMSISNN=ON`:

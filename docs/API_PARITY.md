@@ -61,7 +61,7 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | C++ | C |
 |-----|---|
 | `Tensor` | `nk_tensor_t` |
-| `DataType` | `nk_dtype_t` |
+| `DataType` (`Float32`…`Int32`) | `nk_dtype_t` (`NK_DTYPE_FLOAT32`…`NK_DTYPE_INT32`) |
 | `kMaxTensorRank` | `NK_MAX_TENSOR_RANK` |
 
 ### TensorFactory (`tensor_factory.hpp`)
@@ -73,6 +73,7 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | `View2D` | `nk_tensor_view_2d` |
 | `View2DInt8` | `nk_tensor_view_2d_int8` |
 | `View3DInt8` | `nk_tensor_view_3d_int8` |
+| `View1DInt32` | `nk_tensor_view_1d_int32` |
 | `Fill` | `nk_tensor_fill` |
 | `Print` | `nk_tensor_print` |
 | `PrintLabeled` | `nk_tensor_print_labeled` |
@@ -83,6 +84,7 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 |-----|---|
 | `tensor_data_f32` | `nk_tensor_data_f32`, `nk_tensor_data_f32_const` (nullptr if dtype ≠ float32) |
 | `tensor_data_i8` | `nk_tensor_data_i8`, `nk_tensor_data_i8_const` (nullptr if dtype ≠ int8) |
+| `tensor_data_i32` | `nk_tensor_data_i32`, `nk_tensor_data_i32_const` (nullptr if dtype ≠ int32) |
 | `index_nhwc` | `nk_tensor_index_nhwc` |
 
 ### Ops (`ops.hpp`)
@@ -114,6 +116,13 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 |-----|---|
 | `Conv2D` | `nk_conv2d_t` (includes `pad_h`, `pad_w`, `pad_h_end`, `pad_w_end`; `NK_PAD_MIRROR` = symmetric end) |
 | `Conv2D::forward` | `nk_conv2d_forward` |
+
+### DepthwiseConv2D (`depthwise_conv2d.hpp`)
+
+| C++ | C |
+|-----|---|
+| `DepthwiseConv2D` | `nk_depthwise_conv2d_t` (weights `[ch][kh][kw]`; same pad fields as conv) |
+| `DepthwiseConv2D::forward` | `nk_depthwise_conv2d_forward` |
 
 ### MLP (`mlp.hpp`)
 
@@ -157,6 +166,8 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | `InitDenseLayer` | `nk_cnn_init_dense_layer` |
 | `InitActivationBuffers` | `nk_cnn_init_activation_buffers` |
 | `HasActivationBuffers` | `nk_cnn_has_activation_buffers` |
+| `KernelWorkspaceBytes` | `nk_cnn_kernel_workspace_bytes` |
+| quant `Runtime::omit_final_softmax` | `nk_cnn_set_omit_final_softmax` / `nk_cnn_omit_final_softmax` |
 | `forward` | `nk_cnn_forward` |
 | `LoadCNN` (mixed conv/pool/avg pool/batch norm/flatten/dense `.nk`) | `nk_cnn_load` |
 
@@ -229,9 +240,10 @@ Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `bo
 | `MLPNetwork::GetLayer`, `CNNNetwork::GetBlock`, `CNNNetwork::GetOutput`, `CNNNetwork::layer_count` | In-memory network introspection after manual construction (feature taps: use `nk_cnn_get_feature_tap_*`) |
 | `MLPNetwork::InitQuantizedLayer`, `CNNNetwork::InitQuantized*` (`InitQuantizedConvLayer`, `InitQuantizedDenseLayer`, `InitQuantizedActivationBuffers`), `SetQuantized`, `Set`/`GetQuantOutputFormat` (Int8 only; float↔int8 is Python-side), `CNNNetwork::SetQuantRuntime` / `forward_quantized` | Quantized manual construction + low-level runtime — C callers load `.nk` and use `nk_model_run_int8` (or typed `nk_mlp_*` / `nk_cnn_*` forward after load); query with `nk_*_is_quantized` |
 | `CNNNetwork::forward_timed`, `MLPNetwork::forward_timed` | Benchmark-only profilers |
-| `CmsisQuantPlan::Runtime` field access | C updates `omit_final_softmax` via `nk_model_set_omit_final_softmax` only |
-| `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
-| `Conv2D::forward(..., fuse_activation)` | C `nk_conv2d_forward` uses default activation fusion |
+| `CmsisQuantPlan::Runtime` other fields | C exposes `omit_final_softmax` via `nk_cnn_*` / `nk_model_*`; remaining plan fields stay C++ |
+| `NkLoader::ReadTestSuite`, `ModelPayloadBytes`, `NetworkKindName`, `FreeParsedModelExtras` | Loader utilities; C uses `nk_parse_architecture` / `nk_model_*` instead |
+| `Arena::attach_mapped_file` / `release_mapped_file` | File mmap is transparent inside `nk_*_load` when `NETKIT_USE_MMAP=1` |
+| `Conv2D::forward(..., fuse_activation)` / `DepthwiseConv2D::forward(..., fuse_activation)` | C forwards use default activation fusion |
 | `TensorFactory::PrintLabeled(..., max_values)` | C `nk_tensor_print_labeled` omits truncation control |
 
 ### Regression tests

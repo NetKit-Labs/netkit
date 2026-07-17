@@ -20,6 +20,16 @@ const int8_t* tensor_data_i8(const Tensor& t)
     return t.type == DataType::Int8 ? static_cast<const int8_t*>(t.data) : nullptr;
 }
 
+int32_t* tensor_data_i32(Tensor& t)
+{
+    return t.type == DataType::Int32 ? static_cast<int32_t*>(t.data) : nullptr;
+}
+
+const int32_t* tensor_data_i32(const Tensor& t)
+{
+    return t.type == DataType::Int32 ? static_cast<const int32_t*>(t.data) : nullptr;
+}
+
 uint32_t index_nhwc(const Tensor& t, uint32_t h, uint32_t w, uint32_t c)
 {
     const uint32_t W = t.shape[1];

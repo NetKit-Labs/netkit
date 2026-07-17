@@ -50,11 +50,13 @@ With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the pro
 
 | Guide | Description |
 |-------|-------------|
+| **[Third-party notices](THIRD_PARTY_NOTICES.md)** | Licenses for CMSIS, XNNPACK, ONNX/ORT, TF Lite / TFLM, TVM, … |
 | **[Philosophy](docs/PHILOSOPHY.md)** | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager |
 | **[Status](docs/STATUS.md)** | Dtype + platform maturity; MCU / MPU / CPU peer-bench results |
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, CLI, and first inference for new users |
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
+| **[Generic kernels](docs/GENERIC_KERNELS.md)** | How reference kernels are optimized for 32-bit+ devices |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
 | **[Data Types](docs/DATATYPES.md)** | Float32 + int8 (cpu / Arm / RISC); float16 / int16 / int4 roadmap |
@@ -322,6 +324,12 @@ GitHub topics for discoverability: `embedded`, `embedded-systems`, `inference`, 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+Third-party components (CMSIS-NN / CMSIS-Core, XNNPACK and its deps, ONNX /
+ONNX Runtime, TF Lite / LiteRT, TFLM, microTVM, …) retain their own licenses.
+**CMSIS-DSP is not used.** Full attribution and license texts:
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
+[`third_party/licenses/`](third_party/licenses/).
 
 ## Contributing
 
