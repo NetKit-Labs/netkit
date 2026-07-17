@@ -87,7 +87,7 @@ netkit vs TF Lite vs ONNX Runtime (XNNPACK ON / OFF). Warm latency. Full tables:
 | MNIST DS-CNN | ref | 298 µs | 428 µs | 78.2 µs |
 | MobileNetV4-Small ImageNet | ref | 32.1 ms | 61.6 ms | 7.44 ms |
 
-With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the production peer. TF Lite OFF is `BUILTIN_REF` (slowest path); ORT OFF stays on **MLAS** and is still faster on all six, but with XNNPACK ON those optimized builtins / MLAS paths are moot. **MLAS is not needed for netkit.**
+With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the production peer. TF Lite’s optimized CPU kernels also go through **XNNPACK**, so turning them on is not a separate peer path: with XNNPACK ON they are moot the same way ORT’s **MLAS** is. TF Lite OFF in this suite is therefore `BUILTIN_REF` (slowest path); ORT OFF stays on MLAS and is still faster on all six — but that only matters in the non-production OFF column. **MLAS is not needed for netkit.**
 
 ## Documentation
 

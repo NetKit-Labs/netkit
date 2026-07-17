@@ -87,9 +87,9 @@ Absolute warm latency (µs). MNIST = `mean_us`; ImageNet = `warm_mean_us`. Full 
 **Takeaways (Jul 2026 host Apple Silicon):**
 
 - **XNNPACK ON (production peer):** netkit ≈ TF Lite on all six models; netkit beats ORT XNNPACK EP on all six (about 1.1–4.9×). TF Lite edges MNIST CNN int8 clearly and DS-CNN int8 by a hair; netkit leads or ties the rest. This is the column that matters for host shipping.
-- **XNNPACK OFF — TF Lite:** OFF uses `BUILTIN_REF` (TF Lite’s slowest CPU path), not optimized builtins. So that comparison is netkit reference vs TF Lite’s slow reference — netkit wins all six.
+- **XNNPACK OFF — TF Lite:** OFF uses `BUILTIN_REF` (TF Lite’s slowest CPU path), not optimized builtins. So that comparison is netkit reference vs TF Lite’s slow reference — netkit wins all six. TF Lite’s optimized CPU kernels also route through **XNNPACK**, so enabling them is not a distinct peer test from XNNPACK ON (same as ORT MLAS becoming moot under XNNPACK).
 - **XNNPACK OFF — ORT:** ORT never drops to a slow reference; OFF still runs **MLAS** (`CPUExecutionProvider`) and stays faster than netkit reference on all six. That is a separate optimized CPU stack, not an apples-to-apples “ref” peer.
-- **With XNNPACK ON, optimized TF Lite builtins and ORT MLAS are moot.** Host production for netkit and TF Lite is XNNPACK; ORT’s competitive XNNPACK path is already covered (and slower here). **MLAS is not needed for netkit** — integrating it would only chase the non-production OFF column.
+- **With XNNPACK ON, TF Lite optimized builtins and ORT MLAS are moot.** Host production for netkit and TF Lite is XNNPACK; ORT’s competitive XNNPACK path is already covered (and slower here). **MLAS is not needed for netkit** — integrating it would only chase the non-production OFF column.
 - ORT int8 assets are QDQ (float graph I/O).
 
 ### MPU — Raspberry Pi Zero 2 W (aarch64, Jul 2026)
