@@ -87,7 +87,9 @@ netkit vs TF Lite vs ONNX Runtime (XNNPACK ON / OFF). Warm latency. Full tables:
 | MNIST DS-CNN | ref | 298 µs | 428 µs | 78.2 µs |
 | MobileNetV4-Small ImageNet | ref | 32.1 ms | 61.6 ms | 7.44 ms |
 
-With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the production peer. TF Lite’s optimized CPU kernels also go through **XNNPACK**, so turning them on is not a separate peer path: with XNNPACK ON they are moot the same way ORT’s **MLAS** is. TF Lite OFF in this suite is therefore `BUILTIN_REF` (slowest path); ORT OFF stays on MLAS and is still faster on all six — but that only matters in the non-production OFF column. **MLAS is not needed for netkit.**
+With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the production peer. TF Lite OFF in this suite is `BUILTIN_REF`; ORT OFF stays on **MLAS** (faster on all six, but not a slow-reference peer). **MLAS is not needed for netkit.**[^host-peer]
+
+[^host-peer]: **Why this A/B:** XNNPACK ON is the fair production peer (netkit XNNPACK vs TF Lite default vs ORT XNNPACK EP). TF Lite’s optimized (`BUILTIN`) resolver still applies default delegates — including XNNPACK — for delegated ops, so “optimized without XNNPACK” is not a clean OFF peer. This suite therefore uses `BUILTIN_REF` when XNNPACK is off. Other TF Lite resolver knobs are useful for their own path debugging; once XNNPACK is on, both stacks are production-fast and those mid-settings are moot (same idea as not chasing ORT MLAS for netkit).
 
 ## Documentation
 
