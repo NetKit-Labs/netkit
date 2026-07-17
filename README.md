@@ -16,7 +16,16 @@ Fair A/B vs TFLM + microTVM (MCU) and TF Lite (MPU/CPU). Full tables and methodo
 |------------|---------------|
 | ![netkit int8 peer suite](benchmark/linkedin/netkit_linkedin_int8_suite.png) | ![netkit float32 peer suite](benchmark/linkedin/netkit_linkedin_float32_suite.png) |
 
-Raw logs and scripts: [benchmark/README.md](benchmark/README.md), `benchmark/linkedin/`.
+**MCU int8 (NUCLEO-F446RE @ 180 MHz; 10×10; all 10/10)** — netkit embed vs TFLM vs microTVM:
+
+| Model | Mode | netkit | TFLM | microTVM |
+|-------|------|-------:|-----:|---------:|
+| MNIST CNN | CMSIS-NN | **95.3 ms** | 95.5 ms | 112.3 ms |
+| MNIST DS-CNN | CMSIS-NN | **58.3 ms** | 61.4 ms | 86.4 ms |
+| MNIST CNN | reference | **336.2 ms** | 2593.5 ms | 343.0 ms |
+| MNIST DS-CNN | reference | **140.3 ms** | 826.8 ms | 236.0 ms |
+
+Canonical logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/). Host/MPU tables and scripts: [benchmark/README.md](benchmark/README.md), `benchmark/linkedin/`.
 
 ## Documentation
 

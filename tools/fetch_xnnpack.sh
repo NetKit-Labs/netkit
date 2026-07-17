@@ -38,8 +38,15 @@ fi
 
 # Match TF Lite / LiteRT CMake defaults for this pin: tests/benchmarks off,
 # all microkernels + assembly on (XNNPACK CMake defaults; TF does not override).
+# Same host drivers / opt as benchmark/common/tflite_host_flags.mk (gcc/g++).
+export CC="${CC:-gcc}"
+export CXX="${CXX:-g++}"
 cmake -S "$DEST" -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="$CC" \
+  -DCMAKE_CXX_COMPILER="$CXX" \
+  -DCMAKE_C_FLAGS="-O3 -DNDEBUG" \
+  -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG" \
   -DXNNPACK_LIBRARY_TYPE=static \
   -DXNNPACK_BUILD_TESTS=OFF \
   -DXNNPACK_BUILD_BENCHMARKS=OFF \

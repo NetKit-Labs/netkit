@@ -33,7 +33,7 @@ LiteRT-matched profile (ImageNet):
 
 | Setting | Value | Why |
 |---------|--------|-----|
-| Compiler / linker | host `cc` / `c++` | Same drivers as LiteRT Darwin wheels (Apple clang) |
+| Compiler / linker | host `gcc` / `g++` | Same driver names as TFLM host; Darwin = Apple clang (matches LiteRT macOS wheels); Linux = GNU g++ |
 | Opt | `-O3 -DNDEBUG` | LiteRT `ci/build_pip_package_with_bazel.sh` passes `--copt=-O3` on top of `-c opt` |
 | C++ dialect | `-std=gnu++20` | LiteRT uses `gnu++17`; netkit needs C++20 (`std::span`) so keep GNU dialect at C++20 |
 | Permissive | `-fpermissive` (Darwin/Linux) | LiteRT `.bazelrc` `build:macos` / `build:linux` |
@@ -42,7 +42,9 @@ LiteRT-matched profile (ImageNet):
 | SIMD | enabled | No `TF_LITE_DISABLE_X86_NEON` |
 | netkit-only | `-DNETKIT_*` | mmap/target/im2col knobs |
 
-XNNPACK itself is built once via `./tools/fetch_xnnpack.sh` as CMake **Release** (`-O3 -DNDEBUG`, same host `c++`), pinned to the **same commit** LiteRT 2.1.6 embeds (`c2e81f01…`; override with `NETKIT_XNNPACK_PIN`).
+**Same compiler for host peers:** netkit (`BENCH_FLAG_PROFILE=tflite`) and the LiteRT wheel path use `gcc`/`g++`. On Darwin that is Apple clang (LiteRT’s actual macOS compiler); do not use Homebrew `g++-N`. Host/CPU TVM benches are not maintained.
+
+XNNPACK itself is built once via `./tools/fetch_xnnpack.sh` as CMake **Release** (`-O3 -DNDEBUG`, same `gcc`/`g++`), pinned to the **same commit** LiteRT 2.1.6 embeds (`c2e81f01…`; override with `NETKIT_XNNPACK_PIN`).
 
 ImageNet int8 XNNPACK runtime also mirrors the LiteRT delegate defaults used by the peer bench (`num_threads=1`):
 
@@ -148,7 +150,7 @@ This benchmark is **not** part of `compare.sh` / `run-all` (separate MobileNetV4
 
 Pretrained `mobilenetv4_conv_small` (224×224×3, 1000 classes) compared across netkit, TFLM, and TF Lite / LiteRT on the same 10 ImageNet images.
 
-**Compiler policy:** netkit ImageNet targets use `BENCH_FLAG_PROFILE=tflite` to mimic LiteRT's opt wheel (`-O3 -DNDEBUG`, host `cc`/`c++`, no TFLM Micro `-fno-exceptions` / disabled-NEON flags).
+**Compiler policy:** netkit ImageNet targets use `BENCH_FLAG_PROFILE=tflite` to mimic LiteRT's opt wheel (`-O3 -DNDEBUG`, host `gcc`/`g++`, no TFLM Micro `-fno-exceptions` / disabled-NEON flags).
 
 ```bash
 ./tools/fetch_xnnpack.sh   # once
@@ -229,13 +231,35 @@ See also [docs/KERNELS.md](../docs/KERNELS.md) for reference conv optimizations 
 
 ## On-device MCU benchmarks (NUCLEO-F446RE)
 
-Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. For firmware SLA, use the board firmware targets:
+Host `compare.sh` numbers are not a direct preview of Cortex-M ratios. **Canonical three-way A/B** (netkit vs TFLM vs microTVM): [`mcu_ab_logs/mcu_int8_ab_results.txt`](mcu_ab_logs/mcu_int8_ab_results.txt) and [docs/STATUS.md](../docs/STATUS.md#mcu-nucleo-f446re).
 
-| Firmware | Model | Backend | Notes |
-|----------|-------|---------|-------|
-| [boards/nucleo-f446re](../boards/nucleo-f446re/README.md) | MNIST MLP f32 | CMSIS-NN / reference lowered AOT | ~10.7 ms, 10/10 |
-| [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | CMSIS-NN interpreter embed | ~95 ms (94.9–97.0 ms typical), 10/10; 64 KiB arena, ~334 KiB flash / ~75 KiB SRAM |
-| [boards/nucleo-f446re-tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md) | MNIST CNN int8 | TFLite Micro | comparison baseline |
+### Int8 latency (10×10, discard first invoke; all 10/10)
+
+netkit = interpreter embed (`NETKIT_EMBED=1`). Matched −O2/−flto toolchain. No XNNPACK on MCU.
+
+**CMSIS-NN**
+
+| Model | netkit | TFLM | microTVM |
+|-------|-------:|-----:|---------:|
+| MNIST CNN | **95.3 ms** | 95.5 ms | 112.3 ms |
+| MNIST DS-CNN | **58.3 ms** | 61.4 ms | 86.4 ms |
+
+**Reference (CMSIS-NN off)**
+
+| Model | netkit | TFLM | microTVM |
+|-------|-------:|-----:|---------:|
+| MNIST CNN | **336.2 ms** | 2593.5 ms | 343.0 ms |
+| MNIST DS-CNN | **140.3 ms** | 826.8 ms | 236.0 ms |
+
+| Firmware | Model | Role |
+|----------|-------|------|
+| [nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) | MNIST CNN int8 | netkit |
+| [nucleo-f446re-tflm-cnn-int8](../boards/nucleo-f446re-tflm-cnn-int8/README.md) | MNIST CNN int8 | TFLM |
+| [nucleo-f446re-tvm-cnn-int8](../boards/nucleo-f446re-tvm-cnn-int8/README.md) | MNIST CNN int8 | microTVM AOT |
+| [nucleo-f446re-cnn-dw-int8](../boards/nucleo-f446re-cnn-dw-int8/README.md) | MNIST DS-CNN int8 | netkit |
+| [nucleo-f446re-tflm-cnn-dw-int8](../boards/nucleo-f446re-tflm-cnn-dw-int8/README.md) | MNIST DS-CNN int8 | TFLM |
+| [nucleo-f446re-tvm-cnn-dw-int8](../boards/nucleo-f446re-tvm-cnn-dw-int8/README.md) | MNIST DS-CNN int8 | microTVM AOT |
+| [nucleo-f446re](../boards/nucleo-f446re/README.md) | MNIST MLP f32 | CMSIS-NN / reference lowered AOT |
 
 Shared **float** test vectors: `benchmark/tflm/generated/mnist_*_test_images.{h,cc}`
 
@@ -244,10 +268,10 @@ Shared **float** test vectors: `benchmark/tflm/generated/mnist_*_test_images.{h,
 ```bash
 make export-mnist-cnn-int8
 python3 benchmark/tflm/tools/export_int8_test_images.py
-make -C boards/nucleo-f446re-cnn-int8 && cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh
+make -C boards/nucleo-f446re-cnn-int8 NETKIT_EMBED=1 && cd boards/nucleo-f446re-cnn-int8 && ./scripts/flash.sh
 ```
 
-Default `make` builds **interpreter embed** (`--no-lower`). For quant lowered deployment profiling: `make NETKIT_LOWERED=1`.
+Board default `make` is **quant lowered**. Use `NETKIT_EMBED=1` for the TFLM-fair interpreter numbers above.
 
 ```bash
 ./scripts/monitor.sh   # press RESET

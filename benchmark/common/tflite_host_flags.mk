@@ -10,14 +10,17 @@
 #   + --cxxopt=-fpermissive on macos/linux
 # (see LiteRT ci/build_pip_package_with_bazel.sh and .bazelrc)
 #
-# Policy: same compiler/linker drivers and shared flags as LiteRT; add
-# netkit-only options only when required (C++20, NETKIT_* defines).
+# Compiler policy (netkit vs TF Lite/LiteRT host peers):
+#   Drivers: gcc / g++  (same names as TFLM host Makefile).
+#   Darwin:  /usr/bin/g++ is Apple clang — that is also what LiteRT macOS
+#            wheels use (Bazel + Xcode). Do NOT switch to Homebrew GNU
+#            g++-N; that would diverge from the LiteRT wheel.
+#   Linux:   system gcc/g++ (GNU), matching typical LiteRT linux wheels.
+# Add netkit-only options only when required (C++20, NETKIT_* defines).
 #
 # Include from benchmark/netkit/bench.mk when BENCH_FLAG_PROFILE=tflite.
-
-# Same driver names LiteRT/Bazel use on Darwin (cc/c++ → Apple clang).
-TFLM_HOST_CC := cc
-TFLM_HOST_CXX := c++
+TFLM_HOST_CC := gcc
+TFLM_HOST_CXX := g++
 TFLM_HOST_AR := ar
 
 # --- LiteRT-matched (no TFLM Micro extras) ---

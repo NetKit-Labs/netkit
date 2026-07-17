@@ -32,66 +32,57 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 
 Default **on** for cpu + any MPU; opt out with `NETKIT_MMAP=0` on RTOS / bare-metal MPU. See [ARENA.md](ARENA.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
-## Host A/B suite (preliminary)
+## Host A/B suite (netkit vs TF Lite)
 
-Fair CPU peer suite vs TF Lite / LiteRT (`benchmark/tools/run_host_ab_suite_{int8,float32}.py`):
+Fair CPU peer suite on host (Apple Silicon). **Not TFLM** — TF Lite / LiteRT Python benches on the same `.tflite` assets. **TVM is not a host/CPU peer** (stock LLVM is not comparable to XNNPACK); use TVM only for MCU / microTVM.
 
-**Models**
+**CMSIS-NN is MCU-only.** Host accel ON/OFF:
 
-| key | What it is |
-|-----|------------|
-| `cnn` | **MNIST CNN** — digit classifier |
-| `cnn_dw` | **MNIST DS-CNN** — depthwise-separable digit peer |
-| `imagenet` | **MobileNetV4-Conv-Small** on ImageNet (10-class fixture) |
+| Mode | netkit | TF Lite |
+|------|--------|---------|
+| **xnn** (accel ON) | XNNPACK | XNNPACK |
+| **ref** (accel OFF) | reference | `BUILTIN_REF` |
 
-- Prebuild netkit binaries (untimed); discard first process per timed slot; order swaps (nk→TF, TF→nk)
-- LiteRT-matched `-O3` flags; `NETKIT_IM2COL=0`
-- **Latency** metric: MNIST CNN/DS-CNN `mean_us` (discard run 0 + image 0 each run); MobileNetV4-Small ImageNet `warm_mean_us` (discard full first image pass)
-- **Flash / RAM**: MCU-style **runtime image only** — netkit bench ELF `__TEXT`/`__DATA` minus hard-coded test-image `.o` fixtures; TF Lite = core LiteRT CPU libs the same way. **Models and bench fixture images are excluded** (production would not embed those test vectors).
-- Ratio column is always **TF ÷ netkit** (>1 ⇒ netkit faster / smaller)
-- Modes: **XNNPACK ON** (both sides) and **XNNPACK OFF** (both reference). No MLP; no TF builtin-NEON-only peer.
+**Models:** MNIST CNN, MNIST DS-CNN, MobileNetV4-Conv-Small ImageNet — **float32 and int8**.
+
+Fairness: LiteRT-matched flags for netkit (`BENCH_FLAG_PROFILE=tflite`); prebuild; discard 1st process; order swaps; 1 thread; `NETKIT_IM2COL=0`. Same host drivers: `gcc`/`g++` (Darwin = Apple clang).
 
 ```bash
-python3 benchmark/tools/run_host_ab_suite_int8.py
 python3 benchmark/tools/run_host_ab_suite_float32.py
+python3 benchmark/tools/run_host_ab_suite_int8.py
 ```
 
-Results: `benchmark/host_ab_suite_results_{int8,float32}.txt`, summary PDF `benchmark/host_ab_suite_results.pdf`. Suite infographics (tracked): [benchmark/linkedin/](../benchmark/linkedin/).
+Results: `benchmark/host_ab_suite_results_{int8,float32}.txt`.
 
-### Preliminary results (host Apple Silicon, Jul 2026)
+### Results (host Apple Silicon, Jul 2026)
 
-Flash/RAM = **runtime image only** (`size` TEXT≈flash, DATA≈static RAM). Models and hard-coded bench fixture images excluded.
+Absolute warm latency (µs). MNIST = `mean_us`; ImageNet = `warm_mean_us`.
 
-**Absolute runtime sizes (same LiteRT libs for all models):**
+#### FLOAT32
 
-| mode | netkit flash | netkit RAM | TF Lite flash | TF Lite RAM |
-|------|--------------|------------|---------------|-------------|
-| XNNPACK ON | 1.31–1.32 MiB | 191.8 KiB | 12.41 MiB | 752.0 KiB |
-| XNNPACK OFF | 193–200 KiB | 15.8 KiB | 12.41 MiB | 752.0 KiB |
+| model | mode | netkit | TF Lite | TF÷nk |
+|-------|------|-------:|--------:|------:|
+| MNIST CNN | xnn | 31.0 | 31.1 | 1.00× |
+| MNIST DS-CNN | xnn | 28.2 | 30.0 | 1.06× |
+| MNv4-Small ImageNet | xnn | 1055 | 1070 | 1.01× |
+| MNIST CNN | ref | 511 | 1123 | 2.20× |
+| MNIST DS-CNN | ref | 299 | 437 | 1.46× |
+| MNv4-Small ImageNet | ref | 31830 | 60778 | 1.91× |
 
-#### INT8 — latency / flash / ram (TF÷netkit)
+#### INT8
 
-| model | XNNPACK | latency | flash | ram |
-|-------|---------|---------|-------|-----|
-| MNIST CNN | ON | 1.02× | 9.4× | 3.9× |
-| MNIST DS-CNN | ON | 1.03× | 9.4× | 3.9× |
-| MNv4-Small ImageNet | ON | 1.05× | 9.4× | 3.9× |
-| MNIST CNN | OFF | 3.78× | 63.5× | 47.7× |
-| MNIST DS-CNN | OFF | 2.17× | 63.5× | 47.7× |
-| MNv4-Small ImageNet | OFF | 3.78× | 65.6× | 47.7× |
+| model | mode | netkit | TF Lite | TF÷nk |
+|-------|------|-------:|--------:|------:|
+| MNIST CNN | xnn | 20.1 | 19.9 | 0.99× |
+| MNIST DS-CNN | xnn | 22.1 | 22.8 | 1.03× |
+| MNv4-Small ImageNet | xnn | 707 | 661 | 0.93× |
+| MNIST CNN | ref | 141 | 549 | 3.90× |
+| MNIST DS-CNN | ref | 190 | 465 | 2.45× |
+| MNv4-Small ImageNet | ref | 7879 | 28238 | 3.58× |
 
-#### FLOAT32 — latency / flash / ram (TF÷netkit)
+**Flash/RAM** (netkit vs TF Lite runtime image only): XNN ~1.3 MiB / 192 KiB vs LiteRT ~12.4 MiB / 752 KiB; reference ~200 KiB / 16 KiB vs same LiteRT libs.
 
-| model | XNNPACK | latency | flash | ram |
-|-------|---------|---------|-------|-----|
-| MNIST CNN | ON | 1.03× | 9.4× | 3.9× |
-| MNIST DS-CNN | ON | 1.09× | 9.4× | 3.9× |
-| MNv4-Small ImageNet | ON | 1.08× | 9.4× | 3.9× |
-| MNIST CNN | OFF | 1.99× | 65.8× | 47.7× |
-| MNIST DS-CNN | OFF | 1.63× | 65.8× | 47.7× |
-| MNv4-Small ImageNet | OFF | 1.88× | 63.6× | 47.7× |
-
-**Takeaways:** With XNNPACK ON, netkit is slightly ahead on every model (float and int8; TF÷nk ≈ 1.02–1.09×). With XNNPACK OFF (TF `BUILTIN_REF` vs netkit reference), netkit is clearly ahead. **Runtime flash/RAM favor netkit** — ~1.3 MiB TEXT (XNN) or ~194–200 KiB (reference) vs ~12.4 MiB LiteRT CPU libs. Absolute MobileNetV4-Small ImageNet warm means: float32 ~1.09 ms (netkit XNN) vs ~1.17 ms (TF); int8 ~0.68 ms vs ~0.71 ms.
+**Takeaways:** With XNNPACK, netkit ≈ TF Lite on host. Without XNNPACK, netkit reference is substantially faster (and much smaller) than LiteRT builtin-ref.
 
 ### MPU — Raspberry Pi Zero 2 W (aarch64, Jul 2026)
 
@@ -129,7 +120,7 @@ With XNNPACK ON, im2col does not move the needle (accelerated path ignores it). 
 
 ### MCU (NUCLEO-F446RE)
 
-UART A/B logs + tables: [`benchmark/mcu_ab_logs/`](../benchmark/mcu_ab_logs/) (10×10 methodology; discard first invoke). Matched toolchain: `mcu_tflm_toolchain.mk` (−O2 CORE/KERNEL/THIRD_PARTY, −flto, shared linker). **netkit** numbers below are **interpreter embed** (`NETKIT_EMBED=1`). Gain = TFLM÷netkit. Flash/RAM after MCU **no-heap** reclaim.
+Canonical results file: [`benchmark/mcu_ab_logs/mcu_int8_ab_results.txt`](../benchmark/mcu_ab_logs/mcu_int8_ab_results.txt) (UART logs in the same directory; index: [`mcu_ab_logs/README.md`](../benchmark/mcu_ab_logs/README.md)). Methodology: 10×10; discard first invoke. Matched toolchain: `mcu_tflm_toolchain.mk` (−O2 CORE/KERNEL/THIRD_PARTY, −flto, shared linker). **netkit** numbers below are **interpreter embed** (`NETKIT_EMBED=1`). Gain = TFLM÷netkit. Flash/RAM after MCU **no-heap** reclaim.
 
 **Latency — CMSIS-NN** (all 10/10, no XNNPACK):
 

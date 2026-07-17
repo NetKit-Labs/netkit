@@ -5,7 +5,7 @@
 # Fair comparison with netkit ImageNet benches:
 #   make -C benchmark/netkit run-mobilenetv4-imagenet-xnnpack
 # uses BENCH_FLAG_PROFILE=tflite from benchmark/common/tflite_host_flags.mk
-# (LiteRT opt: -O3 -DNDEBUG, host cc/c++, gnu++20, -fpermissive; Darwin arm64 -ld_classic).
+# (LiteRT opt: -O3 -DNDEBUG, host gcc/g++, gnu++20, -fpermissive; Darwin arm64 -ld_classic).
 
 BENCH_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 ROOT := $(abspath $(BENCH_DIR)/../..)

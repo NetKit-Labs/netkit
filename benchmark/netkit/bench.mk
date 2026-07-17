@@ -16,7 +16,7 @@ SHARED_GEN := ../tflm/generated
 # Flag profile:
 #   tflm   — match TFLM Micro host (-O2, TF_LITE_DISABLE_X86_NEON, -fno-exceptions…);
 #            MNIST / compare.sh
-#   tflite — match LiteRT opt wheel (-O3 -DNDEBUG, host cc/c++, SIMD on, no TFLM
+#   tflite — match LiteRT opt wheel (-O3 -DNDEBUG, host gcc/g++, SIMD on, no TFLM
 #            Micro extras); ImageNet / TF Lite peer benches
 BENCH_FLAG_PROFILE ?= tflm
 ifeq ($(BENCH_FLAG_PROFILE),tflite)

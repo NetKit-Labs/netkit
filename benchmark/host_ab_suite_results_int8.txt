@@ -15,17 +15,17 @@ Modes: xnn = both XNNPACK; ref = both reference.
 
 model                  metric         netkit                 tflite                      TF÷nk
 ----------------------------------------------------------------------------------------
-MNIST CNN              mean_us            20.118 us              20.463 us              1.017×
-                         (pass A/B)     19.516 /   20.721       20.099 /   20.828
-                       flash             1.32 MiB              12.41 MiB                9.396×
+MNIST CNN              mean_us            20.124 us              19.867 us              0.987×
+                         (pass A/B)     19.953 /   20.296       18.313 /   21.420
+                       flash             1.34 MiB              12.41 MiB                9.286×
                        ram              191.8 KiB              752.0 KiB                3.921×
-MNIST DS-CNN           mean_us            20.560 us              21.121 us              1.027×
-                         (pass A/B)     20.355 /   20.765       20.882 /   21.360
-                       flash             1.32 MiB              12.41 MiB                9.396×
+MNIST DS-CNN           mean_us            22.098 us              22.799 us              1.032×
+                         (pass A/B)     21.102 /   23.094       22.210 /   23.388
+                       flash             1.34 MiB              12.41 MiB                9.286×
                        ram              191.8 KiB              752.0 KiB                3.921×
-MNv4-Small ImageNet    warm_mean_us      680.501 us             713.294 us              1.048×
-                         (pass A/B)    656.747 /  704.256      690.436 /  736.153
-                       flash             1.31 MiB              12.41 MiB                9.440×
+MNv4-Small ImageNet    warm_mean_us      707.441 us             660.591 us              0.934×
+                         (pass A/B)    737.772 /  677.109      668.648 /  652.534
+                       flash             1.33 MiB              12.41 MiB                9.330×
                        ram              191.8 KiB              752.0 KiB                3.921×
 
 
@@ -33,42 +33,42 @@ MNv4-Small ImageNet    warm_mean_us      680.501 us             713.294 us      
 
 model                  metric         netkit                 tflite                      TF÷nk
 ----------------------------------------------------------------------------------------
-MNIST CNN              mean_us           152.987 us             578.421 us              3.781×
-                         (pass A/B)    161.402 /  144.572      584.500 /  572.343
+MNIST CNN              mean_us           140.630 us             549.022 us              3.904×
+                         (pass A/B)    134.910 /  146.350      531.066 /  566.977
                        flash            200.0 KiB              12.41 MiB               63.508×
                        ram               15.8 KiB              752.0 KiB               47.699×
-MNIST DS-CNN           mean_us           195.784 us             424.256 us              2.167×
-                         (pass A/B)    217.471 /  174.096      418.518 /  429.994
+MNIST DS-CNN           mean_us           189.758 us             464.662 us              2.449×
+                         (pass A/B)    188.556 /  190.960      473.226 /  456.098
                        flash            200.0 KiB              12.41 MiB               63.517×
                        ram               15.8 KiB              752.0 KiB               47.699×
-MNv4-Small ImageNet    warm_mean_us       7620.9 us (  7.621 ms)    28812.5 us ( 28.813 ms)     3.781×
-                         (pass A/B)   7096.760 / 8144.957     29343.885 / 28281.177
-                       flash            193.7 KiB              12.41 MiB               65.587×
+MNv4-Small ImageNet    warm_mean_us       7878.9 us (  7.879 ms)    28237.7 us ( 28.238 ms)     3.584×
+                         (pass A/B)   8023.298 / 7734.523     28663.680 / 27811.772
+                       flash            209.7 KiB              12.41 MiB               60.583×
                        ram               15.8 KiB              752.0 KiB               47.699×
 
 ### Raw BENCHMARK_SUMMARY lines
 
-mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=19.516 runs=9
-mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=20.099 runs=9 top1_correct=10 top1_total=10
-mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=20.828 runs=9 top1_correct=10 top1_total=10
-mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=20.721 runs=9
-mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=20.355 runs=9
-mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=20.882 runs=9 top1_correct=10 top1_total=10
-mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=21.360 runs=9 top1_correct=10 top1_total=10
-mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=20.765 runs=9
-mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=xnnpack top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=655.679 warm_median_us=651.209 warm_mean_us=656.747 cold_us=658.875 invokes=50
-mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=xnnpack threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=761.650 warm_median_us=663.750 warm_mean_us=690.436 cold_us=1122.333 invokes=50
-mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=xnnpack threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=733.450 warm_median_us=735.083 warm_mean_us=736.153 cold_us=1020.791 invokes=50
-mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=xnnpack top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=726.921 warm_median_us=682.583 warm_mean_us=704.256 cold_us=793.958 invokes=50
-mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=161.402 runs=9
-mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=584.500 runs=9 top1_correct=10 top1_total=10
-mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=572.343 runs=9 top1_correct=10 top1_total=10
-mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=144.572 runs=9
-mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=217.471 runs=9
-mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=418.518 runs=9 top1_correct=10 top1_total=10
-mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=429.994 runs=9 top1_correct=10 top1_total=10
-mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=174.096 runs=9
-mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=reference top1_correct=7 top1_total=10 top1_pct=70.0 ten_image_mean_us=7090.750 warm_median_us=7050.708 warm_mean_us=7096.760 cold_us=7054.459 invokes=50
-mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=builtin-ref threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=26784.733 warm_median_us=27583.626 warm_mean_us=29343.885 cold_us=29489.958 invokes=50
-mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=builtin-ref threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=29227.679 warm_median_us=29323.437 warm_mean_us=28281.177 cold_us=29545.792 invokes=50
-mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=reference top1_correct=7 top1_total=10 top1_pct=70.0 ten_image_mean_us=7592.033 warm_median_us=8056.833 warm_mean_us=8144.957 cold_us=8195.458 invokes=50
+mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=19.953 runs=9
+mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=18.313 runs=9 top1_correct=10 top1_total=10
+mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=21.420 runs=9 top1_correct=10 top1_total=10
+mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=20.296 runs=9
+mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=21.102 runs=9
+mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=22.210 runs=9 top1_correct=10 top1_total=10
+mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=xnnpack mean_us=23.388 runs=9 top1_correct=10 top1_total=10
+mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=xnnpack mean_us=23.094 runs=9
+mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=xnnpack top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=674.662 warm_median_us=751.292 warm_mean_us=737.772 cold_us=731.416 invokes=50
+mode=xnn order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=xnnpack threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=682.496 warm_median_us=660.062 warm_mean_us=668.648 cold_us=874.458 invokes=50
+mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=xnnpack threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=680.221 warm_median_us=647.250 warm_mean_us=652.534 cold_us=913.167 invokes=50
+mode=xnn order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=xnnpack top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=642.021 warm_median_us=665.375 warm_mean_us=677.109 cold_us=699.458 invokes=50
+mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=134.910 runs=9
+mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=531.066 runs=9 top1_correct=10 top1_total=10
+mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=566.977 runs=9 top1_correct=10 top1_total=10
+mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=146.350 runs=9
+mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=188.556 runs=9
+mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=473.226 runs=9 top1_correct=10 top1_total=10
+mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=cnn_int8 backend=builtin-ref mean_us=456.098 runs=9 top1_correct=10 top1_total=10
+mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference mean_us=190.960 runs=9
+mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=reference top1_correct=7 top1_total=10 top1_pct=70.0 ten_image_mean_us=7812.212 warm_median_us=8077.291 warm_mean_us=8023.298 cold_us=7924.917 invokes=50
+mode=ref order=A:nk→tf BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=builtin-ref threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=27562.367 warm_median_us=28695.771 warm_mean_us=28663.680 cold_us=28101.750 invokes=50
+mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=tflite model=mobilenetv4_imagenet dtype=int8 backend=builtin-ref threads=1 top1_correct=8 top1_total=10 top1_pct=80.0 ten_image_mean_us=28674.679 warm_median_us=28351.730 warm_mean_us=27811.772 cold_us=28366.333 invokes=50
+mode=ref order=B:tf→nk BENCHMARK_SUMMARY runtime=netkit model=mobilenetv4_imagenet dtype=int8 backend=reference top1_correct=7 top1_total=10 top1_pct=70.0 ten_image_mean_us=7601.775 warm_median_us=7639.333 warm_mean_us=7734.523 cold_us=7857.667 invokes=50
