@@ -16,7 +16,11 @@ Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and
 |------------|---------------|
 | ![netkit int8 peer suite](benchmark/linkedin/netkit_linkedin_int8_suite.png) | ![netkit float32 peer suite](benchmark/linkedin/netkit_linkedin_float32_suite.png) |
 
-**MCU int8 (NUCLEO-F446RE @ 180 MHz; 10×10; all 10/10)** — netkit embed vs TFLM vs microTVM:
+### MCU — NUCLEO-F446RE @ 180 MHz
+
+netkit embed vs TFLM vs microTVM. Methodology: 10×10; discard first invoke. Logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/).
+
+#### Int8 (all 10/10)
 
 | Model | Mode | netkit | TFLM | microTVM |
 |-------|------|-------:|-----:|---------:|
@@ -25,45 +29,65 @@ Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and
 | MNIST CNN | reference | **336.2 ms** | 2593.5 ms | 343.0 ms |
 | MNIST DS-CNN | reference | **140.3 ms** | 826.8 ms | 236.0 ms |
 
-Canonical logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/).
+#### Float32
 
-**MPU (Raspberry Pi Zero 2 W, aarch64; order-avg warm latency)** — netkit vs TF Lite (XNNPACK ON / OFF):
+Deferred on this board — MNIST CNN / DS-CNN float models exceed 512 KiB flash. On-device digit peers remain int8.
+
+### MPU — Raspberry Pi Zero 2 W (aarch64)
+
+netkit vs TF Lite (XNNPACK ON / OFF). Order-averaged warm latency. Logs: [`benchmark/host_ab_suite_results_int8_pi_zero2w.txt`](benchmark/host_ab_suite_results_int8_pi_zero2w.txt), [`benchmark/host_ab_suite_results_float32_pi_zero2w.txt`](benchmark/host_ab_suite_results_float32_pi_zero2w.txt).
+
+#### Int8
 
 | Model | Mode | netkit | TF Lite |
 |-------|------|-------:|--------:|
-| MNIST CNN f32 | xnn | 1.66 ms | 1.78 ms |
-| MNIST DS-CNN f32 | xnn | 1.22 ms | 1.33 ms |
-| MobileNetV4-Small ImageNet f32 | xnn | 100.0 ms | 100.7 ms |
-| MNIST CNN f32 | ref | 14.4 ms | 22.3 ms |
-| MNIST DS-CNN f32 | ref | 7.7 ms | 12.1 ms |
-| MobileNetV4-Small ImageNet f32 | ref | 1056 ms | 1342 ms |
-| MNIST CNN int8 | xnn | 1.09 ms | 1.11 ms |
-| MNIST DS-CNN int8 | xnn | 0.61 ms | 0.62 ms |
-| MobileNetV4-Small ImageNet int8 | xnn | 70.1 ms | 70.0 ms |
-| MNIST CNN int8 | ref | 5.55 ms | 15.2 ms |
-| MNIST DS-CNN int8 | ref | 5.29 ms | 13.7 ms |
-| MobileNetV4-Small ImageNet int8 | ref | 348 ms | 783 ms |
+| MNIST CNN | xnn | 1.09 ms | 1.11 ms |
+| MNIST DS-CNN | xnn | 0.61 ms | 0.62 ms |
+| MobileNetV4-Small ImageNet | xnn | 70.1 ms | 70.0 ms |
+| MNIST CNN | ref | 5.55 ms | 15.2 ms |
+| MNIST DS-CNN | ref | 5.29 ms | 13.7 ms |
+| MobileNetV4-Small ImageNet | ref | 348 ms | 783 ms |
 
-With XNNPACK, netkit ≈ TF Lite on all six. Without XNNPACK, netkit reference beats TF Lite `BUILTIN_REF` on all six. Logs: [`benchmark/host_ab_suite_results_float32_pi_zero2w.txt`](benchmark/host_ab_suite_results_float32_pi_zero2w.txt), [`benchmark/host_ab_suite_results_int8_pi_zero2w.txt`](benchmark/host_ab_suite_results_int8_pi_zero2w.txt).
+#### Float32
 
-**Host CPU three-way (Apple Silicon; warm latency)** — netkit vs TF Lite vs ONNX Runtime (XNNPACK ON / OFF):
+| Model | Mode | netkit | TF Lite |
+|-------|------|-------:|--------:|
+| MNIST CNN | xnn | 1.66 ms | 1.78 ms |
+| MNIST DS-CNN | xnn | 1.22 ms | 1.33 ms |
+| MobileNetV4-Small ImageNet | xnn | 100.0 ms | 100.7 ms |
+| MNIST CNN | ref | 14.4 ms | 22.3 ms |
+| MNIST DS-CNN | ref | 7.7 ms | 12.1 ms |
+| MobileNetV4-Small ImageNet | ref | 1056 ms | 1342 ms |
+
+With XNNPACK, netkit ≈ TF Lite. Without XNNPACK, netkit reference beats TF Lite `BUILTIN_REF` on all six (int8 and float32).
+
+### CPU — Apple Silicon (host three-way)
+
+netkit vs TF Lite vs ONNX Runtime (XNNPACK ON / OFF). Warm latency. Full tables: [`benchmark/host_ab_suite_results_int8.txt`](benchmark/host_ab_suite_results_int8.txt), [`benchmark/host_ab_suite_results_float32.txt`](benchmark/host_ab_suite_results_float32.txt), [docs/STATUS.md](docs/STATUS.md). Scripts: [benchmark/README.md](benchmark/README.md).
+
+#### Int8
 
 | Model | Mode | netkit | TF Lite | ORT |
 |-------|------|-------:|--------:|----:|
-| MNIST CNN f32 | xnn | 30.5 µs | 50.0 µs | 150 µs |
-| MNIST DS-CNN f32 | xnn | 28.6 µs | 32.3 µs | 44.0 µs |
-| MobileNetV4-Small ImageNet f32 | xnn | 1.06 ms | 1.08 ms | 4.99 ms |
-| MNIST CNN f32 | ref | 483 µs | 1.06 ms | 84.1 µs |
-| MNIST DS-CNN f32 | ref | 298 µs | 428 µs | 78.2 µs |
-| MobileNetV4-Small ImageNet f32 | ref | 32.1 ms | 61.6 ms | 7.44 ms |
-| MNIST CNN int8 | xnn | 28.8 µs | 20.5 µs | 36.0 µs |
-| MNIST DS-CNN int8 | xnn | 22.3 µs | 21.4 µs | 25.4 µs |
-| MobileNetV4-Small ImageNet int8 | xnn | 0.67 ms | 0.69 ms | 1.68 ms |
-| MNIST CNN int8 | ref | 137 µs | 546 µs | 37.0 µs |
-| MNIST DS-CNN int8 | ref | 205 µs | 450 µs | 31.8 µs |
-| MobileNetV4-Small ImageNet int8 | ref | 7.42 ms | 28.3 ms | 1.63 ms |
+| MNIST CNN | xnn | 28.8 µs | 20.5 µs | 36.0 µs |
+| MNIST DS-CNN | xnn | 22.3 µs | 21.4 µs | 25.4 µs |
+| MobileNetV4-Small ImageNet | xnn | 0.67 ms | 0.69 ms | 1.68 ms |
+| MNIST CNN | ref | 137 µs | 546 µs | 37.0 µs |
+| MNIST DS-CNN | ref | 205 µs | 450 µs | 31.8 µs |
+| MobileNetV4-Small ImageNet | ref | 7.42 ms | 28.3 ms | 1.63 ms |
 
-With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the production peer. TF Lite OFF is `BUILTIN_REF` (slowest path); ORT OFF stays on **MLAS** and is still faster on all six, but with XNNPACK ON those optimized builtins / MLAS paths are moot. **MLAS is not needed for netkit.** Full tables: [`benchmark/host_ab_suite_results_float32.txt`](benchmark/host_ab_suite_results_float32.txt), [`benchmark/host_ab_suite_results_int8.txt`](benchmark/host_ab_suite_results_int8.txt), [docs/STATUS.md](docs/STATUS.md). Scripts: [benchmark/README.md](benchmark/README.md).
+#### Float32
+
+| Model | Mode | netkit | TF Lite | ORT |
+|-------|------|-------:|--------:|----:|
+| MNIST CNN | xnn | 30.5 µs | 50.0 µs | 150 µs |
+| MNIST DS-CNN | xnn | 28.6 µs | 32.3 µs | 44.0 µs |
+| MobileNetV4-Small ImageNet | xnn | 1.06 ms | 1.08 ms | 4.99 ms |
+| MNIST CNN | ref | 483 µs | 1.06 ms | 84.1 µs |
+| MNIST DS-CNN | ref | 298 µs | 428 µs | 78.2 µs |
+| MobileNetV4-Small ImageNet | ref | 32.1 ms | 61.6 ms | 7.44 ms |
+
+With XNNPACK ON, netkit ≈ TF Lite and beats ORT on all six — that is the production peer. TF Lite OFF is `BUILTIN_REF` (slowest path); ORT OFF stays on **MLAS** and is still faster on all six, but with XNNPACK ON those optimized builtins / MLAS paths are moot. **MLAS is not needed for netkit.**
 
 ## Documentation
 
