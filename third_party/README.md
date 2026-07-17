@@ -33,6 +33,8 @@ When enabled (`NETKIT_XNNPACK=1`, default on **cpu** and **any MPU**), netkit us
 - **float32** `LayerFast`: conv2d, depthwise conv, max/avg pool, fully-connected (ReLU/ReLU6 clamp)
 - **int8 (qs8)**: same ops via `XnnpackQuant` in the quantized plan / `QuantOps` path (tried before CMSIS-NN / reference)
 
+**MLAS is not needed for netkit** (host production is XNNPACK; see [docs/STATUS.md](../docs/STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime)).
+
 MCU builds force `NETKIT_XNNPACK=0`. Forcing `=1` on MCU is rejected (Make override / compile error).
 
 ## Fetching

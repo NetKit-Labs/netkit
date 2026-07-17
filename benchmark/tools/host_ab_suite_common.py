@@ -1,14 +1,17 @@
-"""Shared host A/B suite harness (netkit vs TF Lite).
+"""Shared host three-way suite harness (netkit vs TF Lite vs ONNX Runtime).
 
 Fairness policy (cold-start / rebuild bias removed):
   1. Pre-build every netkit binary before any timed run.
   2. For every timed slot: run the exact command twice — discard the first
      process (still warming I-cache / runtime), keep only the second.
-  3. Before each order pass, also warm the opposite runtime so the upcoming
+  3. Before each order pass, prime a different runtime so the upcoming
      first-to-run side is hot when its kept (2nd) process starts.
   4. Timed metrics come from already-built binaries / Python benches only.
-  5. Order swaps (netkit→TF Lite, then TF Lite→netkit).
+  5. Order swaps: Pass A netkit→TF Lite→ORT; Pass B ORT→TF Lite→netkit.
   6. LiteRT-matched -O3 flags for netkit (BENCH_FLAG_PROFILE=tflite).
+     ORT is built from source with the same gcc/g++ / -O3 / -fpermissive /
+     Darwin -ld_classic policy (tools/build_onnxruntime_litert_matched.sh)
+     plus --use_xnnpack. TF Lite remains the published LiteRT wheel.
   7. Within each kept process, benches never report cold inference:
      MNIST CNN / DS-CNN discard run 0 and image 0 of every run;
      MobileNetV4-Small ImageNet warm_mean discards the entire first image pass.
@@ -17,11 +20,11 @@ Models (display names):
   cnn      — MNIST digit CNN
   cnn_dw   — MNIST digit DS-CNN (depthwise-separable peer)
   imagenet — MobileNetV4-Conv-Small on ImageNet (10-class fixture)
-  yolox    — YOLOX MNv4-PAFPN detect @ 320² (float32)
+  yolox    — YOLOX MNv4-PAFPN detect @ 320² (float32; netkit+TF only)
 
 Flash/RAM (MCU-style): netkit bench ELF TEXT/DATA minus hard-coded test-image
-`.o` fixtures; TF Lite = core LiteRT CPU libs. Models (`.nk` / `.tflite`) and
-fixture images are excluded — production would not embed those vectors.
+`.o` fixtures; TF Lite = core LiteRT CPU libs; ORT = libonnxruntime*. Models
+(`.nk` / `.tflite` / `.onnx`) and fixture images are excluded.
 """
 
 from __future__ import annotations
@@ -41,7 +44,10 @@ ROOT = Path(__file__).resolve().parents[2]
 NETKIT = ROOT / "benchmark" / "netkit"
 TFLITE = ROOT / "benchmark" / "tflite"
 TFLITE_PY = TFLITE / ".venv" / "bin" / "python"
+ORT = ROOT / "benchmark" / "onnxruntime"
+ORT_PY = ORT / ".venv" / "bin" / "python"
 SUMMARY_RE = re.compile(r"^BENCHMARK_SUMMARY\s+(.*)$", re.M)
+RUNTIMES = ("netkit", "tflite", "onnxruntime")
 
 CNN_RUNS = 10
 
@@ -88,23 +94,37 @@ class RunResult:
 
 @dataclass
 class PairAvg:
+    """Order-averaged latencies for one model×mode (three runtimes)."""
+
     model: str
     mode: str  # "xnn" | "ref"
     netkit_us: float
     tflite_us: float
+    ort_us: float
     metric_name: str
     netkit_flash_bytes: int = 0
     tflite_flash_bytes: int = 0
+    ort_flash_bytes: int = 0
     netkit_ram_bytes: int = 0
     tflite_ram_bytes: int = 0
+    ort_ram_bytes: int = 0
     netkit_runs: list[float] = field(default_factory=list)
     tflite_runs: list[float] = field(default_factory=list)
+    ort_runs: list[float] = field(default_factory=list)
 
     @property
     def speedup(self) -> float:
+        """TF ÷ netkit (legacy column name)."""
         if self.netkit_us <= 0:
             return float("nan")
         return self.tflite_us / self.netkit_us
+
+    @property
+    def ort_speedup(self) -> float:
+        """ORT ÷ netkit."""
+        if self.netkit_us <= 0:
+            return float("nan")
+        return self.ort_us / self.netkit_us
 
     @property
     def flash_ratio(self) -> float:
@@ -121,19 +141,26 @@ class PairAvg:
 
 @dataclass(frozen=True)
 class CompareMode:
-    """One A/B slot: netkit build + TF Lite resolver/delegate combination."""
+    """One suite slot: netkit + TF Lite + ORT XNNPACK ON/OFF combination."""
 
     key: str
     title: str
     netkit_xnn: bool
     tflite_args: tuple[str, ...]
+    ort_args: tuple[str, ...]
 
 
-# xnn: both sides XNNPACK
-# ref: both sides reference (TF BUILTIN_REF)
+# xnn: all three XNNPACK
+# ref: netkit reference / TF BUILTIN_REF / ORT CPU EP only
 COMPARE_MODES: tuple[CompareMode, ...] = (
-    CompareMode("xnn", "XNNPACK ON", True, ()),
-    CompareMode("ref", "XNNPACK OFF (reference)", False, ("--no-xnnpack",)),
+    CompareMode("xnn", "XNNPACK ON", True, (), ()),
+    CompareMode(
+        "ref",
+        "XNNPACK OFF (reference)",
+        False,
+        ("--no-xnnpack",),
+        ("--no-xnnpack",),
+    ),
 )
 
 FLOAT32 = DtypeProfile(name="float32", tag="f32", header_label="FLOAT32")
@@ -282,9 +309,68 @@ def _tflite_runtime_flash_ram() -> tuple[int, int]:
     return flash, ram
 
 
+def _ort_runtime_lib_paths() -> list[Path]:
+    """Core ORT shared libs from the LiteRT-matched venv (excludes models)."""
+    site_roots = list((ORT / ".venv").glob("lib/python*/site-packages/onnxruntime"))
+    if not site_roots:
+        return []
+    found: list[Path] = []
+    for root in site_roots:
+        # capi holds libonnxruntime*.dylib / .so
+        for p in root.rglob("*"):
+            if not p.is_file():
+                continue
+            name = p.name
+            if name.startswith("libonnxruntime") and p.suffix in {".so", ".dylib"}:
+                found.append(p)
+            elif name.startswith("onnxruntime_pybind11_state") and p.suffix in {
+                ".so",
+                ".dylib",
+            }:
+                found.append(p)
+    uniq: dict[Path, Path] = {p.resolve(): p for p in found}
+    return list(uniq.values())
+
+
+def _ort_runtime_flash_ram() -> tuple[int, int]:
+    flash = 0
+    ram = 0
+    for lib in _ort_runtime_lib_paths():
+        f, r = _binary_flash_ram(lib)
+        flash += f
+        ram += r
+    return flash, ram
+
+
 def _ensure_venv() -> None:
     if not TFLITE_PY.is_file():
         _run(["make", "venv"], cwd=TFLITE)
+
+
+def _ensure_ort() -> None:
+    if not ORT_PY.is_file():
+        raise SystemExit(
+            "missing ORT venv — build with:\n"
+            "  ./tools/build_onnxruntime_litert_matched.sh"
+        )
+    proc = subprocess.run(
+        [
+            str(ORT_PY),
+            "-c",
+            "import onnxruntime as o; "
+            "ps=o.get_available_providers(); "
+            "assert any(p.lower()=='xnnpackexecutionprovider' for p in ps), ps",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(
+            "ORT venv lacks XnnpackExecutionProvider — rebuild with:\n"
+            "  ./tools/build_onnxruntime_litert_matched.sh\n"
+            + (proc.stderr or proc.stdout or "")
+        )
 
 
 def ensure_assets_float32(models: list[str] | None = None) -> None:
@@ -295,6 +381,8 @@ def ensure_assets_float32(models: list[str] | None = None) -> None:
             [
                 ROOT / "models" / "mnist_cnn.nk",
                 ROOT / "models" / "mnist_cnn_dw.nk",
+                ORT / "models" / "mnist_cnn.onnx",
+                ORT / "models" / "mnist_cnn_dw.onnx",
                 ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn.tflite",
                 ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_dw.tflite",
                 ROOT / "benchmark" / "tflm" / "generated" / "cnn_dw" / "mnist_cnn_test_images.cc",
@@ -304,6 +392,7 @@ def ensure_assets_float32(models: list[str] | None = None) -> None:
         needed.extend(
             [
                 ROOT / "models" / "mobilenetv4_imagenet_f32.nk",
+                ORT / "models" / "mobilenetv4_imagenet_f32.onnx",
                 ROOT / "benchmark" / "tflm" / "generated" / "mobilenetv4_imagenet_f32.tflite",
             ]
         )
@@ -317,8 +406,18 @@ def ensure_assets_float32(models: list[str] | None = None) -> None:
         )
     missing = [p for p in needed if not p.is_file()]
     if missing:
-        raise SystemExit("missing assets:\n  " + "\n  ".join(str(p) for p in missing))
+        hint = ""
+        if any(p.name.endswith(".onnx") for p in missing):
+            hint = (
+                "\nExport ONNX with:\n"
+                "  python3 benchmark/tools/export_host_onnx_assets.py --float32"
+            )
+        raise SystemExit(
+            "missing assets:\n  " + "\n  ".join(str(p) for p in missing) + hint
+        )
     _ensure_venv()
+    if any(m != "yolox" for m in models):
+        _ensure_ort()
 
 
 def ensure_assets_int8() -> None:
@@ -326,6 +425,9 @@ def ensure_assets_int8() -> None:
         ROOT / "models" / "mnist_cnn_int8.nk",
         ROOT / "models" / "mnist_cnn_dw_int8.nk",
         ROOT / "models" / "mobilenetv4_imagenet_int8.nk",
+        ORT / "models" / "mnist_cnn_int8.onnx",
+        ORT / "models" / "mnist_cnn_dw_int8.onnx",
+        ORT / "models" / "mobilenetv4_imagenet_int8.onnx",
         ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_int8.tflite",
         ROOT / "benchmark" / "tflm" / "generated" / "mnist_cnn_dw_int8.tflite",
         ROOT
@@ -343,8 +445,17 @@ def ensure_assets_int8() -> None:
     ]
     missing = [p for p in needed if not p.is_file()]
     if missing:
-        raise SystemExit("missing assets:\n  " + "\n  ".join(str(p) for p in missing))
+        hint = ""
+        if any(p.name.endswith(".onnx") for p in missing):
+            hint = (
+                "\nExport ONNX with:\n"
+                "  python3 benchmark/tools/export_host_onnx_assets.py --int8"
+            )
+        raise SystemExit(
+            "missing assets:\n  " + "\n  ".join(str(p) for p in missing) + hint
+        )
     _ensure_venv()
+    _ensure_ort()
 
 
 def _make_common(cfg: SuiteCfg, *, xnnpack: bool) -> list[str]:
@@ -558,6 +669,81 @@ def _tflite_cmd(model: str, cfg: SuiteCfg, *, mode: CompareMode) -> list[str]:
     raise ValueError(model)
 
 
+def _ort_cmd(model: str, cfg: SuiteCfg, *, mode: CompareMode) -> list[str]:
+    """ONNX Runtime peer command (no yolox in ORT suite yet)."""
+    if model == "yolox":
+        raise ValueError("onnxruntime peer does not include yolox yet")
+    py = str(ORT_PY)
+    backend_args = list(mode.ort_args)
+    if cfg.dtype.name == "float32":
+        if model == "cnn":
+            return [
+                py,
+                str(ORT / "mnist_cnn_bench.py"),
+                "--num-threads",
+                "1",
+                "--runs",
+                str(CNN_RUNS),
+                *backend_args,
+            ]
+        if model == "cnn_dw":
+            return [
+                py,
+                str(ORT / "mnist_cnn_bench.py"),
+                "--num-threads",
+                "1",
+                "--runs",
+                str(CNN_RUNS),
+                "--model",
+                str(ORT / "models" / "mnist_cnn_dw.onnx"),
+                "--nk",
+                str(ROOT / "models" / "mnist_cnn_dw.nk"),
+                *backend_args,
+            ]
+        if model == "imagenet":
+            return [
+                py,
+                str(ORT / "mobilenetv4_imagenet_bench.py"),
+                "--num-threads",
+                "1",
+                *backend_args,
+            ]
+    else:
+        if model == "cnn":
+            return [
+                py,
+                str(ORT / "mnist_cnn_int8_bench.py"),
+                "--num-threads",
+                "1",
+                "--runs",
+                str(CNN_RUNS),
+                *backend_args,
+            ]
+        if model == "cnn_dw":
+            return [
+                py,
+                str(ORT / "mnist_cnn_int8_bench.py"),
+                "--num-threads",
+                "1",
+                "--runs",
+                str(CNN_RUNS),
+                "--model",
+                str(ORT / "models" / "mnist_cnn_dw_int8.onnx"),
+                "--nk",
+                str(ROOT / "models" / "mnist_cnn_dw.nk"),
+                *backend_args,
+            ]
+        if model == "imagenet":
+            return [
+                py,
+                str(ORT / "mobilenetv4_imagenet_int8_bench.py"),
+                "--num-threads",
+                "1",
+                *backend_args,
+            ]
+    raise ValueError(model)
+
+
 def _prebuild(models: list[str], cfg: SuiteCfg) -> None:
     print(
         f"\n======== PREBUILD (untimed, {cfg.dtype.header_label}) ========",
@@ -581,10 +767,7 @@ def _prebuild(models: list[str], cfg: SuiteCfg) -> None:
 
 
 def _warmup_runtime(model: str, runtime: str, cfg: SuiteCfg, *, mode: CompareMode) -> None:
-    if runtime == "netkit":
-        _run(_netkit_run_cmd(model, cfg, xnnpack=mode.netkit_xnn), cwd=ROOT)
-    else:
-        _run(_tflite_cmd(model, cfg, mode=mode), cwd=ROOT)
+    _execute_runtime(model, runtime, cfg, mode=mode)
 
 
 def _execute_runtime(
@@ -592,7 +775,11 @@ def _execute_runtime(
 ) -> tuple[str, float]:
     if runtime == "netkit":
         return _run(_netkit_run_cmd(model, cfg, xnnpack=mode.netkit_xnn), cwd=ROOT)
-    return _run(_tflite_cmd(model, cfg, mode=mode), cwd=ROOT)
+    if runtime == "tflite":
+        return _run(_tflite_cmd(model, cfg, mode=mode), cwd=ROOT)
+    if runtime == "onnxruntime":
+        return _run(_ort_cmd(model, cfg, mode=mode), cwd=ROOT)
+    raise ValueError(runtime)
 
 
 def _one_runtime(
@@ -637,6 +824,8 @@ def _one_runtime(
 def run_suite(
     models: list[str], cfg: SuiteCfg, *, do_warmup: bool = True
 ) -> tuple[list[RunResult], list[PairAvg]]:
+    # YOLOX remains netkit↔TF only (no ORT peer yet).
+    ort_models = [m for m in models if m != "yolox"]
     _prebuild(models, cfg)
 
     results: list[RunResult] = []
@@ -650,95 +839,117 @@ def run_suite(
         for model in models:
             label = MODEL_LABELS.get(model, model)
             print(f"\n-- model={label} ({model}) --", flush=True)
+            use_ort = model in ort_models
 
             if do_warmup:
+                prime = "onnxruntime" if use_ort else "tflite"
                 print(
-                    f"  prime opposite (tflite) before Pass A ({label}) ...",
+                    f"  prime ({prime}) before Pass A ({label}) ...",
                     flush=True,
                 )
-                _warmup_runtime(model, "tflite", cfg, mode=mode)
+                _warmup_runtime(model, prime, cfg, mode=mode)
+
             a_nk = _one_runtime(
-                model,
-                "netkit",
-                cfg,
-                mode=mode,
-                order="A:nk→tf",
+                model, "netkit", cfg, mode=mode, order="A:nk→tf→ort",
                 discard_first=do_warmup,
             )
             a_tf = _one_runtime(
-                model,
-                "tflite",
-                cfg,
-                mode=mode,
-                order="A:nk→tf",
+                model, "tflite", cfg, mode=mode, order="A:nk→tf→ort",
                 discard_first=do_warmup,
             )
+            a_ort = None
+            if use_ort:
+                a_ort = _one_runtime(
+                    model, "onnxruntime", cfg, mode=mode, order="A:nk→tf→ort",
+                    discard_first=do_warmup,
+                )
 
             if do_warmup:
                 print(
-                    f"  prime opposite (netkit) before Pass B ({label}) ...",
+                    f"  prime (netkit) before Pass B ({label}) ...",
                     flush=True,
                 )
                 _warmup_runtime(model, "netkit", cfg, mode=mode)
+
+            b_ort = None
+            if use_ort:
+                b_ort = _one_runtime(
+                    model, "onnxruntime", cfg, mode=mode, order="B:ort→tf→nk",
+                    discard_first=do_warmup,
+                )
             b_tf = _one_runtime(
-                model,
-                "tflite",
-                cfg,
-                mode=mode,
-                order="B:tf→nk",
+                model, "tflite", cfg, mode=mode, order="B:ort→tf→nk",
                 discard_first=do_warmup,
             )
             b_nk = _one_runtime(
-                model,
-                "netkit",
-                cfg,
-                mode=mode,
-                order="B:tf→nk",
+                model, "netkit", cfg, mode=mode, order="B:ort→tf→nk",
                 discard_first=do_warmup,
             )
 
-            results.extend([a_nk, a_tf, b_tf, b_nk])
+            results.extend([a_nk, a_tf])
+            if a_ort is not None:
+                results.append(a_ort)
+            if b_ort is not None:
+                results.append(b_ort)
+            results.extend([b_tf, b_nk])
 
             nk_flash, nk_ram = _netkit_runtime_flash_ram(
                 model, cfg, xnnpack=mode.netkit_xnn
             )
             tf_flash, tf_ram = _tflite_runtime_flash_ram()
+            ort_flash, ort_ram = (
+                _ort_runtime_flash_ram() if use_ort else (0, 0)
+            )
+            ort_us = (
+                (a_ort.metric_us + b_ort.metric_us) / 2.0
+                if a_ort is not None and b_ort is not None
+                else float("nan")
+            )
+            ort_runs = (
+                [a_ort.metric_us, b_ort.metric_us]
+                if a_ort is not None and b_ort is not None
+                else []
+            )
             pair = PairAvg(
                 model=model,
                 mode=mode.key,
                 netkit_us=(a_nk.metric_us + b_nk.metric_us) / 2.0,
                 tflite_us=(a_tf.metric_us + b_tf.metric_us) / 2.0,
+                ort_us=ort_us,
                 metric_name=a_nk.metric_name,
                 netkit_flash_bytes=nk_flash,
                 tflite_flash_bytes=tf_flash,
+                ort_flash_bytes=ort_flash,
                 netkit_ram_bytes=nk_ram,
                 tflite_ram_bytes=tf_ram,
+                ort_ram_bytes=ort_ram,
                 netkit_runs=[a_nk.metric_us, b_nk.metric_us],
                 tflite_runs=[a_tf.metric_us, b_tf.metric_us],
+                ort_runs=ort_runs,
             )
             avgs.append(pair)
-            spread_nk = abs(a_nk.metric_us - b_nk.metric_us)
-            spread_tf = abs(a_tf.metric_us - b_tf.metric_us)
             print(
                 f"  order-avg {label:22s} netkit={pair.netkit_us:.3f}  "
-                f"tflite={pair.tflite_us:.3f}  speedup(TF÷nk)={pair.speedup:.3f}×  "
-                f"|Δnk|={spread_nk:.3f} |Δtf|={spread_tf:.3f}",
+                f"tflite={pair.tflite_us:.3f}  ort={pair.ort_us:.3f}  "
+                f"TF÷nk={pair.speedup:.3f}× ORT÷nk={pair.ort_speedup:.3f}×",
                 flush=True,
             )
             print(
                 f"  footprint {label:22s} "
                 f"flash nk={_fmt_bytes(pair.netkit_flash_bytes)} "
                 f"tf={_fmt_bytes(pair.tflite_flash_bytes)} "
-                f"(TF÷nk={pair.flash_ratio:.3f}×)  "
+                f"ort={_fmt_bytes(pair.ort_flash_bytes)}  "
                 f"ram nk={_fmt_bytes(pair.netkit_ram_bytes)} "
                 f"tf={_fmt_bytes(pair.tflite_ram_bytes)} "
-                f"(TF÷nk={pair.ram_ratio:.3f}×)",
+                f"ort={_fmt_bytes(pair.ort_ram_bytes)}",
                 flush=True,
             )
     return results, avgs
 
 
 def _fmt_us(us: float) -> str:
+    if us != us:  # NaN
+        return f"{'n/a':>10s}"
     if us >= 1000.0:
         return f"{us:10.1f} us ({us / 1000.0:7.3f} ms)"
     return f"{us:10.3f} us"
@@ -760,10 +971,13 @@ def print_report(
     dtype: DtypeProfile,
 ) -> None:
     print("\n" + "=" * 78)
-    print(f"HOST A/B COMPLETE RESULTS  ({dtype.header_label} testing, CPU)")
+    print(
+        f"HOST THREE-WAY COMPLETE RESULTS  ({dtype.header_label} testing, CPU)"
+    )
+    print("netkit vs TF Lite / LiteRT vs ONNX Runtime")
     print(
         "Prebuild + discard first process per timed slot (keep 2nd); "
-        "order-averaged over 2 swaps"
+        "order-averaged over 2 swaps (nk→tf→ort / ort→tf→nk)"
     )
     print(
         "Models: MNIST CNN (digit classifier), MNIST DS-CNN (depthwise-separable "
@@ -778,45 +992,59 @@ def print_report(
     print(
         "Flash/RAM = MCU-style runtime image only "
         "(netkit: bench ELF TEXT/DATA minus hard-coded test-image .o; "
-        "tflite: core LiteRT CPU libs TEXT/DATA). "
-        "Models (`.nk` / `.tflite`) and fixture images are excluded."
+        "tflite: core LiteRT CPU libs; ort: libonnxruntime*). "
+        "Models (`.nk` / `.tflite` / `.onnx`) and fixture images are excluded."
     )
-    print("Ratio = TF ÷ netkit (same as latency).")
-    print("Modes: xnn = both XNNPACK; ref = both reference.")
+    print("Ratios = peer ÷ netkit (latency).")
+    print(
+        "Modes: xnn = XNNPACK on all three; ref = netkit reference / "
+        "TF BUILTIN_REF / ORT CPU EP only."
+    )
+    print(
+        "ORT built with tools/build_onnxruntime_litert_matched.sh "
+        "(gcc/g++, -O3, -fpermissive, Darwin -ld_classic, --use_xnnpack)."
+    )
     print("=" * 78)
 
     for mode in COMPARE_MODES:
         print(f"\n### {mode.title}\n")
         print(
-            f"{'model':22s} {'metric':14s} {'netkit':22s} {'tflite':22s} "
-            f"{'TF÷nk':>10s}"
+            f"{'model':22s} {'metric':12s} {'netkit':16s} {'tflite':16s} "
+            f"{'ort':16s} {'TF÷nk':>8s} {'ORT÷nk':>8s}"
         )
-        print("-" * 88)
+        print("-" * 108)
         for p in avgs:
             if p.mode != mode.key:
                 continue
             label = MODEL_LABELS.get(p.model, p.model)
             print(
-                f"{label:22s} {p.metric_name:14s} "
-                f"{_fmt_us(p.netkit_us):22s} {_fmt_us(p.tflite_us):22s} "
-                f"{p.speedup:9.3f}×"
+                f"{label:22s} {p.metric_name:12s} "
+                f"{_fmt_us(p.netkit_us):16s} {_fmt_us(p.tflite_us):16s} "
+                f"{_fmt_us(p.ort_us):16s} "
+                f"{p.speedup:7.3f}× {p.ort_speedup:7.3f}×"
+            )
+            ort_ab = (
+                f"{p.ort_runs[0]:8.3f} / {p.ort_runs[1]:8.3f}"
+                if len(p.ort_runs) == 2
+                else "n/a"
             )
             print(
-                f"{'':22s} {'  (pass A/B)':14s} "
-                f"{p.netkit_runs[0]:8.3f} / {p.netkit_runs[1]:8.3f}     "
-                f"{p.tflite_runs[0]:8.3f} / {p.tflite_runs[1]:8.3f}"
+                f"{'':22s} {'  (pass A/B)':12s} "
+                f"{p.netkit_runs[0]:7.3f}/{p.netkit_runs[1]:7.3f}  "
+                f"{p.tflite_runs[0]:7.3f}/{p.tflite_runs[1]:7.3f}  "
+                f"{ort_ab}"
             )
             print(
-                f"{'':22s} {'flash':14s} "
-                f"{_fmt_bytes(p.netkit_flash_bytes):22s} "
-                f"{_fmt_bytes(p.tflite_flash_bytes):22s} "
-                f"{p.flash_ratio:9.3f}×"
+                f"{'':22s} {'flash':12s} "
+                f"{_fmt_bytes(p.netkit_flash_bytes):16s} "
+                f"{_fmt_bytes(p.tflite_flash_bytes):16s} "
+                f"{_fmt_bytes(p.ort_flash_bytes):16s}"
             )
             print(
-                f"{'':22s} {'ram':14s} "
-                f"{_fmt_bytes(p.netkit_ram_bytes):22s} "
-                f"{_fmt_bytes(p.tflite_ram_bytes):22s} "
-                f"{p.ram_ratio:9.3f}×"
+                f"{'':22s} {'ram':12s} "
+                f"{_fmt_bytes(p.netkit_ram_bytes):16s} "
+                f"{_fmt_bytes(p.tflite_ram_bytes):16s} "
+                f"{_fmt_bytes(p.ort_ram_bytes):16s}"
             )
         print()
 

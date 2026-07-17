@@ -4,7 +4,7 @@ netkit builds for ISA-qualified deployment profiles. Select one with **`NETKIT_T
 
 | Target | Makefile / CMake | Role | Default backends |
 |--------|------------------|------|------------------|
-| **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev, debug, CI | XNNPACK on (any host ISA); CMSIS-NN off |
+| **CPU** | `NETKIT_TARGET=cpu` (default) | Desktop dev, debug, CI | XNNPACK on (any host ISA); CMSIS-NN off; **no MLAS** (not needed — see [STATUS.md](STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime)) |
 | **MCU_ARM** | `NETKIT_TARGET=mcu_arm` | Arm microcontroller firmware | CMSIS-NN (int8 production); XNNPACK forbidden |
 | **MPU_ARM** | `NETKIT_TARGET=mpu_arm` | Arm microprocessor / RTOS | XNNPACK |
 | **MCU_RISC** | `NETKIT_TARGET=mcu_risc` | RISC-V MCU | generic kernels only (fast; CMSIS + XNNPACK forbidden) |

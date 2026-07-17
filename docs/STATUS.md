@@ -6,15 +6,15 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 
 | Dtype | Status | Notes |
 |-------|--------|-------|
-| **float32** | **Complete** | Default path on cpu / MCU / MPU; ImageNet MobileNetV4, MNIST CNN/MLP, fused blocks |
-| **int8** | **Complete** | End-to-end int8 I/O (no C++ float↔int8); MNIST CNN/MLP MCU (CMSIS-NN); host/MPU via XNNPACK qs8 or QuantOps reference; ImageNet MNv4 int8 |
+| **float32** | **Complete** | Default path on cpu / MCU / MPU; ImageNet MobileNetV4, MNIST CNN / DS-CNN / MLP, fused blocks |
+| **int8** | **Complete** | End-to-end int8 I/O (no C++ float↔int8); MNIST CNN / DS-CNN / MLP MCU (CMSIS-NN); host/MPU via XNNPACK qs8 or QuantOps reference; ImageNet MNv4 int8 |
 | float16 / int16 / int4 | Planned (Phase 2) | See [DATATYPES.md](DATATYPES.md) |
 
 ## Target maturity
 
 | Target | Role | Kernels | Maturity |
 |--------|------|---------|----------|
-| **cpu** | Desktop / CI / peer benches | XNNPACK (default); reference fallback | **Done** — float32 + int8 |
+| **cpu** | Desktop / CI / peer benches | XNNPACK (default); reference fallback; **no MLAS** | **Done** — float32 + int8 |
 | **mcu_arm** | Arm Cortex-M firmware | CMSIS-NN (int8 production); float32 via reference; XNNPACK **forbidden** | **Done** — float32 + int8 (NUCLEO-F446RE) |
 | **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default); CMSIS-NN off | **Done** — float32 + int8 |
 | **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Done** — float32 + int8; same XNNPACK LayerFast stack as other MPUs (XNNPACK has strong RISC-V MPU support) |
@@ -32,57 +32,64 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 
 Default **on** for cpu + any MPU; opt out with `NETKIT_MMAP=0` on RTOS / bare-metal MPU. See [ARENA.md](ARENA.md) and [BUILD_TARGETS.md](BUILD_TARGETS.md).
 
-## Host A/B suite (netkit vs TF Lite)
+## Host three-way suite (netkit vs TF Lite vs ONNX Runtime)
 
-Fair CPU peer suite on host (Apple Silicon). **Not TFLM** — TF Lite / LiteRT Python benches on the same `.tflite` assets. **TVM is not a host/CPU peer** (stock LLVM is not comparable to XNNPACK); use TVM only for MCU / microTVM.
+Fair CPU peer suite on host (Apple Silicon). **Not TFLM** — TF Lite / LiteRT Python benches + ONNX Runtime on matching model assets. **TVM is not a host/CPU peer**; use TVM only for MCU / microTVM.
 
 **CMSIS-NN is MCU-only.** Host accel ON/OFF:
 
-| Mode | netkit | TF Lite |
-|------|--------|---------|
-| **xnn** (accel ON) | XNNPACK | XNNPACK |
-| **ref** (accel OFF) | reference | `BUILTIN_REF` |
+| Mode | netkit | TF Lite | ONNX Runtime |
+|------|--------|---------|--------------|
+| **xnn** (accel ON) | XNNPACK | XNNPACK | `XNNPACKExecutionProvider` |
+| **ref** (accel OFF) | reference | `BUILTIN_REF` (intentionally slow) | `CPUExecutionProvider` (**MLAS**) |
 
 **Models:** MNIST CNN, MNIST DS-CNN, MobileNetV4-Conv-Small ImageNet — **float32 and int8**.
 
-Fairness: LiteRT-matched flags for netkit (`BENCH_FLAG_PROFILE=tflite`); prebuild; discard 1st process; order swaps; 1 thread; `NETKIT_IM2COL=0`. Same host drivers: `gcc`/`g++` (Darwin = Apple clang).
+Fairness: LiteRT-matched flags for netkit (`BENCH_FLAG_PROFILE=tflite`); prebuild; discard 1st process; order swaps `nk→tf→ort` / `ort→tf→nk`; 1 thread; `NETKIT_IM2COL=0`. Same host drivers: `gcc`/`g++` (Darwin = Apple clang). **ORT** is built from source with those same flags plus `--use_xnnpack` (`./tools/build_onnxruntime_litert_matched.sh`); stock pip wheels lack the XNNPACK EP. TF Lite remains the published LiteRT wheel. ORT int8 models are QDQ (float graph I/O).
 
 ```bash
+./tools/build_onnxruntime_litert_matched.sh          # once
+python3 benchmark/tools/export_host_onnx_assets.py --all
 python3 benchmark/tools/run_host_ab_suite_float32.py
 python3 benchmark/tools/run_host_ab_suite_int8.py
 ```
 
-Results: `benchmark/host_ab_suite_results_{int8,float32}.txt`.
+Results: `benchmark/host_ab_suite_results_{int8,float32}.txt`. ORT harness: [`benchmark/onnxruntime/`](../benchmark/onnxruntime/).
 
 ### Results (host Apple Silicon, Jul 2026)
 
-Absolute warm latency (µs). MNIST = `mean_us`; ImageNet = `warm_mean_us`.
+Absolute warm latency (µs). MNIST = `mean_us`; ImageNet = `warm_mean_us`. Full tables: `benchmark/host_ab_suite_results_{float32,int8}.txt`.
 
 #### FLOAT32
 
-| model | mode | netkit | TF Lite | TF÷nk |
-|-------|------|-------:|--------:|------:|
-| MNIST CNN | xnn | 31.0 | 31.1 | 1.00× |
-| MNIST DS-CNN | xnn | 28.2 | 30.0 | 1.06× |
-| MNv4-Small ImageNet | xnn | 1055 | 1070 | 1.01× |
-| MNIST CNN | ref | 511 | 1123 | 2.20× |
-| MNIST DS-CNN | ref | 299 | 437 | 1.46× |
-| MNv4-Small ImageNet | ref | 31830 | 60778 | 1.91× |
+| model | mode | netkit | TF Lite | ORT | TF÷nk | ORT÷nk |
+|-------|------|-------:|--------:|----:|------:|-------:|
+| MNIST CNN | xnn | 30.5 | 50.0 | 149.9 | 1.64× | 4.91× |
+| MNIST DS-CNN | xnn | 28.6 | 32.3 | 44.0 | 1.13× | 1.54× |
+| MobileNetV4-Small ImageNet | xnn | 1059 | 1083 | 4989 | 1.02× | 4.71× |
+| MNIST CNN | ref | 483 | 1061 | 84.1 | 2.20× | 0.17× |
+| MNIST DS-CNN | ref | 298 | 428 | 78.2 | 1.44× | 0.26× |
+| MobileNetV4-Small ImageNet | ref | 32069 | 61587 | 7444 | 1.92× | 0.23× |
 
 #### INT8
 
-| model | mode | netkit | TF Lite | TF÷nk |
-|-------|------|-------:|--------:|------:|
-| MNIST CNN | xnn | 20.1 | 19.9 | 0.99× |
-| MNIST DS-CNN | xnn | 22.1 | 22.8 | 1.03× |
-| MNv4-Small ImageNet | xnn | 707 | 661 | 0.93× |
-| MNIST CNN | ref | 141 | 549 | 3.90× |
-| MNIST DS-CNN | ref | 190 | 465 | 2.45× |
-| MNv4-Small ImageNet | ref | 7879 | 28238 | 3.58× |
+| model | mode | netkit | TF Lite | ORT | TF÷nk | ORT÷nk |
+|-------|------|-------:|--------:|----:|------:|-------:|
+| MNIST CNN | xnn | 28.8 | 20.5 | 36.0 | 0.71× | 1.25× |
+| MNIST DS-CNN | xnn | 22.3 | 21.4 | 25.4 | 0.96× | 1.14× |
+| MobileNetV4-Small ImageNet | xnn | 670 | 691 | 1681 | 1.03× | 2.51× |
+| MNIST CNN | ref | 137 | 546 | 37.0 | 3.98× | 0.27× |
+| MNIST DS-CNN | ref | 205 | 450 | 31.8 | 2.20× | 0.16× |
+| MobileNetV4-Small ImageNet | ref | 7420 | 28315 | 1635 | 3.82× | 0.22× |
 
-**Flash/RAM** (netkit vs TF Lite runtime image only): XNN ~1.3 MiB / 192 KiB vs LiteRT ~12.4 MiB / 752 KiB; reference ~200 KiB / 16 KiB vs same LiteRT libs.
+**Flash/RAM** (runtime image only): netkit XNN ~1.3 MiB / 192 KiB; LiteRT ~12.4 MiB / 752 KiB; ORT ~28 MiB / 160 KiB. netkit reference ~200 KiB / 16 KiB.
 
-**Takeaways:** With XNNPACK, netkit ≈ TF Lite on host. Without XNNPACK, netkit reference is substantially faster (and much smaller) than LiteRT builtin-ref.
+**Takeaways (Jul 2026 host Apple Silicon):**
+
+- **XNNPACK ON (production peer):** netkit ≈ TF Lite on all six models; netkit beats ORT XNNPACK EP on all six (about 1.1–4.9×). TF Lite edges MNIST CNN int8 clearly and DS-CNN int8 by a hair; netkit leads or ties the rest.
+- **XNNPACK OFF:** netkit reference beats TF Lite `BUILTIN_REF` on all six. ORT “ref” is **not** a slow fallback — it stays on **MLAS** (`CPUExecutionProvider`) and remains much faster than both netkit reference and TF Lite `BUILTIN_REF`. Treat ORT ref as a separate optimized CPU path, not an apples-to-apples reference peer.
+- **MLAS is not needed for netkit.** Host production is XNNPACK; netkit already matches TF Lite there. Shipping or integrating ORT’s MLAS (or a similar vendor CPU GEMM stack) is out of scope — it would only chase the non-production “accel OFF” column where ORT never turns optimization off.
+- ORT int8 assets are QDQ (float graph I/O); TF Lite optimized builtins without XNNPACK were not pursued further (XNNPACK is the fair host peer).
 
 ### MPU — Raspberry Pi Zero 2 W (aarch64, Jul 2026)
 
@@ -94,10 +101,10 @@ Same fairness policy as the host suite (discard 1st process, order swaps, 1 thre
 |-------|---------|--------|---------|-------|
 | MNIST CNN | ON | 1.66 ms | 1.78 ms | 1.07× |
 | MNIST DS-CNN | ON | 1.22 ms | 1.33 ms | 1.09× |
-| MNv4-Small ImageNet | ON | 100.0 ms | 100.7 ms | 1.01× |
+| MobileNetV4-Small ImageNet | ON | 100.0 ms | 100.7 ms | 1.01× |
 | MNIST CNN | OFF | 14.4 ms | 22.3 ms | 1.55× |
 | MNIST DS-CNN | OFF | 7.7 ms | 12.1 ms | 1.57× |
-| MNv4-Small ImageNet | OFF | 1056 ms | 1342 ms | 1.27× |
+| MobileNetV4-Small ImageNet | OFF | 1056 ms | 1342 ms | 1.27× |
 
 ImageNet float32 top-1: **9/10** both runtimes.
 
@@ -107,10 +114,10 @@ ImageNet float32 top-1: **9/10** both runtimes.
 |-------|---------|--------|---------|-------|
 | MNIST CNN | ON | 1.09 ms | 1.11 ms | 1.02× |
 | MNIST DS-CNN | ON | 0.61 ms | 0.62 ms | 1.01× |
-| MNv4-Small ImageNet | ON | 70.1 ms | 70.0 ms | ~1.00× |
+| MobileNetV4-Small ImageNet | ON | 70.1 ms | 70.0 ms | ~1.00× |
 | MNIST CNN | OFF | 5.55 ms | 15.2 ms | 2.74× |
 | MNIST DS-CNN | OFF | 5.29 ms | 13.7 ms | 2.59× |
-| MNv4-Small ImageNet | OFF | 348 ms | 783 ms | 2.25× |
+| MobileNetV4-Small ImageNet | OFF | 348 ms | 783 ms | 2.25× |
 
 MNIST int8 top-1: **10/10**. ImageNet int8 XNNPACK: **8/10** both. ImageNet int8 **reference**: netkit **7/10**, TF Lite **8/10** — the extra netkit miss is a **retrain-only** issue (weights / quant calibration), **deferred** (not a runtime parity bug; XNNPACK path already matches).
 

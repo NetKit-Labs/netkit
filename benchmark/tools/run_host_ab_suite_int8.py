@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""CPU host A/B suite: netkit vs TF Lite — INT8.
+"""CPU host three-way suite: netkit vs TF Lite vs ONNX Runtime — INT8.
 
 Models:
   - MNIST CNN (digit classifier)
   - MNIST DS-CNN (depthwise-separable digit peer)
   - MobileNetV4-Conv-Small on ImageNet (10-class fixture)
 
-Same fairness policy as host_ab_suite_common (prebuild, discard 1st process,
-order swaps, LiteRT-matched -O3).
+Same fairness policy as host_ab_suite_common. ORT int8 models are QDQ
+(export_host_onnx_assets.py --int8). ORT is source-built with LiteRT-matched
+flags + XNNPACK EP (tools/build_onnxruntime_litert_matched.sh).
 
-Sweeps XNNPACK ON/OFF (reference when XNNPACK is off).
-NETKIT_IM2COL is fixed at 0 (direct).
-Also reports MCU-style runtime flash/RAM (ELF TEXT/DATA minus fixture images
-vs LiteRT CPU libs; models excluded) with TF÷netkit ratios.
-
+Sweeps XNNPACK ON/OFF on all three peers.
 Results default: benchmark/host_ab_suite_results_int8.txt
 """
 

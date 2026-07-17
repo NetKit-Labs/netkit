@@ -71,11 +71,15 @@ Primary fair host peer for **float32** and **int8**:
 | `imagenet` | **MobileNetV4-Conv-Small** on ImageNet (10-class fixture) |
 
 ```bash
+./tools/build_onnxruntime_litert_matched.sh          # once (XNNPACK EP + LiteRT-matched flags)
+python3 benchmark/tools/export_host_onnx_assets.py --all
 python3 benchmark/tools/run_host_ab_suite_int8.py
 python3 benchmark/tools/run_host_ab_suite_float32.py
 ```
 
-Sweeps XNNPACK ON/OFF with prebuild + discarded first process + order swaps. Reports latency plus MCU-style **runtime** flash/RAM (ELF TEXT/DATA minus fixture images vs LiteRT CPU libs; models excluded), each as TF÷netkit. MNIST CNN/DS-CNN use per-invoke warm discards; MobileNetV4-Small ImageNet uses `warm_mean` (discard full first image pass). `NETKIT_IM2COL` is fixed at **0**. Preliminary numbers: [docs/STATUS.md](../docs/STATUS.md#host-ab-suite-preliminary); printable summary: [host_ab_suite_results.pdf](host_ab_suite_results.pdf). Suite infographics (MCU / MPU / CPU): [linkedin/](linkedin/).
+Three-way: **netkit vs TF Lite vs ONNX Runtime**, XNNPACK ON/OFF. Prebuild + discarded first process + order swaps (`nk→tf→ort` / `ort→tf→nk`). ORT is source-built with the same `gcc`/`g++` / `-O3` / `-fpermissive` / Darwin `-ld_classic` policy as LiteRT-matched netkit (`tools/build_onnxruntime_litert_matched.sh`); stock pip ORT lacks the XNNPACK EP. See [`benchmark/onnxruntime/`](onnxruntime/).
+
+**Ref-mode caveat:** TF Lite OFF uses `BUILTIN_REF` (intentionally slow); ORT OFF stays on **MLAS** (`CPUExecutionProvider`) and is not a slow peer. **MLAS is not needed for netkit** — host production is XNNPACK, where netkit already matches TF Lite. Numbers: [docs/STATUS.md](../docs/STATUS.md#host-three-way-suite-netkit-vs-tf-lite-vs-onnx-runtime). Suite infographics (MCU / MPU / CPU): [linkedin/](linkedin/).
 
 ## Run comparison (recommended)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CPU host A/B suite: netkit vs TF Lite — FLOAT32.
+"""CPU host three-way suite: netkit vs TF Lite vs ONNX Runtime — FLOAT32.
 
 Models:
   - MNIST CNN (digit classifier)
@@ -7,12 +7,11 @@ Models:
   - MobileNetV4-Conv-Small on ImageNet (10-class fixture)
 
 Same fairness policy as host_ab_suite_common (prebuild, discard 1st process,
-order swaps, LiteRT-matched -O3).
+order swaps, LiteRT-matched -O3). ORT is source-built with the same
+compiler/linker flags + XNNPACK EP (tools/build_onnxruntime_litert_matched.sh).
 
-Sweeps XNNPACK ON/OFF (reference when XNNPACK is off).
+Sweeps XNNPACK ON/OFF on all three peers.
 NETKIT_IM2COL is fixed at 0 (direct).
-Also reports MCU-style runtime flash/RAM (ELF TEXT/DATA minus fixture images
-vs LiteRT CPU libs; models excluded) with TF÷netkit ratios.
 
 Results default: benchmark/host_ab_suite_results_float32.txt
 """

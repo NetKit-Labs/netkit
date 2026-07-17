@@ -10,7 +10,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 
 ## Peer benchmarks (MCU · MPU · CPU)
 
-Fair A/B vs TFLM + microTVM (MCU) and TF Lite (MPU/CPU). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
+Fair A/B vs TFLM + microTVM (MCU) and TF Lite + ONNX Runtime (host CPU; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Suite infographics:
 
 | Int8 suite | Float32 suite |
 |------------|---------------|
@@ -25,7 +25,26 @@ Fair A/B vs TFLM + microTVM (MCU) and TF Lite (MPU/CPU). Full tables and methodo
 | MNIST CNN | reference | **336.2 ms** | 2593.5 ms | 343.0 ms |
 | MNIST DS-CNN | reference | **140.3 ms** | 826.8 ms | 236.0 ms |
 
-Canonical logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/). Host/MPU tables and scripts: [benchmark/README.md](benchmark/README.md), `benchmark/linkedin/`.
+Canonical logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/).
+
+**Host CPU three-way (Apple Silicon; warm latency)** — netkit vs TF Lite vs ONNX Runtime (XNNPACK ON / OFF):
+
+| Model | Mode | netkit | TF Lite | ORT |
+|-------|------|-------:|--------:|----:|
+| MNIST CNN f32 | xnn | 30.5 µs | 50.0 µs | 150 µs |
+| MNIST DS-CNN f32 | xnn | 28.6 µs | 32.3 µs | 44.0 µs |
+| MobileNetV4-Small ImageNet f32 | xnn | 1.06 ms | 1.08 ms | 4.99 ms |
+| MNIST CNN f32 | ref | 483 µs | 1.06 ms | 84.1 µs |
+| MNIST DS-CNN f32 | ref | 298 µs | 428 µs | 78.2 µs |
+| MobileNetV4-Small ImageNet f32 | ref | 32.1 ms | 61.6 ms | 7.44 ms |
+| MNIST CNN int8 | xnn | 28.8 µs | 20.5 µs | 36.0 µs |
+| MNIST DS-CNN int8 | xnn | 22.3 µs | 21.4 µs | 25.4 µs |
+| MobileNetV4-Small ImageNet int8 | xnn | 0.67 ms | 0.69 ms | 1.68 ms |
+| MNIST CNN int8 | ref | 137 µs | 546 µs | 37.0 µs |
+| MNIST DS-CNN int8 | ref | 205 µs | 450 µs | 31.8 µs |
+| MobileNetV4-Small ImageNet int8 | ref | 7.42 ms | 28.3 ms | 1.63 ms |
+
+With XNNPACK, netkit ≈ TF Lite and beats ORT on all six models. ORT “ref” is still **MLAS** (not a slow reference) — **MLAS is not needed for netkit**; host production stays on XNNPACK. Full tables: [`benchmark/host_ab_suite_results_float32.txt`](benchmark/host_ab_suite_results_float32.txt), [`benchmark/host_ab_suite_results_int8.txt`](benchmark/host_ab_suite_results_int8.txt), [docs/STATUS.md](docs/STATUS.md). Scripts: [benchmark/README.md](benchmark/README.md).
 
 ## Documentation
 
@@ -48,9 +67,12 @@ Canonical logs: [`benchmark/mcu_ab_logs/`](benchmark/mcu_ab_logs/). Host/MPU tab
 | **[Peer-suite infographics](benchmark/linkedin/)** | MCU / MPU / CPU float32 + int8 A/B images |
 | **[NUCLEO-F446RE firmware](boards/nucleo-f446re/README.md)** | On-device MNIST MLP f32 benchmark (CMSIS-NN / reference, lowered AOT) |
 | **[NUCLEO-F446RE CNN int8](boards/nucleo-f446re-cnn-int8/README.md)** | On-device MNIST CNN int8 (CMSIS-NN / reference, interpreter embed) |
+| **[NUCLEO-F446RE DS-CNN int8](boards/nucleo-f446re-cnn-dw-int8/README.md)** | On-device MNIST DS-CNN int8 (CMSIS-NN / reference, interpreter embed) |
 | **[NUCLEO-F446RE MLP int8](boards/nucleo-f446re-mlp-int8/README.md)** | On-device MNIST MLP int8 benchmark (CMSIS-NN, interpreter embed) |
 | **[NUCLEO-F446RE TFLM CNN int8](boards/nucleo-f446re-tflm-cnn-int8/README.md)** | Same CNN int8 vectors via TFLite Micro (comparison baseline) |
+| **[NUCLEO-F446RE TFLM DS-CNN int8](boards/nucleo-f446re-tflm-cnn-dw-int8/README.md)** | Same DS-CNN int8 vectors via TFLite Micro |
 | **[NUCLEO-F446RE microTVM CNN int8](boards/nucleo-f446re-tvm-cnn-int8/README.md)** | Same CNN int8 via microTVM AOT (CMSIS-NN / pure C) |
+| **[NUCLEO-F446RE microTVM DS-CNN int8](boards/nucleo-f446re-tvm-cnn-dw-int8/README.md)** | Same DS-CNN int8 via microTVM AOT |
 | **[NUCLEO-F446RE TFLM MLP int8](boards/nucleo-f446re-tflm-mlp-int8/README.md)** | Same MLP int8 vectors via TFLite Micro (comparison baseline) |
 | **[C API Reference](docs/c-api.md)** | `netkit.h` (C23) |
 | **[C++ API Reference](docs/cpp-api.md)** | Headers in `include/` (C++26) |
@@ -86,7 +108,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 - **GitHub Actions CI** — fast suite on push/PR (`make test`); full suite manual only (`gh workflow run test-full.yml`)
 - **Embedded smoke** — MCU/MPU + `NETKIT_ARCH` + CMSIS bring-up harness on host (`test_mlp`, `cnn_4x4_single`; `make test-embedded-smoke-matrix`; local only)
 - **Float32 inference** — complete on cpu / MCU / MPU
-- **Int8 inference** — complete end-to-end int8 I/O (MNIST CNN/MLP MCU CMSIS-NN; host/MPU XNNPACK qs8 or QuantOps; ImageNet MNv4 int8)
+- **Int8 inference** — complete end-to-end int8 I/O (MNIST CNN / DS-CNN / MLP MCU CMSIS-NN; host/MPU XNNPACK qs8 or QuantOps; ImageNet MNv4 int8)
 - **Optional backends** — CMSIS-NN (Arm MCU int8); XNNPACK (cpu + any MPU, forbidden on MCU); reference everywhere else. CMSIS-DSP is not used. ([STATUS.md](docs/STATUS.md), [KERNELS.md](docs/KERNELS.md))
 
 ## Quick start
