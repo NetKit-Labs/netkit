@@ -1,4 +1,4 @@
-# NETKIT_ARCH => CMSIS ARM_MATH_* flags for CMSIS-NN (see arm_math_types.h / arm_nnfunctions.h).
+# NETKIT_ARCH => CMSIS ARM_MATH_* flags for CMSIS-NN, or ESP chip flags for ESP-NN.
 # Empty NETKIT_ARCH => desktop / CPU (no core-specific ARM_MATH_* defines).
 # CMSIS-DSP is not used as a netkit backend.
 
@@ -6,11 +6,37 @@ NETKIT_ARCH ?=
 NETKIT_ARCH_UPPER := $(shell printf '%s' '$(NETKIT_ARCH)' | tr '[:lower:]' '[:upper:]')
 NETKIT_ARCH_UPPER := $(subst CORTEX-,,$(NETKIT_ARCH_UPPER))
 NETKIT_ARCH_UPPER := $(subst CORTEX,,$(NETKIT_ARCH_UPPER))
+NETKIT_ARCH_UPPER := $(subst ESP32-,,$(NETKIT_ARCH_UPPER))
+# Normalize ESP32S3 / ESP32_S3 style tags.
+NETKIT_ARCH_UPPER := $(subst ESP32_S3,ESP32S3,$(NETKIT_ARCH_UPPER))
+NETKIT_ARCH_UPPER := $(subst ESP32_C3,ESP32C3,$(NETKIT_ARCH_UPPER))
+NETKIT_ARCH_UPPER := $(subst ESP32_C6,ESP32C6,$(NETKIT_ARCH_UPPER))
+NETKIT_ARCH_UPPER := $(subst ESP32_P4,ESP32P4,$(NETKIT_ARCH_UPPER))
 
 NETKIT_ARCH_CFLAGS :=
+NETKIT_ARCH_IS_ESP := 0
+NETKIT_ARCH_IS_ESP32S3 := 0
+NETKIT_ARCH_IS_ESP32P4 := 0
 
 ifneq ($(NETKIT_ARCH),)
-  ifeq ($(NETKIT_ARCH_UPPER),CM0)
+  ifeq ($(NETKIT_ARCH_UPPER),ESP32)
+    NETKIT_ARCH_IS_ESP := 1
+    NETKIT_ARCH_CFLAGS += -DCONFIG_IDF_TARGET_ESP32=1 -DCONFIG_NN_OPTIMIZED=1
+  else ifeq ($(NETKIT_ARCH_UPPER),ESP32S3)
+    NETKIT_ARCH_IS_ESP := 1
+    NETKIT_ARCH_IS_ESP32S3 := 1
+    NETKIT_ARCH_CFLAGS += -DCONFIG_IDF_TARGET_ESP32S3=1 -DCONFIG_NN_OPTIMIZED=1
+  else ifeq ($(NETKIT_ARCH_UPPER),ESP32C3)
+    NETKIT_ARCH_IS_ESP := 1
+    NETKIT_ARCH_CFLAGS += -DCONFIG_IDF_TARGET_ESP32C3=1 -DCONFIG_NN_OPTIMIZED=1
+  else ifeq ($(NETKIT_ARCH_UPPER),ESP32C6)
+    NETKIT_ARCH_IS_ESP := 1
+    NETKIT_ARCH_CFLAGS += -DCONFIG_IDF_TARGET_ESP32C6=1 -DCONFIG_NN_OPTIMIZED=1
+  else ifeq ($(NETKIT_ARCH_UPPER),ESP32P4)
+    NETKIT_ARCH_IS_ESP := 1
+    NETKIT_ARCH_IS_ESP32P4 := 1
+    NETKIT_ARCH_CFLAGS += -DCONFIG_IDF_TARGET_ESP32P4=1 -DCONFIG_NN_OPTIMIZED=1
+  else ifeq ($(NETKIT_ARCH_UPPER),CM0)
     NETKIT_ARCH_CFLAGS += -DARM_MATH_CM0
   else ifeq ($(NETKIT_ARCH_UPPER),M0)
     NETKIT_ARCH_CFLAGS += -DARM_MATH_CM0
@@ -59,14 +85,25 @@ ifneq ($(NETKIT_ARCH),)
   else ifeq ($(NETKIT_ARCH_UPPER),A64)
     NETKIT_ARCH_CFLAGS += -DARM_MATH_NEON
   else
-    $(error Unknown NETKIT_ARCH '$(NETKIT_ARCH)'. Use CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, or NEON; leave unset for desktop.)
+    $(error Unknown NETKIT_ARCH '$(NETKIT_ARCH)'. Use CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, NEON, ESP32, ESP32S3, ESP32C3, ESP32C6, or ESP32P4; leave unset for desktop.)
+  endif
+endif
+
+# Host smoke for Espressif: ANSI ESP-NN only (no Xtensa/RISC-V assembly).
+ifeq ($(NETKIT_HOST_SMOKE),1)
+  ifeq ($(NETKIT_ARCH_IS_ESP),1)
+    NETKIT_ARCH_CFLAGS :=
+    NETKIT_ARCH_IS_ESP32S3 := 0
+    NETKIT_ARCH_IS_ESP32P4 := 0
   endif
 endif
 
 # Cortex-M profile (CMSIS-NN is restricted to NETKIT_TARGET=mcu_arm + these arches).
 NETKIT_ARCH_IS_M_PROFILE := 0
 ifneq ($(NETKIT_ARCH),)
-  ifeq ($(filter $(NETKIT_ARCH_UPPER),A32 MPU NEON CORTEXA A64),$(NETKIT_ARCH_UPPER))
+  ifeq ($(NETKIT_ARCH_IS_ESP),1)
+    NETKIT_ARCH_IS_M_PROFILE := 0
+  else ifeq ($(filter $(NETKIT_ARCH_UPPER),A32 MPU NEON CORTEXA A64),$(NETKIT_ARCH_UPPER))
     NETKIT_ARCH_IS_M_PROFILE := 0
   else
     NETKIT_ARCH_IS_M_PROFILE := 1
@@ -80,11 +117,13 @@ ifeq ($(NETKIT_ARCH),)
   endif
 endif
 
-# Embedded firmware: loop unrolling + CMSIS-Core include for CMSIS-NN.
+# Embedded Arm firmware: loop unrolling + CMSIS-Core include for CMSIS-NN.
 ifneq ($(NETKIT_ARCH),)
-  NETKIT_ARCH_CFLAGS += -DARM_MATH_LOOPUNROLL
-  CMSISCORE_DIR ?= third_party/CMSIS-Core/CMSIS/Core/Include
-  ifneq ($(wildcard $(CMSISCORE_DIR)),)
-    NETKIT_ARCH_CFLAGS += -I$(CMSISCORE_DIR)
+  ifeq ($(NETKIT_ARCH_IS_ESP),0)
+    NETKIT_ARCH_CFLAGS += -DARM_MATH_LOOPUNROLL
+    CMSISCORE_DIR ?= third_party/CMSIS-Core/CMSIS/Core/Include
+    ifneq ($(wildcard $(CMSISCORE_DIR)),)
+      NETKIT_ARCH_CFLAGS += -I$(CMSISCORE_DIR)
+    endif
   endif
 endif

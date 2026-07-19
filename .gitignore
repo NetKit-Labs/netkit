@@ -95,3 +95,6 @@ benchmark/host_ab_linkedin_summary.png
 /data/
 calibration_image_sample_data_20x128x128x3_float32.npy
 benchmark/mpu_pi/stage/.netkit_pi_pass
+
+# Espressif ESP-NN (fetched via tools/fetch_esp_nn.sh)
+third_party/ESP-NN/

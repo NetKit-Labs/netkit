@@ -15,6 +15,7 @@ Headers live in [`include/`](../include/). Configuration: [`include/netkit_confi
 | `NETKIT_TARGET=mpu_arm` | `NETKIT_TARGET_MPU_ARM` | Lean `libnetkit.a` only | XNNPACK |
 | `NETKIT_TARGET=mcu_risc` | `NETKIT_TARGET_MCU_RISC` | Lean `libnetkit.a` only | generic only (CMSIS + XNNPACK forbidden) |
 | `NETKIT_TARGET=mpu_risc` | `NETKIT_TARGET_MPU_RISC` | Lean `libnetkit.a` only | XNNPACK on; CMSIS-NN forbidden |
+| `NETKIT_TARGET=mcu_esp` | `NETKIT_TARGET_MCU_ESP` | Lean `libnetkit.a` only | ESP-NN (int8); float32 reference; XNNPACK forbidden |
 
 Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU`, `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC`.
 
@@ -25,6 +26,7 @@ Derived (from `netkit_config.h`, shared by C and C++): `NETKIT_CLASS_MCU` / `NET
 | `NETKIT_HEAP_ARENA=1` (**MPU only**) | `NETKIT_ARENA_HEAP` | Optional heap on MPU; **forbidden on MCU** |
 | `NETKIT_CMSIS_NN=1` | `NETKIT_USE_CMSIS_NN` | `mcu_arm` + Cortex-M `NETKIT_ARCH` only |
 | `NETKIT_XNNPACK=1` | `NETKIT_USE_XNNPACK` | `cpu` + any MPU LayerFast; forbidden on MCU |
+| `NETKIT_ESP_NN=1` | `NETKIT_USE_ESP_NN` | `mcu_esp` + `NETKIT_ARCH=ESP32*` only |
 | `NETKIT_MMAP=1` (default cpu/MPU on Apple/Linux/Windows) | `NETKIT_USE_MMAP` | File mmap for `.nk` loads; **forbidden on MCU**; opt out with `NETKIT_MMAP=0` |
 | *(MCU default)* | `NETKIT_DISABLE_IOSTREAM` / `NETKIT_MCU_CMSIS_ONLY` | No iostream; CMSIS-only quant when reference loops off |
 

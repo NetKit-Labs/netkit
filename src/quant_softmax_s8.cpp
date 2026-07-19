@@ -1,6 +1,7 @@
 #include "quant_output.hpp"
 
 #include "cmsis_nn_quant.hpp"
+#include "esp_nn_quant.hpp"
 #include "netkit_util.hpp"
 #include "quant_trace.hpp"
 
@@ -221,6 +222,13 @@ namespace QuantOps
             return;
 
         const float scale = logit_scale > 0.0f ? logit_scale : 1.0f;
+#if defined(NETKIT_USE_ESP_NN) && NETKIT_USE_ESP_NN && NETKIT_ESP_NN_ALLOWED
+        if (EspNnQuant::TrySoftmaxS8(logits, 1, count, scale, output))
+        {
+            QuantTrace::RecordSoftmaxCmsisOk();
+            return;
+        }
+#endif
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
         if (CmsisNnQuant::TrySoftmaxS8(logits, 1, count, scale, output))
         {

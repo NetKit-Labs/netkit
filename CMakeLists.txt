@@ -6,34 +6,45 @@ project(netkit VERSION 0.1.0 LANGUAGES C CXX)
 include(cmake/netkit_environment.cmake)
 
 set(NETKIT_TARGET "${_netkit_target_default}" CACHE STRING
-    "Build profile: cpu, mcu_arm, mpu_arm, mcu_risc, or mpu_risc")
-set_property(CACHE NETKIT_TARGET PROPERTY STRINGS cpu mcu_arm mpu_arm mcu_risc mpu_risc)
+    "Build profile: cpu, mcu_arm, mpu_arm, mcu_risc, mpu_risc, or mcu_esp")
+set_property(CACHE NETKIT_TARGET PROPERTY STRINGS cpu mcu_arm mpu_arm mcu_risc mpu_risc mcu_esp)
 
-# CMSIS-NN / XNNPACK defaults follow NETKIT_TARGET profile; override on the cmake command line.
+# CMSIS-NN / ESP-NN / XNNPACK defaults follow NETKIT_TARGET profile; override on the cmake command line.
 # CMSIS-DSP is not used as a netkit backend.
 if(NETKIT_TARGET STREQUAL "cpu")
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_esp_nn_default OFF)
     set(_netkit_xnnpack_default ON)
 elseif(NETKIT_TARGET STREQUAL "mcu_arm")
     set(_netkit_cmsis_nn_default ON)
+    set(_netkit_esp_nn_default OFF)
     set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mpu_arm")
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_esp_nn_default OFF)
     set(_netkit_xnnpack_default ON)
 elseif(NETKIT_TARGET STREQUAL "mcu_risc")
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_esp_nn_default OFF)
     set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mpu_risc")
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_esp_nn_default OFF)
     set(_netkit_xnnpack_default ON)
+elseif(NETKIT_TARGET STREQUAL "mcu_esp")
+    set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_esp_nn_default ON)
+    set(_netkit_xnnpack_default OFF)
 elseif(NETKIT_TARGET STREQUAL "mcu" OR NETKIT_TARGET STREQUAL "mpu")
     message(FATAL_ERROR "NETKIT_TARGET=${NETKIT_TARGET} is removed — use mcu_arm or mpu_arm")
 else()
     set(_netkit_cmsis_nn_default OFF)
+    set(_netkit_esp_nn_default OFF)
     set(_netkit_xnnpack_default OFF)
 endif()
 
 option(NETKIT_CMSIS_NN "Use ARM CMSIS-NN backends (mcu_arm + Cortex-M)" ${_netkit_cmsis_nn_default})
+option(NETKIT_ESP_NN "Use Espressif ESP-NN backends (mcu_esp; int8 production)" ${_netkit_esp_nn_default})
 option(NETKIT_XNNPACK "Use Google XNNPACK LayerFast backends (cpu + any MPU; forbidden on MCU)" ${_netkit_xnnpack_default})
 
 # Match Makefile: CI forces XNNPACK off so embedded TCAS stays on reference kernels.
@@ -50,13 +61,13 @@ set(NETKIT_ARENA_CAPACITY "0" CACHE STRING "Override NK_ARENA_DEFAULT_CAPACITY i
 set(NETKIT_ARENA_KB "0" CACHE STRING "Override NK_ARENA_DEFAULT_CAPACITY in KiB (0 = class default; ignored if CAPACITY set)")
 # mmap: default ON for cpu + any MPU; forbidden on MCU. Opt out with -DNETKIT_MMAP=OFF
 # on RTOS / bare-metal MPU (no virtual-memory OS).
-if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc")
+if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mcu_esp")
     set(_netkit_mmap_default OFF)
 else()
     set(_netkit_mmap_default ON)
 endif()
 option(NETKIT_MMAP "mmap for .nk file loads (cpu + MPU default; forbidden on MCU; macOS/Linux/Windows)" ${_netkit_mmap_default})
-if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc")
+if(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mcu_esp")
     if(NETKIT_MMAP)
         message(WARNING "NETKIT_MMAP=ON forced off — mmap is forbidden on MCU")
     endif()
@@ -119,6 +130,7 @@ set(NETKIT_RUNTIME_SOURCES
     src/netkit_util.cpp
     src/quant_trace.cpp
     src/cmsis_nn_quant_backend.cpp
+    src/esp_nn_quant_backend.cpp
     src/cmsis_quant_plan.cpp
     src/cnn_quant.cpp
     src/xnnpack_quant_backend.cpp
@@ -142,13 +154,14 @@ if(NETKIT_TARGET STREQUAL "cpu")
     set(NETKIT_BUILD_CLI ON)
     set(NETKIT_BUILD_C_TESTS ON)
 elseif(NETKIT_TARGET STREQUAL "mcu_arm" OR NETKIT_TARGET STREQUAL "mpu_arm" OR
-       NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mpu_risc")
+       NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mpu_risc" OR
+       NETKIT_TARGET STREQUAL "mcu_esp")
     set(NETKIT_CORE_SOURCES ${NETKIT_RUNTIME_SOURCES})
     set(NETKIT_BUILD_CLI OFF)
     set(NETKIT_BUILD_C_TESTS OFF)
 else()
     message(FATAL_ERROR
-        "NETKIT_TARGET must be cpu, mcu_arm, mpu_arm, mcu_risc, or mpu_risc (got '${NETKIT_TARGET}')")
+        "NETKIT_TARGET must be cpu, mcu_arm, mpu_arm, mcu_risc, mpu_risc, or mcu_esp (got '${NETKIT_TARGET}')")
 endif()
 
 add_library(netkit STATIC ${NETKIT_CORE_SOURCES})
@@ -192,6 +205,11 @@ elseif(NETKIT_TARGET STREQUAL "mpu_risc")
     if(NETKIT_HEAP_ARENA)
         target_compile_definitions(netkit PUBLIC NETKIT_HEAP_ARENA=1)
     endif()
+elseif(NETKIT_TARGET STREQUAL "mcu_esp")
+    target_compile_definitions(netkit PUBLIC NETKIT_TARGET_MCU_ESP=1)
+    if(NETKIT_HEAP_ARENA)
+        message(FATAL_ERROR "NETKIT_HEAP_ARENA is forbidden on MCU — use a static/global arena buffer")
+    endif()
 endif()
 
 target_compile_definitions(netkit PUBLIC NETKIT_IM2COL=${NETKIT_IM2COL})
@@ -216,21 +234,32 @@ else()
     target_compile_definitions(netkit PUBLIC NETKIT_LOOP_UNROLL=0)
 endif()
 
-if(NETKIT_CMSIS_NN AND (NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mpu_risc"))
-    message(WARNING "NETKIT_CMSIS_NN=ON forced off on ${NETKIT_TARGET} — CMSIS-NN is forbidden on RISC")
+if(NETKIT_CMSIS_NN AND (NETKIT_TARGET STREQUAL "mcu_risc" OR NETKIT_TARGET STREQUAL "mpu_risc" OR
+                        NETKIT_TARGET STREQUAL "mcu_esp"))
+    message(WARNING "NETKIT_CMSIS_NN=ON forced off on ${NETKIT_TARGET} — CMSIS-NN is mcu_arm only")
     set(NETKIT_CMSIS_NN OFF)
 elseif(NETKIT_CMSIS_NN AND NOT NETKIT_TARGET STREQUAL "mcu_arm")
     message(WARNING "NETKIT_CMSIS_NN=ON ignored on ${NETKIT_TARGET} — CMSIS-NN is mcu_arm + Cortex-M only")
     set(NETKIT_CMSIS_NN OFF)
 endif()
 
+if(NETKIT_ESP_NN AND NOT NETKIT_TARGET STREQUAL "mcu_esp")
+    message(WARNING "NETKIT_ESP_NN=ON ignored on ${NETKIT_TARGET} — ESP-NN is mcu_esp only")
+    set(NETKIT_ESP_NN OFF)
+endif()
+
 include(cmake/netkit_cmsis.cmake)
+include(cmake/netkit_esp_nn.cmake)
 include(cmake/netkit_xnnpack.cmake)
 
 netkit_add_cmsis_softmax_s8(netkit)
 
 if(NETKIT_CMSIS_NN)
     netkit_add_cmsis_nn(netkit)
+endif()
+
+if(NETKIT_ESP_NN)
+    netkit_add_esp_nn(netkit)
 endif()
 
 if(NETKIT_XNNPACK)

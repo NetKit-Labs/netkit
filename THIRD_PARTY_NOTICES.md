@@ -20,6 +20,7 @@ files when present.
 |-----------|----------------|----------------|------------------|
 | **CMSIS-Core** (ARM CMSIS_6) | MCU device headers (`NETKIT_ARCH`) | Apache-2.0 | [`CMSIS-Core.Apache-2.0.txt`](third_party/licenses/CMSIS-Core.Apache-2.0.txt); submodule `third_party/CMSIS-Core` |
 | **CMSIS-NN** | Optional Arm MCU int8 kernels | Apache-2.0 | [`CMSIS-NN.Apache-2.0.txt`](third_party/licenses/CMSIS-NN.Apache-2.0.txt); submodule `third_party/CMSIS-NN` |
+| **ESP-NN** | Optional Espressif MCU int8 kernels | Apache-2.0 | [`ESP-NN.Apache-2.0.txt`](third_party/licenses/ESP-NN.Apache-2.0.txt); submodule `third_party/ESP-NN` |
 | **CMSIS-DSP** | **Not used** | — | — |
 | **XNNPACK** | Optional cpu / MPU LayerFast (float32 + int8) | BSD-3-Clause | [`XNNPACK.BSD-3-Clause.txt`](third_party/licenses/XNNPACK.BSD-3-Clause.txt); fetch `third_party/XNNPACK/` |
 | **pthreadpool** | XNNPACK dependency | BSD-style | [`pthreadpool.BSD.txt`](third_party/licenses/pthreadpool.BSD.txt) |
@@ -59,6 +60,17 @@ Fetched as git submodule `third_party/CMSIS-NN` from
 (`NETKIT_CMSIS_NN=1`) on `NETKIT_TARGET=mcu_arm` + Cortex-M.
 
 License text: [third_party/licenses/CMSIS-NN.Apache-2.0.txt](third_party/licenses/CMSIS-NN.Apache-2.0.txt).
+
+### ESP-NN — Apache License 2.0
+
+Copyright © Espressif Systems (Shanghai) CO LTD.
+
+Fetched as git submodule `third_party/ESP-NN` from
+[espressif/esp-nn](https://github.com/espressif/esp-nn). Optional
+(`NETKIT_ESP_NN=1`) on `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32*` (S3 / P4 / C3 / C6 / classic).
+Int8 production path; float32 uses portable reference kernels (ESP-NN is int8-only).
+
+License text: [third_party/licenses/ESP-NN.Apache-2.0.txt](third_party/licenses/ESP-NN.Apache-2.0.txt).
 
 ### CMSIS-DSP — not used
 

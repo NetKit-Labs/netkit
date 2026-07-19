@@ -30,6 +30,23 @@ netkit does **not** use or link [ARM CMSIS-DSP](https://github.com/ARM-software/
 Portable helpers live in `netkit_util` (`NetkitUtil::`). Float32 on MCU uses reference kernels only;
 there is no plan for an optimized float32 MCU build via CMSIS-DSP.
 
+## ESP-NN (optional)
+
+[Espressif ESP-NN](https://github.com/espressif/esp-nn) is Apache-2.0 and provides optimized **int8**
+kernels for Espressif chips (ESP32-S3 / ESP32-P4 assembly; ESP32 / C3 / C6 generic opt).
+
+When enabled on **`NETKIT_TARGET=mcu_esp`** with `NETKIT_ARCH=ESP32|ESP32S3|ESP32C3|ESP32C6|ESP32P4`,
+netkit uses ESP-NN for quantized conv, depthwise, pool, FC, softmax, and elementwise add
+(`EspNnQuant`, same Try* shape as CMSIS-NN). **ESP-NN has no float32 API** — float LayerFast
+falls through to reference kernels (`EspNnKernel` Try* always miss).
+
+```bash
+make esp-nn-init
+make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib
+# Host ANSI smoke (no Xtensa/RISC-V asm):
+make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32C6 NETKIT_HOST_SMOKE=1 lib
+```
+
 ## XNNPACK (optional)
 
 [Google XNNPACK](https://github.com/google/XNNPACK) is BSD-3 licensed and provides highly optimized neural-network operators for desktop/server CPUs and Cortex-A (x86 AVX, Arm NEON, WASM SIMD, …).
@@ -47,14 +64,16 @@ MCU builds force `NETKIT_XNNPACK=0`. Forcing `=1` on MCU is rejected (Make overr
 
 ```bash
 make cmsis-init
+make esp-nn-init
 make xnnpack-init
 # or individually:
 ./tools/fetch_cmsis_core.sh
 ./tools/fetch_cmsis_nn.sh
+./tools/fetch_esp_nn.sh
 ./tools/fetch_xnnpack.sh
 ```
 
-CMSIS packages are **git submodule pins**. XNNPACK is fetched + CMake-built into `third_party/XNNPACK/` (gitignored build tree) with a stable `netkit_lib/libXNNPACK.a` for linking.
+CMSIS and ESP-NN packages are **git submodule pins**. XNNPACK is fetched + CMake-built into `third_party/XNNPACK/` (gitignored build tree) with a stable `netkit_lib/libXNNPACK.a` for linking.
 
 **Peer-bench pin:** `tools/fetch_xnnpack.sh` defaults to the same XNNPACK commit LiteRT embeds (`ai_edge_litert` 2.1.6 → TF `b8a17154` → `c2e81f01…`). Override with `NETKIT_XNNPACK_PIN=<sha>` when bumping the LiteRT wheel.
 
@@ -70,9 +89,11 @@ Leave `NETKIT_ARCH` unset for native desktop builds (`__GNUC_PYTHON__` host path
 | File | Role |
 |------|------|
 | `third_party/cmsis_nn.mk` | Minimal CMSIS-NN source set linked into `libnetkit.a` |
+| `third_party/esp_nn.mk` | ESP-NN ANSI / chip sources for `mcu_esp` |
 | `third_party/xnnpack.mk` | XNNPACK link flags for cpu / MPU |
-| `third_party/netkit_arch.mk` | `NETKIT_ARCH` → `ARM_MATH_*` flags + CMSIS-Core include (Make) |
+| `third_party/netkit_arch.mk` | `NETKIT_ARCH` → `ARM_MATH_*` or ESP chip flags (Make) |
 | `cmake/netkit_cmsis.cmake` | CMSIS object libraries + target flags (CMake) |
+| `cmake/netkit_esp_nn.cmake` | ESP-NN object library + target flags (CMake) |
 | `cmake/netkit_xnnpack.cmake` | XNNPACK fetch/link (CMake) |
 | `cmake/netkit_arch.cmake` | `NETKIT_ARCH` resolver (CMake) |
 

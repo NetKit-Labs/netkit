@@ -4,6 +4,7 @@
 #include "cnn.hpp"
 #include "cmsis_buffer_size.hpp"
 #include "cmsis_nn_quant.hpp"
+#include "esp_nn_quant.hpp"
 #include "im2col_quant.hpp"
 #include "kernel_workspace.hpp"
 #include "netkit_config.h"
@@ -1701,13 +1702,20 @@ namespace
                                 lp.conv, current, conv.weights_q, conv.bias_q, out))
                             break;
                     }
+                    if constexpr (EspNnQuant::kEnabled)
+                    {
+                        if (EspNnQuant::TryConv2dNhwcQuantPlan(
+                                lp.conv, current, conv.weights_q, conv.bias_q, out))
+                            break;
+                    }
+
                     if constexpr (CmsisNnQuant::kEnabled)
                     {
                         if (CmsisNnQuant::TryConv2dNhwcQuantPlan(
                                 lp.conv, current, conv.weights_q, conv.bias_q, out))
                             break;
                     }
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+#if NETKIT_MCU_CMSIS_ONLY
                     return false;
 #else
                     QuantOps::Conv2dNhwcQuant(current,
@@ -1746,13 +1754,20 @@ namespace
                                 lp.depthwise, current, dw.weights_q, dw.bias_q, out))
                             break;
                     }
+                    if constexpr (EspNnQuant::kEnabled)
+                    {
+                        if (EspNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                lp.depthwise, current, weights, dw.bias_q, out))
+                            break;
+                    }
+
                     if constexpr (CmsisNnQuant::kEnabled)
                     {
                         if (CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
                                 lp.depthwise, current, weights, dw.bias_q, out))
                             break;
                     }
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+#if NETKIT_MCU_CMSIS_ONLY
                     return false;
 #else
                     QuantOps::DepthwiseConv2dNhwcQuant(current,
@@ -1786,12 +1801,18 @@ namespace
                         if (XnnpackQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
                             break;
                     }
+                    if constexpr (EspNnQuant::kEnabled)
+                    {
+                        if (EspNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
+                            break;
+                    }
+
                     if constexpr (CmsisNnQuant::kEnabled)
                     {
                         if (CmsisNnQuant::TryMaxPool2dNhwcQuantPlan(lp.pool, current, out))
                             break;
                     }
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+#if NETKIT_MCU_CMSIS_ONLY
                     return false;
 #else
                     const MaxPool2DLayer& pool = block.pool;
@@ -1897,6 +1918,17 @@ namespace
                                     uib.start_dw_bias_q,
                                     next_data);
                             }
+                            if constexpr (EspNnQuant::kEnabled)
+                            {
+                                ok = ok || EspNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                               up.start_dw,
+                                               cur_data,
+                                               up.start_dw.weights_hwc ? up.start_dw.weights_hwc
+                                                                       : uib.start_dw_weights_q,
+                                               uib.start_dw_bias_q,
+                                               next_data);
+                            }
+
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
@@ -1907,7 +1939,7 @@ namespace
                                                uib.start_dw_bias_q,
                                                next_data);
                             }
-#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+#if !NETKIT_MCU_CMSIS_ONLY
                             if (!ok)
                             {
                                 QuantOps::DepthwiseConv2dNhwcQuant(
@@ -1958,6 +1990,16 @@ namespace
                                     uib.expand_bias_q,
                                     expand_out);
                             }
+                            if constexpr (EspNnQuant::kEnabled)
+                            {
+                                ok = ok || EspNnQuant::TryConv2dNhwcQuantPlan(
+                                               up.expand,
+                                               cur_data,
+                                               uib.expand_weights_q,
+                                               uib.expand_bias_q,
+                                               expand_out);
+                            }
+
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryConv2dNhwcQuantPlan(
@@ -1967,7 +2009,7 @@ namespace
                                                uib.expand_bias_q,
                                                expand_out);
                             }
-#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+#if !NETKIT_MCU_CMSIS_ONLY
                             if (!ok)
                             {
                                 const uint32_t cur_h = static_cast<uint32_t>(
@@ -2022,6 +2064,17 @@ namespace
                                     uib.middle_dw_bias_q,
                                     middle_out);
                             }
+                            if constexpr (EspNnQuant::kEnabled)
+                            {
+                                ok = ok || EspNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
+                                               up.middle_dw,
+                                               cur_data,
+                                               up.middle_dw.weights_hwc ? up.middle_dw.weights_hwc
+                                                                        : uib.middle_dw_weights_q,
+                                               uib.middle_dw_bias_q,
+                                               middle_out);
+                            }
+
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryDepthwiseConv2dNhwcQuantPlan(
@@ -2032,7 +2085,7 @@ namespace
                                                uib.middle_dw_bias_q,
                                                middle_out);
                             }
-#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+#if !NETKIT_MCU_CMSIS_ONLY
                             if (!ok)
                             {
                                 QuantOps::DepthwiseConv2dNhwcQuant(
@@ -2075,6 +2128,16 @@ namespace
                                 ok = XnnpackQuant::TryConv2dNhwcQuantPlan(
                                     up.proj, cur_data, uib.proj_weights_q, uib.proj_bias_q, out);
                             }
+                            if constexpr (EspNnQuant::kEnabled)
+                            {
+                                ok = ok || EspNnQuant::TryConv2dNhwcQuantPlan(
+                                               up.proj,
+                                               cur_data,
+                                               uib.proj_weights_q,
+                                               uib.proj_bias_q,
+                                               out);
+                            }
+
                             if constexpr (CmsisNnQuant::kEnabled)
                             {
                                 ok = ok || CmsisNnQuant::TryConv2dNhwcQuantPlan(
@@ -2084,7 +2147,7 @@ namespace
                                                uib.proj_bias_q,
                                                out);
                             }
-#if !(defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED)
+#if !NETKIT_MCU_CMSIS_ONLY
                             if (!ok)
                             {
                                 const uint32_t proj_in_h = static_cast<uint32_t>(
@@ -2192,6 +2255,12 @@ namespace
                             ran = XnnpackQuant::TryFullyConnectedQuantPlan(
                                 lp.fc, current, weights, bias, dense_out);
                         }
+                        if constexpr (EspNnQuant::kEnabled)
+                        {
+                            ran = ran || EspNnQuant::TryFullyConnectedQuantPlan(
+                                             lp.fc, current, weights, bias, dense_out);
+                        }
+
                         if constexpr (CmsisNnQuant::kEnabled)
                         {
                             ran = ran || CmsisNnQuant::TryFullyConnectedQuantPlan(
@@ -2204,7 +2273,7 @@ namespace
                             break;
                         }
                     }
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+#if NETKIT_MCU_CMSIS_ONLY
                     return false;
 #else
                     QuantOps::FullyConnectedQuant(current,
@@ -2241,6 +2310,12 @@ namespace
                             ran = XnnpackQuant::TryFullyConnectedQuantPlan(
                                 lp.fc, current, weights, bias, fc_dest);
                         }
+                        if constexpr (EspNnQuant::kEnabled)
+                        {
+                            ran = ran || EspNnQuant::TryFullyConnectedQuantPlan(
+                                             lp.fc, current, weights, bias, fc_dest);
+                        }
+
                         if constexpr (CmsisNnQuant::kEnabled)
                         {
                             ran = ran || CmsisNnQuant::TryFullyConnectedQuantPlan(
@@ -2248,7 +2323,7 @@ namespace
                         }
                         if (!ran)
                         {
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+#if NETKIT_MCU_CMSIS_ONLY
                         return false;
 #else
                         QuantOps::FullyConnectedQuant(current,
@@ -2276,6 +2351,12 @@ namespace
                     }
                     {
                         bool ran = false;
+                        if constexpr (EspNnQuant::kEnabled)
+                        {
+                            ran = EspNnQuant::TrySoftmaxS8Plan(
+                                lp.softmax, runtime.logits, softmax_out);
+                        }
+
                         if constexpr (CmsisNnQuant::kEnabled)
                         {
                             ran = CmsisNnQuant::TrySoftmaxS8Plan(
@@ -2283,7 +2364,7 @@ namespace
                         }
                         if (!ran)
                         {
-#if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && NETKIT_CMSIS_NN_ALLOWED
+#if NETKIT_MCU_CMSIS_ONLY
                         return false;
 #else
                         QuantOps::SoftmaxS8(runtime.logits,

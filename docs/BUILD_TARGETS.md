@@ -9,12 +9,13 @@ netkit builds for ISA-qualified deployment profiles. Select one with **`NETKIT_T
 | **MPU_ARM** | `NETKIT_TARGET=mpu_arm` | Arm microprocessor / RTOS | XNNPACK |
 | **MCU_RISC** | `NETKIT_TARGET=mcu_risc` | RISC-V MCU | generic kernels only (fast; CMSIS + XNNPACK forbidden) |
 | **MPU_RISC** | `NETKIT_TARGET=mpu_risc` | RISC-V MPU | XNNPACK on (strong RISC-V MPU support); CMSIS-NN forbidden |
+| **MCU_ESP** | `NETKIT_TARGET=mcu_esp` | Espressif MCU (ESP32 / S3 / C3 / C6 / P4) | ESP-NN on (int8 production); float32 reference; XNNPACK forbidden |
 
 Legacy `NETKIT_TARGET=mcu` / `mpu` are **rejected** — use `mcu_arm` / `mpu_arm`.
 
-**Maturity:** float32 + int8 are **complete** on **cpu**, **Arm MCU/MPU**, and **RISC MCU/MPU**. RISC MPU uses XNNPACK (strong RISC-V MPU support). RISC MCU uses fast generic kernels today; a CMSIS-NN–class RISC MCU NN path is planned later — [STATUS.md](STATUS.md).
+**Maturity:** float32 + int8 are **complete** on **cpu**, **Arm MCU/MPU**, and **RISC MCU/MPU**. **MCU_ESP** uses [ESP-NN](https://github.com/espressif/esp-nn) for int8 (CMSIS-style); ESP-NN has no float API, so float32 uses reference. RISC MCU uses fast generic kernels today — [STATUS.md](STATUS.md).
 
-Derived macros: `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` (firmware class), `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` (backend family).
+Derived macros: `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` (firmware class), `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` / `NETKIT_ISA_ESP` (backend family).
 
 ## Build systems
 
@@ -74,8 +75,9 @@ Compile-time macros (from `include/netkit_config.h`):
 | `NETKIT_TARGET_MPU_ARM` | Arm MPU build |
 | `NETKIT_TARGET_MCU_RISC` | RISC-V MCU (generic kernels; CMSIS + XNNPACK forbidden) |
 | `NETKIT_TARGET_MPU_RISC` | RISC-V MPU (XNNPACK default; CMSIS forbidden) |
+| `NETKIT_TARGET_MCU_ESP` | Espressif MCU (ESP-NN int8 production) |
 | `NETKIT_CLASS_MCU` / `NETKIT_CLASS_MPU` | Firmware class (arena / lean API) |
-| `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` | Instruction-set family (backend policy) |
+| `NETKIT_ISA_ARM` / `NETKIT_ISA_RISC` / `NETKIT_ISA_ESP` | Instruction-set family (backend policy) |
 | `NETKIT_DESKTOP` | CPU only — CLI, regression, debug tooling |
 | `NETKIT_ARENA_HEAP` | Heap arena API compiled in (CPU default; MPU when opted in; **never MCU**) |
 | `NETKIT_GLOBAL_ARENA` | CPU only — force global/static arena instead of heap default |

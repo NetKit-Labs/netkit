@@ -7,22 +7,24 @@
  *   NETKIT_TARGET_MPU_ARM   — Arm microprocessor / RTOS (lean runtime)
  *   NETKIT_TARGET_MCU_RISC  — RISC-V MCU (lean runtime; backends TBD)
  *   NETKIT_TARGET_MPU_RISC  — RISC-V MPU (lean runtime; backends TBD)
+ *   NETKIT_TARGET_MCU_ESP   — Espressif MCU firmware (ESP-NN int8 production)
  *
  * Derived class / ISA macros (set automatically from the target above):
  *   NETKIT_CLASS_MCU / NETKIT_CLASS_MPU — firmware class (arena / lean API)
- *   NETKIT_ISA_ARM / NETKIT_ISA_RISC    — instruction-set family (backend policy)
+ *   NETKIT_ISA_ARM / NETKIT_ISA_RISC / NETKIT_ISA_ESP — instruction-set family
  *
  * Backend profile defaults (Makefile / CMake; override with NETKIT_CMSIS_NN=0|1):
- *   cpu       — XNNPACK on (any host ISA), CMSIS-NN off
+ *   cpu       — XNNPACK on (any host ISA), CMSIS-NN / ESP-NN off
  *   mcu_arm   — CMSIS-NN on (int8 production), XNNPACK forbidden; float32 uses reference
- *   mpu_arm   — XNNPACK on, CMSIS-NN off
- *   mcu_risc  — generic kernels only (CMSIS-NN + XNNPACK forbidden)
- *   mpu_risc  — XNNPACK on (default); CMSIS-NN forbidden
+ *   mpu_arm   — XNNPACK on, CMSIS-NN / ESP-NN off
+ *   mcu_risc  — generic kernels only (CMSIS-NN + XNNPACK + ESP-NN forbidden)
+ *   mpu_risc  — XNNPACK on (default); CMSIS-NN / ESP-NN forbidden
+ *   mcu_esp   — ESP-NN on (int8 production; float32 uses reference — ESP-NN is int8-only)
  *
  * XNNPACK policy: default ON for cpu and all MPU targets; never allowed on MCU.
  *
  * CMSIS-DSP is not used or linked. Float32 on MCU is supported via portable/reference
- * kernels only; there is no plan for an optimized float32 MCU build.
+ * kernels only (CMSIS-NN also offers float LayerFast on Arm; ESP-NN has no float API).
  *
  * Arena static defaults (NK_ARENA_DEFAULT_CAPACITY / Arena::kDefaultCapacity):
  *   CLASS_MCU — 64 KiB   CPU and CLASS_MPU — 64 MiB
@@ -56,28 +58,32 @@
 #define NETKIT_MCU_QUANT_ONLY 0
 #endif
 
-/* Reject legacy bare MCU/MPU macros — use MCU_ARM / MPU_ARM (or *_RISC). */
+/* Reject legacy bare MCU/MPU macros — use MCU_ARM / MPU_ARM (or *_RISC / MCU_ESP). */
 #if (defined(NETKIT_TARGET_MCU) || defined(NETKIT_TARGET_MPU)) &&                                 \
     !defined(NETKIT_TARGET_MCU_ARM) && !defined(NETKIT_TARGET_MPU_ARM) &&                         \
-    !defined(NETKIT_TARGET_MCU_RISC) && !defined(NETKIT_TARGET_MPU_RISC)
+    !defined(NETKIT_TARGET_MCU_RISC) && !defined(NETKIT_TARGET_MPU_RISC) &&                       \
+    !defined(NETKIT_TARGET_MCU_ESP)
 #error "NETKIT_TARGET_MCU / NETKIT_TARGET_MPU are removed — use NETKIT_TARGET_MCU_ARM, "         \
-       "NETKIT_TARGET_MPU_ARM, NETKIT_TARGET_MCU_RISC, or NETKIT_TARGET_MPU_RISC"
+       "NETKIT_TARGET_MPU_ARM, NETKIT_TARGET_MCU_RISC, NETKIT_TARGET_MPU_RISC, or "             \
+       "NETKIT_TARGET_MCU_ESP"
 #endif
 
 #if defined(NETKIT_TARGET_CPU) + defined(NETKIT_TARGET_MCU_ARM) + defined(NETKIT_TARGET_MPU_ARM) + \
-        defined(NETKIT_TARGET_MCU_RISC) + defined(NETKIT_TARGET_MPU_RISC) >                        \
+        defined(NETKIT_TARGET_MCU_RISC) + defined(NETKIT_TARGET_MPU_RISC) +                       \
+        defined(NETKIT_TARGET_MCU_ESP) >                                                          \
     1
 #error "Define only one of NETKIT_TARGET_CPU, NETKIT_TARGET_MCU_ARM, NETKIT_TARGET_MPU_ARM, "     \
-       "NETKIT_TARGET_MCU_RISC, NETKIT_TARGET_MPU_RISC"
+       "NETKIT_TARGET_MCU_RISC, NETKIT_TARGET_MPU_RISC, NETKIT_TARGET_MCU_ESP"
 #endif
 
 #if !defined(NETKIT_TARGET_CPU) && !defined(NETKIT_TARGET_MCU_ARM) &&                             \
     !defined(NETKIT_TARGET_MPU_ARM) && !defined(NETKIT_TARGET_MCU_RISC) &&                        \
-    !defined(NETKIT_TARGET_MPU_RISC)
+    !defined(NETKIT_TARGET_MPU_RISC) && !defined(NETKIT_TARGET_MCU_ESP)
 #define NETKIT_TARGET_CPU 1
 #endif
 /* Class + ISA derived from the concrete target. */
-#if defined(NETKIT_TARGET_MCU_ARM) || defined(NETKIT_TARGET_MCU_RISC)
+#if defined(NETKIT_TARGET_MCU_ARM) || defined(NETKIT_TARGET_MCU_RISC) ||                          \
+    defined(NETKIT_TARGET_MCU_ESP)
 #define NETKIT_CLASS_MCU 1
 #endif
 #if defined(NETKIT_TARGET_MPU_ARM) || defined(NETKIT_TARGET_MPU_RISC)
@@ -88,6 +94,9 @@
 #endif
 #if defined(NETKIT_TARGET_MCU_RISC) || defined(NETKIT_TARGET_MPU_RISC)
 #define NETKIT_ISA_RISC 1
+#endif
+#if defined(NETKIT_TARGET_MCU_ESP)
+#define NETKIT_ISA_ESP 1
 #endif
 
 #if defined(NETKIT_TARGET_CPU)
@@ -128,7 +137,7 @@
 /*
  * Conv2D im2col strategy for float reference and int8 QuantOps (single tri-state):
  *   0 = direct loops only, 1 = partial im2col, 2 = full im2col + GEMM.
- * Default 0 (direct) on all targets. CMSIS-NN / XNNPACK ignore this knob.
+ * Default 0 (direct) on all targets. CMSIS-NN / XNNPACK / ESP-NN ignore this knob.
  */
 #ifndef NETKIT_IM2COL
 #define NETKIT_IM2COL 0
@@ -146,7 +155,7 @@
 #error "NETKIT_REFERENCE_QUANT_LOOPS must be 0 or 1"
 #endif
 
-/* MCU CMSIS-only production path omits QuantOps reference loops (flash reclaim). */
+/* MCU accel-only production path omits QuantOps reference loops (flash reclaim). */
 #if defined(NETKIT_CLASS_MCU) && !NETKIT_REFERENCE_QUANT_LOOPS
 #define NETKIT_MCU_CMSIS_ONLY 1
 #else
@@ -161,7 +170,7 @@
 #error "NETKIT_LOOP_UNROLL must be 0 or 1"
 #endif
 
-/* CMSIS-NN: Arm MCU (Cortex-M) only — never cpu / mpu / RISC (override not allowed). */
+/* CMSIS-NN: Arm MCU (Cortex-M) only — never cpu / mpu / RISC / ESP (override not allowed). */
 #if defined(NETKIT_TARGET_MCU_ARM) &&                                                              \
     (defined(ARM_MATH_CM0) || defined(ARM_MATH_CM0PLUS) || defined(ARM_MATH_CM3) ||               \
      defined(ARM_MATH_CM4) || defined(ARM_MATH_CM7) || defined(ARM_MATH_ARMV8MBL) ||               \
@@ -173,13 +182,27 @@
 
 #if defined(NETKIT_USE_CMSIS_NN) && NETKIT_USE_CMSIS_NN && !NETKIT_CMSIS_NN_ALLOWED
 #error "NETKIT_USE_CMSIS_NN requires NETKIT_TARGET_MCU_ARM with a Cortex-M NETKIT_ARCH "         \
-       "(CM4/M33/...); forbidden on cpu, mpu, and RISC targets"
+       "(CM4/M33/...); forbidden on cpu, mpu, RISC, and ESP targets"
+#endif
+
+/*
+ * ESP-NN: Espressif MCU only (ESP32 / S3 / C3 / C6 / P4 via NETKIT_ARCH).
+ * Int8 production path; float32 uses reference (ESP-NN has no float kernels).
+ */
+#if defined(NETKIT_TARGET_MCU_ESP)
+#define NETKIT_ESP_NN_ALLOWED 1
+#else
+#define NETKIT_ESP_NN_ALLOWED 0
+#endif
+
+#if defined(NETKIT_USE_ESP_NN) && NETKIT_USE_ESP_NN && !NETKIT_ESP_NN_ALLOWED
+#error "NETKIT_USE_ESP_NN requires NETKIT_TARGET_MCU_ESP; forbidden on cpu, mpu, Arm, and RISC"
 #endif
 
 /*
  * XNNPACK LayerFast: default for cpu + any MPU (Arm or RISC). Forbidden on MCU
  * (override not allowed) — XNNPACK can run on many ISAs, but MCU flash/RAM
- * budgets make it a poor fit; use CMSIS-NN / reference there instead.
+ * budgets make it a poor fit; use CMSIS-NN / ESP-NN / reference there instead.
  */
 #if defined(NETKIT_CLASS_MCU)
 #define NETKIT_XNNPACK_ALLOWED 0

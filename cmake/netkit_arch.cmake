@@ -3,7 +3,7 @@
 # CMSIS-DSP is not used as a netkit backend.
 
 set(NETKIT_ARCH "" CACHE STRING
-    "Target core (empty=desktop CPU): CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, NEON")
+    "Target core (empty=desktop CPU): CM0..M85, A32, NEON, or ESP32/ESP32S3/ESP32C3/ESP32C6/ESP32P4")
 
 function(netkit_normalize_arch arch out_var)
     string(TOUPPER "${arch}" _arch)
@@ -14,6 +14,7 @@ endfunction()
 
 function(netkit_resolve_architecture)
     set(_arm_math_defines "")
+    set(_esp_defines "")
     set(_arm_math_neon OFF)
     set(_arm_math_loopunroll OFF)
     set(_arm_math_mve OFF)
@@ -85,10 +86,31 @@ function(netkit_resolve_architecture)
             set(_arm_math_neon ON)
             set(_target_default mpu_arm)
             set(NEON ON CACHE BOOL "Enable Hardware Neon" FORCE)
+        elseif(_arch STREQUAL "ESP32")
+            list(APPEND _esp_defines CONFIG_IDF_TARGET_ESP32=1 CONFIG_NN_OPTIMIZED=1)
+            set(_target_default mcu_esp)
+            set(_arm_math_loopunroll OFF)
+        elseif(_arch STREQUAL "ESP32S3" OR _arch STREQUAL "ESP32_S3")
+            list(APPEND _esp_defines CONFIG_IDF_TARGET_ESP32S3=1 CONFIG_NN_OPTIMIZED=1)
+            set(_target_default mcu_esp)
+            set(_arm_math_loopunroll OFF)
+        elseif(_arch STREQUAL "ESP32C3" OR _arch STREQUAL "ESP32_C3")
+            list(APPEND _esp_defines CONFIG_IDF_TARGET_ESP32C3=1 CONFIG_NN_OPTIMIZED=1)
+            set(_target_default mcu_esp)
+            set(_arm_math_loopunroll OFF)
+        elseif(_arch STREQUAL "ESP32C6" OR _arch STREQUAL "ESP32_C6")
+            list(APPEND _esp_defines CONFIG_IDF_TARGET_ESP32C6=1 CONFIG_NN_OPTIMIZED=1)
+            set(_target_default mcu_esp)
+            set(_arm_math_loopunroll OFF)
+        elseif(_arch STREQUAL "ESP32P4" OR _arch STREQUAL "ESP32_P4")
+            list(APPEND _esp_defines CONFIG_IDF_TARGET_ESP32P4=1 CONFIG_NN_OPTIMIZED=1)
+            set(_target_default mcu_esp)
+            set(_arm_math_loopunroll OFF)
         else()
             message(FATAL_ERROR
                 "Unknown NETKIT_ARCH '${NETKIT_ARCH}' (normalized '${_arch}'). "
-                "Use CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, or NEON; leave unset for desktop.")
+                "Use CM0, CM0PLUS, CM3, CM4, CM7, M23, M33, M55, M85, A32, NEON, "
+                "ESP32, ESP32S3, ESP32C3, ESP32C6, or ESP32P4; leave unset for desktop.")
         endif()
 
         if(_target_default STREQUAL "mcu_arm")
@@ -98,6 +120,7 @@ function(netkit_resolve_architecture)
     endif()
 
     set(NETKIT_ENV_ARM_MATH_DEFINES "${_arm_math_defines}" PARENT_SCOPE)
+    set(NETKIT_ENV_ESP_DEFINES "${_esp_defines}" PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_NEON ${_arm_math_neon} PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_LOOPUNROLL ${_arm_math_loopunroll} PARENT_SCOPE)
     set(NETKIT_ENV_ARM_MATH_MVE ${_arm_math_mve} PARENT_SCOPE)
