@@ -25,7 +25,8 @@ constexpr int kRuns = 10;
 constexpr int kImageCount = kMnistMlpInt8BenchmarkImageCount;
 constexpr int kInputSize = kMnistMlpInt8BenchmarkInputSize;
 constexpr int kOutputClasses = 10;
-constexpr std::size_t kArenaCapacity = 32u * 1024u;
+// MCU default (NK_ARENA_DEFAULT_CAPACITY): 64 KiB.
+constexpr std::size_t kArenaCapacity = NK_ARENA_DEFAULT_CAPACITY;
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[kArenaCapacity];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
@@ -72,13 +73,9 @@ void PrintDigitSummary(int image,
 extern "C" void app_main(void)
 {
     std::printf("\nnetkit XIAO ESP32C3 MNIST MLP int8 benchmark\n");
-    std::printf("  backend:     %s (MCU ESP32C3%s)\n",
-                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "esp-nn",
-                aot::kSpecialized   ? ", quant specialized AOT"
-                : aot::kQuantLowered ? ", quant lowered AOT"
-                                     : ", .nk loader");
-    std::printf("  weights:     %s\n",
-                aot::kQuantLowered ? "flash (static .rodata)" : "flash (embedded .nk blob)");
+    std::printf("  backend:     %s (MCU ESP32C3, interpreter embed)\n",
+                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "esp-nn");
+    std::printf("  weights:     flash (embedded .nk blob)\n");
     std::printf("  dtype:       int8 end-to-end (weights, activations, inputs; logits out)\n");
     std::printf("  classify:    argmax(logits) — final Softmax omitted\n");
     std::printf("  images:      %d per run\n", kImageCount);

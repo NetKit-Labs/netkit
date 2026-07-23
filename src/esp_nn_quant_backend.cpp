@@ -668,6 +668,10 @@ bool TryElementwiseAddS8(const int8_t* input1,
 
 #else
 
+#if NETKIT_REFERENCE_QUANT_LOOPS
+#include "quant_ops.hpp"
+#endif
+
 namespace EspNnQuant
 {
 
@@ -681,6 +685,233 @@ bool FinalizeFcPlan(CmsisQuantPlan::FcPlan& plan,
 {
     return plan.ready;
 }
+
+#if NETKIT_REFERENCE_QUANT_LOOPS
+
+namespace
+{
+NkFormat::MlpLayerQuantDesc QuantDescFromConv(const CmsisQuantPlan::Conv2DPlan& plan)
+{
+    NkFormat::MlpLayerQuantDesc q{};
+    q.input_scale = plan.input_scale;
+    q.input_zero_point = -plan.input_offset;
+    q.weight_scale = plan.weight_scale;
+    q.weight_zero_point = 0;
+    q.output_scale = plan.output_scale;
+    q.output_zero_point = plan.output_offset;
+    q.weight_channel_scales = plan.weight_channel_scales;
+    q.num_weight_channel_scales = plan.num_weight_channel_scales;
+    return q;
+}
+
+NkFormat::MlpLayerQuantDesc QuantDescFromDw(const CmsisQuantPlan::DepthwiseConv2DPlan& plan)
+{
+    NkFormat::MlpLayerQuantDesc q{};
+    q.input_scale = plan.input_scale;
+    q.input_zero_point = -plan.input_offset;
+    q.weight_scale = plan.weight_scale;
+    q.weight_zero_point = 0;
+    q.output_scale = plan.output_scale;
+    q.output_zero_point = plan.output_offset;
+    q.weight_channel_scales = plan.weight_channel_scales;
+    q.num_weight_channel_scales = plan.num_weight_channel_scales;
+    return q;
+}
+
+NkFormat::MlpLayerQuantDesc QuantDescFromFc(const CmsisQuantPlan::FcPlan& plan)
+{
+    NkFormat::MlpLayerQuantDesc q{};
+    q.input_scale = plan.input_scale;
+    q.input_zero_point = -plan.input_offset;
+    q.weight_scale = plan.weight_scale;
+    q.weight_zero_point = -plan.filter_offset;
+    q.output_scale = plan.output_scale;
+    q.output_zero_point = plan.output_offset;
+    q.weight_channel_scales = plan.weight_channel_scales;
+    q.num_weight_channel_scales = plan.num_weight_channel_scales;
+    return q;
+}
+}  // namespace
+
+bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan& plan,
+                            const int8_t* input,
+                            const int8_t* weights,
+                            const int32_t* bias,
+                            int8_t* output)
+{
+    if (!plan.ready || !input || !weights || !bias || !output || !plan.multipliers || !plan.shifts)
+        return false;
+    const NkFormat::MlpLayerQuantDesc quant = QuantDescFromConv(plan);
+    // AOT plans often leave act_min/act_max at defaults; let QuantOps bake from clamp.
+    QuantOps::Conv2dNhwcQuant(input,
+                              static_cast<uint32_t>(plan.in_h),
+                              static_cast<uint32_t>(plan.in_w),
+                              static_cast<uint32_t>(plan.in_c),
+                              weights,
+                              bias,
+                              plan.kernel_size,
+                              plan.stride,
+                              plan.pad_h,
+                              plan.pad_w,
+                              plan.pad_h,
+                              plan.pad_w,
+                              plan.out_c,
+                              quant,
+                              plan.clamp,
+                              output,
+                              nullptr,
+                              plan.multipliers,
+                              plan.shifts,
+                              nullptr,
+                              nullptr,
+                              plan.bias_folded);
+    QuantTrace::RecordConv2dReference();
+    return true;
+}
+
+bool TryDepthwiseConv2dNhwcQuantPlan(const CmsisQuantPlan::DepthwiseConv2DPlan& plan,
+                                     const int8_t* input,
+                                     const int8_t* weights,
+                                     const int32_t* bias,
+                                     int8_t* output)
+{
+    if (!plan.ready || !input || !weights || !bias || !output || !plan.multipliers || !plan.shifts)
+        return false;
+
+    // Lowered AOT passes HWC when plan.weights_hwc is set; QuantOps expects CHW.
+    const int8_t* weights_chw = weights;
+    if (plan.weights_hwc != nullptr)
+    {
+        const int32_t n = plan.channels * plan.kernel_h * plan.kernel_w;
+        void* buf = nullptr;
+        int32_t size = 0;
+        if (!BindCmsisWorkspace(buf, size, n) || !buf)
+            return false;
+        int8_t* packed = static_cast<int8_t*>(buf);
+        for (int c = 0; c < plan.channels; ++c)
+        {
+            for (int y = 0; y < plan.kernel_h; ++y)
+            {
+                for (int x = 0; x < plan.kernel_w; ++x)
+                {
+                    const int hwc = (y * plan.kernel_w + x) * plan.channels + c;
+                    const int chw = c * plan.kernel_h * plan.kernel_w + y * plan.kernel_w + x;
+                    packed[chw] = weights[hwc];
+                }
+            }
+        }
+        weights_chw = packed;
+    }
+
+    const NkFormat::MlpLayerQuantDesc quant = QuantDescFromDw(plan);
+    QuantOps::DepthwiseConv2dNhwcQuant(input,
+                                       static_cast<uint32_t>(plan.in_h),
+                                       static_cast<uint32_t>(plan.in_w),
+                                       static_cast<uint32_t>(plan.channels),
+                                       weights_chw,
+                                       bias,
+                                       plan.kernel_h,
+                                       plan.kernel_w,
+                                       plan.stride,
+                                       plan.pad_h,
+                                       plan.pad_w,
+                                       plan.pad_h,
+                                       plan.pad_w,
+                                       quant,
+                                       plan.clamp,
+                                       output,
+                                       plan.multipliers,
+                                       plan.shifts,
+                                       nullptr,
+                                       nullptr,
+                                       plan.bias_folded);
+    QuantTrace::RecordConv2dReference();
+    return true;
+}
+
+bool TryMaxPool2dNhwcQuantPlan(const CmsisQuantPlan::Pool2DPlan& plan,
+                               const int8_t* input,
+                               int8_t* output)
+{
+    if (!plan.ready || !input || !output)
+        return false;
+    QuantOps::MaxPool2dNhwcQuant(input,
+                                 static_cast<uint32_t>(plan.in_h),
+                                 static_cast<uint32_t>(plan.in_w),
+                                 static_cast<uint32_t>(plan.in_c),
+                                 plan.pool_h,
+                                 plan.pool_w,
+                                 plan.stride,
+                                 plan.pad_h,
+                                 plan.pad_w,
+                                 plan.pad_h,
+                                 plan.pad_w,
+                                 output);
+    return true;
+}
+
+bool TryFullyConnectedQuantPlan(const CmsisQuantPlan::FcPlan& plan,
+                                const int8_t* input,
+                                const int8_t* weights,
+                                const int32_t* bias,
+                                int8_t* output_int8)
+{
+    if (!plan.ready || !input || !weights || !bias || !output_int8 || !plan.multipliers ||
+        !plan.shifts)
+        return false;
+    const NkFormat::MlpLayerQuantDesc quant = QuantDescFromFc(plan);
+
+    // AOT per-tensor FC stores length-1 mult/shift; QuantOps indexes per out-channel.
+    const bool per_channel =
+        plan.weight_channel_scales != nullptr &&
+        plan.num_weight_channel_scales == static_cast<uint32_t>(plan.out_features);
+    const int32_t* multipliers = plan.multipliers;
+    const int32_t* shifts = plan.shifts;
+    int32_t* broadcast = nullptr;
+    if (!per_channel && plan.out_features > 1)
+    {
+        const int32_t bytes = plan.out_features * static_cast<int32_t>(sizeof(int32_t)) * 2;
+        void* buf = nullptr;
+        int32_t size = 0;
+        if (!BindCmsisWorkspace(buf, size, bytes) || !buf)
+            return false;
+        broadcast = static_cast<int32_t*>(buf);
+        for (int32_t i = 0; i < plan.out_features; ++i)
+        {
+            broadcast[i] = plan.multipliers[0];
+            broadcast[plan.out_features + i] = plan.shifts[0];
+        }
+        multipliers = broadcast;
+        shifts = broadcast + plan.out_features;
+    }
+
+    QuantOps::FullyConnectedQuant(input,
+                                  1u,
+                                  static_cast<uint32_t>(plan.in_features),
+                                  weights,
+                                  bias,
+                                  static_cast<uint32_t>(plan.out_features),
+                                  quant,
+                                  plan.clamp,
+                                  output_int8,
+                                  multipliers,
+                                  shifts,
+                                  nullptr,
+                                  nullptr,
+                                  plan.bias_folded);
+    return true;
+}
+
+bool TrySoftmaxS8Plan(const CmsisQuantPlan::SoftmaxPlan& /*plan*/,
+                      const int8_t* /*input*/,
+                      int8_t* /*output*/)
+{
+    // SoftmaxPlan carries prepared mult/shift only; public QuantOps::SoftmaxS8 needs
+    // logit_scale. Classification AOT uses --omit-final-softmax; keep stub miss.
+    return false;
+}
+
+#else  // !NETKIT_REFERENCE_QUANT_LOOPS
 
 bool TryConv2dNhwcQuantPlan(const CmsisQuantPlan::Conv2DPlan&,
                             const int8_t*,
@@ -718,6 +949,8 @@ bool TrySoftmaxS8Plan(const CmsisQuantPlan::SoftmaxPlan&, const int8_t*, int8_t*
 {
     return false;
 }
+
+#endif  // NETKIT_REFERENCE_QUANT_LOOPS
 
 bool TryConv2dNhwcQuant(const int8_t*,
                         uint32_t,

@@ -1,0 +1,53 @@
+# Seeed XIAO ESP32C3 — netkit vs TFLM int8 A/B (ESP-NN OFF / reference)
+# Chip: ESP32-C3 @ 160 MHz (RISC-V) · NETKIT_TARGET=mcu_esp
+# Methodology (matches NUCLEO MCU peers + ESP-NN-on A/B): 10 runs × 10 images,
+# discard first invoke each run; untimed probe before timed loops.
+# Order swaps: nk→tflm and tflm→nk; means below are the average of the two
+# order captures (they matched).
+# netkit: embed AOT + CmsisQuantPlan → QuantOps reference
+#   (PIO_ENV=xiao_esp32c3_ref · NETKIT_USE_ESP_NN=0 · REFERENCE_QUANT_LOOPS=1)
+# TFLM: esp-tflite-micro without -DESP_NN (reference kernels)
+# ImageNet / MobileNetV4: skipped — weights exceed factory app partition.
+#
+# Compiler match (same as ESP-NN-on peer):
+#   IDF global: CONFIG_COMPILER_OPTIMIZATION_PERF (-O2)
+#   netkit + TFLM C++ hot path: -O3 -fno-rtti -fno-exceptions
+#     -fno-threadsafe-statics -fno-unwind-tables
+#
+# Arena (netkit embed reference): CNN 64 KiB; DS-CNN 96 KiB
+#   (DS-CNN failed act_b alloc at 64 KiB).
+
+## Latency (mean_us → ms)
+
+| Model | netkit (reference) | TFLM (reference) | Gain (TFLM÷netkit) | Accuracy |
+|-------|-------------------:|-----------------:|-------------------:|----------|
+| MNIST CNN int8 | **226.8 ms** | 1205.5 ms | 5.32× | 10/10 both |
+| MNIST DS-CNN int8 | **85.8 ms** | 392.3 ms | 4.57× | 10/10 both |
+
+Raw BENCHMARK_SUMMARY lines (both order swaps):
+
+```
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference-int8 mean_us=226809 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=reference mean_us=1205535 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=reference mean_us=1205534 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=reference-int8 mean_us=226809 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=reference-int8 mean_us=85768 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=reference mean_us=392348 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=reference mean_us=392348 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=reference-int8 mean_us=85768 runs=10
+```
+
+## vs ESP-NN-on embed (same board / methodology)
+
+| Model | netkit ESP-NN | netkit ref | TFLM ESP-NN | TFLM ref |
+|-------|--------------:|-----------:|------------:|---------:|
+| MNIST CNN | 252.0 ms | **226.8 ms** | 251.4 ms | 1205.5 ms |
+| MNIST DS-CNN | 87.7 ms | **85.8 ms** | 87.5 ms | 392.3 ms |
+
+(ESP-NN-on numbers from esp32c3_int8_ab_results.txt — interpreter embed.)
+
+## Reproduce
+
+```bash
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ref_ab.sh
+```

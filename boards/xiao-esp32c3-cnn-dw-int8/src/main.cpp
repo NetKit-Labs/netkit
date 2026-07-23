@@ -1,4 +1,4 @@
-// Seeed XIAO ESP32C3 — MNIST DS-CNN int8 (netkit ESP-NN, quant lowered AOT).
+// Seeed XIAO ESP32C3 — MNIST DS-CNN int8 (netkit ESP-NN, interpreter embed).
 // Methodology matches NUCLEO MCU peers: 10 runs × 10 images, discard image 0 each run.
 
 #include "esp_timer.h"
@@ -25,7 +25,11 @@ constexpr int kRuns = 10;
 constexpr int kImageCount = kMnistCnnInt8BenchmarkImageCount;
 constexpr int kInputSize = kMnistCnnInt8BenchmarkInputSize;
 constexpr int kOutputClasses = 10;
-constexpr std::size_t kArenaCapacity = 32u * 1024u;
+// MCU default is NK_ARENA_DEFAULT_CAPACITY (64 KiB). DS-CNN embed needs more
+// for act ping-pong + plan scratch (act_b alone is ~21 KiB).
+constexpr std::size_t kArenaCapacity = 96u * 1024u;
+static_assert(NK_ARENA_DEFAULT_CAPACITY == 64u * 1024u,
+              "XIAO boards assume MCU arena default of 64 KiB");
 
 alignas(std::max_align_t) static unsigned char g_arena_memory[kArenaCapacity];
 alignas(std::max_align_t) static int8_t g_output_i8[aot::kOutputElements];
@@ -72,13 +76,9 @@ void PrintDigitSummary(int image,
 extern "C" void app_main(void)
 {
     std::printf("\nnetkit XIAO ESP32C3 MNIST DS-CNN int8 benchmark\n");
-    std::printf("  backend:     %s (MCU ESP32C3%s)\n",
-                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "esp-nn",
-                aot::kSpecialized   ? ", quant specialized AOT"
-                : aot::kQuantLowered ? ", quant lowered AOT"
-                                     : ", .nk loader");
-    std::printf("  weights:     %s\n",
-                aot::kQuantLowered ? "flash (static .rodata)" : "flash (embedded .nk blob)");
+    std::printf("  backend:     %s (MCU ESP32C3, interpreter embed)\n",
+                NETKIT_REFERENCE_QUANT_LOOPS ? "netkit reference" : "esp-nn");
+    std::printf("  weights:     flash (embedded .nk blob)\n");
     std::printf("  dtype:       int8 end-to-end\n");
     std::printf("  classify:    argmax(logits) — final Softmax omitted\n");
     std::printf("  images:      %d per run\n", kImageCount);

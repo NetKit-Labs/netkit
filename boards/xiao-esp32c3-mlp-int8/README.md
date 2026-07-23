@@ -8,7 +8,8 @@ ESP-IDF firmware (via PlatformIO) for the **Seeed Studio XIAO ESP32C3**.
 | Chip | ESP32-C3 · **RISC-V** · 160 MHz · 400 KB SRAM · 4 MB flash |
 | netkit target | `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32C3` |
 | Backend | **ESP-NN** (int8 production) — **not** NMSIS-NN |
-| Model | MNIST MLP int8, quant lowered AOT |
+| Model | MNIST MLP int8, interpreter embed |
+| Arena | 64 KiB (`NK_ARENA_DEFAULT_CAPACITY`) |
 | Console | USB Serial/JTAG (onboard, no UART adapter) |
 
 ESP32-C3 is RISC-V silicon, but Espressif chips use the **`mcu_esp` / ESP-NN**
@@ -51,7 +52,7 @@ Press the board **RESET** button (or unplug/replug) to re-run the benchmark whil
 
 ```text
 netkit XIAO ESP32C3 MNIST MLP int8 benchmark
-  backend:     esp-nn (MCU ESP32C3, quant lowered AOT)
+  backend:     esp-nn (MCU ESP32C3, interpreter embed)
   ...
 BENCHMARK_SUMMARY runtime=netkit model=mlp_int8 backend=esp-nn-int8 mean_us=... runs=10
 

@@ -1,10 +1,16 @@
-# Seeed XIAO ESP32C3 — netkit vs TFLM int8 A/B
+# Seeed XIAO ESP32C3 — netkit vs TFLM int8 A/B (ESP-NN ON)
 # Chip: ESP32-C3 @ 160 MHz (RISC-V) · NETKIT_TARGET=mcu_esp · ESP-NN
 # Methodology (matches NUCLEO MCU peers): 10 runs × 10 images, discard first
 # invoke each run; untimed probe before timed loops.
 # Order swaps (host-suite spirit): nk→tflm and tflm→nk; means below are the
 # average of the two order captures (they matched within a few µs).
-# netkit: quant lowered AOT · TFLM: esp-tflite-micro (ESP-NN kernels)
+# netkit: interpreter embed + CmsisQuantPlan → ESP-NN
+#   Arena: CNN 64 KiB (NK_ARENA_DEFAULT_CAPACITY); DS-CNN 96 KiB
+# TFLM: esp-tflite-micro (ESP-NN kernels)
+#
+# Investigate: quant lowered AOT should be faster than embed, but an earlier
+# ESP-NN lowered capture was a hair slower (CNN ~254.6 vs 252.0 ms; DS-CNN
+# ~88.5 vs 87.7 ms). Peer default stays embed until that is understood.
 # ImageNet / MobileNetV4: skipped — int8 weights ~2.5–3.8 MiB exceed the
 # default 1 MiB factory app partition.
 #
@@ -16,32 +22,32 @@
 
 ## Latency (mean_us → ms)
 
-| Model | netkit (ESP-NN) | TFLM (ESP-NN) | Gain (TFLM÷netkit) | Accuracy |
-|-------|----------------:|--------------:|-------------------:|----------|
-| MNIST CNN int8 | 254.6 ms | **253.2 ms** | 0.99× | 10/10 both |
-| MNIST DS-CNN int8 | 88.5 ms | **87.5 ms** | 0.99× | 10/10 both |
+| Model | netkit (ESP-NN embed) | TFLM (ESP-NN) | Gain (TFLM÷netkit) | Accuracy |
+|-------|----------------------:|--------------:|-------------------:|----------|
+| MNIST CNN int8 | 252.0 ms | **251.4 ms** | 1.00× | 10/10 both |
+| MNIST DS-CNN int8 | 87.7 ms | **87.5 ms** | 1.00× | 10/10 both |
 
 Raw BENCHMARK_SUMMARY lines (both order swaps, matched -O3 C++):
 
 ```
-BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=esp-nn-int8 mean_us=254568 runs=10
-BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=esp-nn mean_us=253239 runs=10
-BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=esp-nn mean_us=253236 runs=10
-BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=esp-nn-int8 mean_us=254568 runs=10
-BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=esp-nn-int8 mean_us=88470 runs=10
-BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=esp-nn mean_us=87499 runs=10
-BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=esp-nn mean_us=87499 runs=10
-BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=esp-nn-int8 mean_us=88467 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=esp-nn-int8 mean_us=252044 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=esp-nn mean_us=251373 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_int8 backend=esp-nn mean_us=251373 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_int8 backend=esp-nn-int8 mean_us=252045 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=esp-nn-int8 mean_us=87720 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=esp-nn mean_us=87471 runs=10
+BENCHMARK_SUMMARY runtime=tflm model=cnn_dw_int8 backend=esp-nn mean_us=87471 runs=10
+BENCHMARK_SUMMARY runtime=netkit model=cnn_dw_int8 backend=esp-nn-int8 mean_us=87720 runs=10
 ```
 
 ## Flash / RAM (PlatformIO size check)
 
 | Firmware | Flash | RAM (static) |
 |----------|------:|-------------:|
-| netkit CNN | 374 KiB | 72 KiB |
-| netkit DS-CNN | 364 KiB | 95 KiB |
-| TFLM CNN | 447 KiB | 108 KiB |
-| TFLM DS-CNN | 448 KiB | 108 KiB |
+| netkit CNN | 420 KiB | 75 KiB |
+| netkit DS-CNN | 405 KiB | 107 KiB |
+| TFLM CNN | 432 KiB | 106 KiB |
+| TFLM DS-CNN | 433 KiB | 106 KiB |
 
 ## Reproduce
 

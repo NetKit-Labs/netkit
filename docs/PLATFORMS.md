@@ -212,15 +212,16 @@ make NETKIT_TARGET=mcu_esp NETKIT_ARCH=ESP32S3 lib
 # Seeed XIAO ESP32C3 board firmware (PlatformIO ESP-IDF):
 make -C boards/xiao-esp32c3-cnn-int8
 PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ref_ab.sh  # ESP-NN off
 ```
 
 **CMake:** `-DNETKIT_TARGET=mcu_esp -DNETKIT_ARCH=ESP32S3 -DNETKIT_ESP_NN=ON`
 
-**Boards:** [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md) — MLP / CNN / DS-CNN int8 (netkit + TFLM) on Seeed XIAO ESP32C3 (RISC-V silicon, **ESP-NN** profile).
+**Boards:** [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md) — MLP / CNN / DS-CNN int8 (netkit + TFLM) on Seeed XIAO ESP32C3 (RISC-V silicon, **ESP-NN** profile). Peer firmwares use **interpreter embed** (`NETKIT_LOWERED=0`); arena default **64 KiB**, DS-CNN **96 KiB**.
 
-**Maturity:** float32 + int8 runtime and host ANSI smoke are **done**. On-device peer A/B vs TFLM (CNN / DS-CNN int8) **done** — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3). Same C `nk_*` load/run as Arm MCU. Note: C3 has **no FPU** (soft-float); production peers are int8.
+**Maturity:** float32 + int8 runtime and host ANSI smoke are **done**. On-device peer A/B vs TFLM (CNN / DS-CNN int8, ESP-NN on + off) **done** — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3). Same C `nk_*` load/run as Arm MCU. Note: C3 has **no FPU** (soft-float); production peers are int8.
 
-**Override:** `NETKIT_ESP_NN=0` → reference only.
+**Override:** `NETKIT_ESP_NN=0` / `PIO_ENV=xiao_esp32c3_ref` → QuantOps reference only.
 
 ---
 

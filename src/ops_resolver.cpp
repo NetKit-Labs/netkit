@@ -33,4 +33,5 @@ NkOpCode ToOpCode(CnnBlockType block_type)
         case CnnBlockType::YoloxPafpnMultiscale:
             return NkOpCode::YoloxPafpnMultiscale;
     }
+    return NkOpCode::Conv2D;
 }

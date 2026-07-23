@@ -36,7 +36,7 @@ Int8 inference is available end-to-end (int8 in → int8 out) for MNIST **CNN** 
 | CNN export | `make export-mnist-cnn-int8` |
 | MLP export | `make export-mnist-mlp-int8` |
 | MCU firmware (CNN, Arm) | [boards/nucleo-f446re-cnn-int8](../boards/nucleo-f446re-cnn-int8/README.md) — **10/10** @ **95.3 ms** CMSIS / **336 ms** reference (`NETKIT_EMBED=1`; vs TFLM / microTVM in [STATUS.md](STATUS.md)) |
-| MCU firmware (CNN, Espressif) | [boards/xiao-esp32c3-cnn-int8](../boards/xiao-esp32c3-cnn-int8/README.md) — **10/10** @ **254.6 ms** ESP-NN (vs TFLM **253.2 ms**; [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3)) |
+| MCU firmware (CNN, Espressif) | [boards/xiao-esp32c3-cnn-int8](../boards/xiao-esp32c3-cnn-int8/README.md) — **10/10** embed @ **252.0 ms** ESP-NN (vs TFLM **251.4 ms**); reference **226.8 ms** vs TFLM **1205.5 ms** ([STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3)) |
 | MCU firmware (MLP) | [boards/nucleo-f446re-mlp-int8](../boards/nucleo-f446re-mlp-int8/README.md) — **10/10** @ ~3.4 ms (CMSIS) / ~15 ms (reference); XIAO: [xiao-esp32c3-mlp-int8](../boards/xiao-esp32c3-mlp-int8/README.md) |
 
 **On-device / host C++ rule:** int8 inference stays integer end-to-end on MCU, MPU, and CPU. There is **no C++ float→int8 quantization or dequantization** — float→int8 happens only in Python at `.nk` / test-vector export time; scale metadata lives in the model; kernels apply TFLite-style multiply-by-quantized-multiplier. Interpreting outputs (dequantized confidence, float probabilities) is done **offline in Python** (e.g. `benchmark/tools/parse_mcu_cnn_int8_log.py`), never in firmware or `libnetkit`.

@@ -90,16 +90,25 @@ All **10/10**. Board default is **quant lowered** (`make` / `make deploy-lowered
 
 ### Int8 on-device (Seeed XIAO ESP32C3)
 
-ESP-NN peer A/B vs TFLM @ 160 MHz (matched `-O3` C++ flags; quant lowered AOT; 10×10; order swaps) — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3), [`esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt):
+Peer A/B vs TFLM @ 160 MHz (matched `-O3` C++ flags; **interpreter embed**; 10×10; order swaps) — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3):
+
+**ESP-NN on** — [`esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt)
 
 | Model | netkit | TFLM |
 |-------|-------:|-----:|
-| MNIST CNN | 254.6 ms | **253.2 ms** |
-| MNIST DS-CNN | 88.5 ms | **87.5 ms** |
+| MNIST CNN | 252.0 ms | **251.4 ms** |
+| MNIST DS-CNN | 87.7 ms | **87.5 ms** |
 
-All **10/10**. Index: [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md). Runner: `./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh`.
+**ESP-NN off (reference)** — [`esp32c3_int8_ref_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ref_ab_results.txt)
 
-On-device memory (interpreter embed): **~334 KiB flash**, **~75 KiB SRAM** (64 KiB arena + ~53 KiB headroom on 128 KiB SRAM). Quant lowered uses static ping-pong BSS instead of a large arena — [ARENA.md](ARENA.md#quant-lowered-vs-interpreter-embed-on-mcu).
+| Model | netkit | TFLM |
+|-------|-------:|-----:|
+| MNIST CNN | **226.8 ms** | 1205.5 ms |
+| MNIST DS-CNN | **85.8 ms** | 392.3 ms |
+
+All **10/10**. Arena: CNN **64 KiB** (`NK_ARENA_DEFAULT_CAPACITY`); DS-CNN **96 KiB**. Flash/RAM (ESP-NN embeds): CNN ~420 KiB / 75 KiB; DS-CNN ~405 KiB / 107 KiB. Index: [boards/xiao-esp32c3/](../boards/xiao-esp32c3/README.md). Runners: `run_esp_int8_ab.sh` / `run_esp_int8_ref_ab.sh`.
+
+Quant lowered AOT is expected to be faster than embed but measured a hair slower under ESP-NN on this board — investigate before promoting it ([STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3)).
 
 UART captures `DIGIT_SUMMARY` lines with raw int8 softmax (`pred_i8`, `out_i8=...`). Dequantized per-digit confidence is computed offline — not on device:
 

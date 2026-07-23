@@ -19,7 +19,7 @@ Both APIs share:
 
 Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap / PAFPN), regression, and CLI entry points have documented C equivalents — see [API_PARITY.md](API_PARITY.md). Some C++ helpers (block introspection, op trimming, timed forward) remain C++-only.
 
-**MCU peers:** NUCLEO-F446RE **int8** CNN/DS-CNN vs TFLM and microTVM (CMSIS-NN / reference); XIAO ESP32C3 **int8** CNN/DS-CNN vs TFLM (ESP-NN). Float32 MNIST CNN/DS-CNN exceed typical MCU flash budgets — [STATUS.md](STATUS.md).
+**MCU peers:** NUCLEO-F446RE **int8** CNN/DS-CNN vs TFLM and microTVM (CMSIS-NN / reference); XIAO ESP32C3 **int8** CNN/DS-CNN vs TFLM (ESP-NN on + off; interpreter embed). Float32 MNIST CNN/DS-CNN exceed typical MCU flash budgets — [STATUS.md](STATUS.md).
 
 ## Documentation map
 

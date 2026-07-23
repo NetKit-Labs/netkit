@@ -32,8 +32,8 @@ When adding a feature, update this file and both [c-api.md](c-api.md) and [cpp-a
 | Run int8 | `nk_model_run_int8` | `forward_quantized` / `nk_model_run_int8` | Prequantize in Python |
 | Argmax | `nk_argmax_i8` / `nk_argmax_f32` | `NetkitUtil::ArgMaxInt8` / `ArgMaxF32` | Classify logits |
 | Query quantized | `nk_*_is_quantized` | `IsQuantized()` | |
-| Omit final Softmax | `nk_*_set_omit_final_softmax` | `SetOmitFinalSoftmax` | Classification logits |
-| Kernel workspace | `nk_cnn_kernel_workspace_bytes` | `KernelWorkspaceBytes()` | CMSIS-NN / NMSIS-NN |
+| Omit final Softmax | `nk_*_set_omit_final_softmax` | MLP: `SetOmitFinalSoftmax`; quant CNN: `Runtime::omit_final_softmax` | Classification logits (no-op on float CNN) |
+| Kernel workspace | `nk_cnn_kernel_workspace_bytes` | `KernelWorkspaceBytes()` | CMSIS-NN / ESP-NN / NMSIS-NN scratch |
 | Inspect / size | `nk_inspect_model` | `./netkit inspect --full` | CPU |
 
 Full symbol map below; complete references: [c-api.md](c-api.md), [cpp-api.md](cpp-api.md).
@@ -94,6 +94,8 @@ Both suites exercise the same **89 embedded `.nk` inference cases**; `nk_run_all
 | `Tensor` | `nk_tensor_t` |
 | `DataType` (`Float32`…`Int32`) | `nk_dtype_t` (`NK_DTYPE_FLOAT32`…`NK_DTYPE_INT32`) |
 | `kMaxTensorRank` | `NK_MAX_TENSOR_RANK` |
+
+`sizeof(Tensor) == sizeof(nk_tensor_t)` and matching `offsetof` for `data` / `rank` / `shape` / `stride` / `num_elements` / `bytes` are enforced in `src/netkit_api.cpp` (`DataType` is `uint8_t`; `nk_dtype_t` is a 4-byte enum with the same field padding).
 
 ### TensorFactory (`tensor_factory.hpp`)
 
@@ -252,7 +254,7 @@ High-level combined handle (C convenience):
 | `NETKIT_MCU_ACCEL_ONLY` (`NETKIT_MCU_CMSIS_ONLY`) | Default on MCU class when `REFERENCE_QUANT_LOOPS=0` — QuantOps reference loops omitted (CMSIS-NN / ESP-NN / NMSIS-NN production) |
 | `NETKIT_DISABLE_IOSTREAM` | Default on MCU — `nk_arch_print` / `PrintNetworkSummary` are no-ops |
 | NUCLEO-F446RE peers | **int8** CNN / DS-CNN vs TFLM + microTVM (CMSIS-NN and reference); float32 CNN/DS-CNN exceed 512 KiB flash — [STATUS.md](STATUS.md) |
-| Espressif MCU (`mcu_esp`) | ESP-NN int8 production (ESP32 / S3 / C3 / C6 / P4); float32 reference (ESP-NN has no float API); same C `nk_*` load/run as Arm MCU. On-device peers: [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) CNN/DS-CNN vs TFLM — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3) |
+| Espressif MCU (`mcu_esp`) | ESP-NN int8 production (ESP32 / S3 / C3 / C6 / P4); float32 reference (ESP-NN has no float API); same C `nk_*` load/run as Arm MCU. On-device peers: [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) CNN/DS-CNN vs TFLM — **interpreter embed** default (ESP-NN on + off); [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3), [`esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt), [`esp32c3_int8_ref_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ref_ab_results.txt) |
 | RISC-V MCU (`mcu_risc`) | NMSIS-NN int8 production (Nuclei N300 / RV32*); float32 reference (NMSIS-NN has no float API); same C `nk_*` load/run as Arm MCU |
 
 ### AOT deployment
@@ -262,7 +264,7 @@ High-level combined handle (C convenience):
 | Interpreter (embed `.nk` + loader) | `netkit::aot::*::Model` or `*_aot_load` + `nk_model_load_memory` | `*_aot.h` + `nk_model_load_memory` |
 | Lowered (static `Kernels::` chain) | `netkit::aot::*::Model` in `*_aot.hpp` | C header + C++ body: `*_aot.h` / `*_aot_run_int8` wrap the lowered C++ `Model` (`--language c`); no pure-C lowered emitter |
 
-Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). See `boards/nucleo-f446re/` and `boards/xiao-esp32c3-*-int8/`.
+Lowered AOT keeps coef arrays in flash `.rodata` (no SRAM copy at load). NUCLEO int8 boards default to quant lowered; **XIAO ESP32C3 int8 peer boards default to interpreter embed** (TFLM-fair; see [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3) — lowered was a hair slower under ESP-NN and needs investigation).
 
 ### Intentional C++-only symbols
 

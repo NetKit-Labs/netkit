@@ -55,7 +55,7 @@ The CLI command is `python -m netkit aot`, but that name covers **two different 
 
 Generated files are still named `*_aot.{hpp,cpp}` for historical reasons. If lowering cannot cover the graph, `aot` **warns** and falls back to embed unless `--strict-lower` is set (then it fails).
 
-MCU **deploy** boards (`nucleo-*-int8`) default to **quant lowered**. Use `NETKIT_EMBED=1` for TFLM-fair interpreter A/B. `make deploy-lowered` forces a clean lowered rebuild.
+MCU **deploy** boards: NUCLEO `*-int8` default to **quant lowered** (`NETKIT_EMBED=1` for TFLM-fair interpreter A/B; `make deploy-lowered` forces a clean lowered rebuild). **XIAO ESP32C3** int8 peer boards default to **interpreter embed** (TFLM-fair); quant lowered measured a hair slower under ESP-NN and is under investigation — [STATUS.md](STATUS.md#mcu-seeed-xiao-esp32c3).
 
 Pipeline comparison:
 

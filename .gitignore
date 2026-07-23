@@ -27,8 +27,14 @@ libnetkit_trim.a
 
 # Logs
 *.log
-!benchmark/mcu_ab_logs/*.log
-!benchmark/mcu_ab_logs/*.txt
+!benchmark/mcu_ab_logs/**/*.log
+!benchmark/mcu_ab_logs/**/*.txt
+# Host tee of full A/B runs (UART captures are the small named *.log files).
+benchmark/mcu_ab_logs/**/*_run.log
+benchmark/mcu_ab_logs/**/*_rerun*.log
+# PlatformIO/ESP-IDF generated per-env sdkconfig (use sdkconfig.defaults).
+boards/**/sdkconfig.xiao_*
+boards/**/sdkconfig.defaults.old
 
 # Local training checkpoints
 models/checkpoints/

@@ -12,7 +12,8 @@ GEN_DIR := $(BOARD_ROOT)/generated
 PIO ?= $(HOME)/.platformio/penv/bin/pio
 export PATH := $(dir $(PIO)):$(PATH)
 
-NETKIT_LOWERED ?= 1
+# Interpreter embed (same TFLM-fair path as CNN / DS-CNN int8 boards).
+NETKIT_LOWERED := 0
 PORT ?=
 # Prefer a python with numpy+onnx (AOT deps). Override with PYTHON=...
 PYTHON ?= $(shell for p in python3 /usr/bin/python3 /opt/homebrew/bin/python3; do \
@@ -20,7 +21,7 @@ PYTHON ?= $(shell for p in python3 /usr/bin/python3 /opt/homebrew/bin/python3; d
 	$$p -c 'import numpy, onnx' 2>/dev/null && { command -v $$p; break; }; \
 	done)
 
-.PHONY: all check-deps export-embed build flash monitor run clean size
+.PHONY: all check-deps export-embed build flash monitor run clean fullclean size
 
 all: check-deps export-embed build
 
@@ -42,7 +43,7 @@ $(GEN_DIR)/.embed_stamp: $(NETKIT_ROOT)/models/mnist_mlp_int8.nk
 	@mkdir -p $(GEN_DIR)
 	cd $(NETKIT_ROOT) && PYTHONPATH=$(NETKIT_ROOT)/python $(PYTHON) -m netkit aot models/mnist_mlp_int8.nk \
 		-o $(abspath $(GEN_DIR)) --language cpp --target mcu --arena-headroom 0 \
-		$(if $(filter 1,$(NETKIT_LOWERED)),--strict-lower,--no-lower) --omit-final-softmax
+		--no-lower --omit-final-softmax
 	@touch $(GEN_DIR)/.embed_stamp
 
 build: export-embed
@@ -68,3 +69,7 @@ size: build
 clean:
 	rm -rf $(BOARD_ROOT)/.pio $(BOARD_ROOT)/build
 	rm -f $(GEN_DIR)/.embed_stamp
+
+fullclean:
+	$(XIAO_PIO_FULLCLEAN)
+	rm -rf $(BOARD_ROOT)/.pio

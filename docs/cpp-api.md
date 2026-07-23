@@ -354,7 +354,7 @@ public:
     bool IsValid() const;
     bool IsQuantized() const;
     bool HasActivationBuffers() const;
-    std::size_t KernelWorkspaceBytes() const;  // CMSIS-NN / NMSIS-NN shared scratch after InitActivationBuffers
+    std::size_t KernelWorkspaceBytes() const;  // CMSIS-NN / ESP-NN / NMSIS-NN shared scratch after InitActivationBuffers
 
     bool InitActivationBuffers(Arena& arena, uint32_t in_h, uint32_t in_w, uint32_t in_c);  // LoadCNN
 

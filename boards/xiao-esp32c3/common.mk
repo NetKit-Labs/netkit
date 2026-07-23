@@ -10,6 +10,8 @@ PYTHON ?= $(shell for p in python3 /usr/bin/python3 /opt/homebrew/bin/python3 /o
 	done)
 
 PORT ?=
+# Default ESP-NN production env. Reference peer A/B: PIO_ENV=xiao_esp32c3_ref
+PIO_ENV ?= xiao_esp32c3
 
 define XIAO_CHECK_PIO
 	@command -v $(notdir $(PIO)) >/dev/null 2>&1 || command -v pio >/dev/null 2>&1 || \
@@ -17,17 +19,21 @@ define XIAO_CHECK_PIO
 endef
 
 define XIAO_PIO_RUN
-	$(PIO) run -d $(BOARD_ROOT)
+	$(PIO) run -d $(BOARD_ROOT) -e $(PIO_ENV)
 endef
 
 define XIAO_PIO_UPLOAD
 	@PORT_ARG=""; \
 	if [ -n "$(PORT)" ]; then PORT_ARG="--upload-port $(PORT)"; fi; \
-	$(PIO) run -d $(BOARD_ROOT) -t upload $$PORT_ARG
+	$(PIO) run -d $(BOARD_ROOT) -e $(PIO_ENV) -t upload $$PORT_ARG
 endef
 
 define XIAO_PIO_MONITOR
 	@PORT_ARG=""; \
 	if [ -n "$(PORT)" ]; then PORT_ARG="--port $(PORT)"; fi; \
-	$(PIO) device monitor -d $(BOARD_ROOT) -b 115200 $$PORT_ARG
+	$(PIO) device monitor -d $(BOARD_ROOT) -e $(PIO_ENV) -b 115200 $$PORT_ARG
+endef
+
+define XIAO_PIO_FULLCLEAN
+	$(PIO) run -d $(BOARD_ROOT) -e $(PIO_ENV) -t fullclean
 endef

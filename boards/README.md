@@ -79,14 +79,15 @@ Float32 MNIST CNN / DS-CNN exceed 512 KiB flash on this part — on-device digit
 | [`xiao-esp32c3-tflm-cnn-int8/`](xiao-esp32c3-tflm-cnn-int8/README.md) | TFLM | MNIST CNN int8 |
 | [`xiao-esp32c3-tflm-cnn-dw-int8/`](xiao-esp32c3-tflm-cnn-dw-int8/README.md) | TFLM | MNIST DS-CNN int8 |
 
-Methodology: **10×10**, discard first invoke; order swaps `nk→tflm` / `tflm→nk`.  
-Results: [`benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt).  
-Runner: [`xiao-esp32c3/scripts/run_esp_int8_ab.sh`](xiao-esp32c3/scripts/run_esp_int8_ab.sh).
+Methodology: **10×10**, discard first invoke; order swaps `nk→tflm` / `tflm→nk`; netkit = **interpreter embed**.  
+Results: [ESP-NN](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) · [reference](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ref_ab_results.txt) · [STATUS](../docs/STATUS.md#mcu-seeed-xiao-esp32c3).  
+Runners: [`run_esp_int8_ab.sh`](xiao-esp32c3/scripts/run_esp_int8_ab.sh) / [`run_esp_int8_ref_ab.sh`](xiao-esp32c3/scripts/run_esp_int8_ref_ab.sh).
 
 **ImageNet / MobileNetV4:** not on this part (weights exceed 1 MiB app partition).
 
 ```bash
 PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh
+PORT=/dev/cu.usbmodem* ./boards/xiao-esp32c3/scripts/run_esp_int8_ref_ab.sh
 ```
 
 ---

@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 #if NETKIT_XNNPACK_PLAN_HOIST
 #include <xnnpack.h>
@@ -788,12 +789,13 @@ bool BuildRuntime(CNNNetwork& network, Arena& arena, uint32_t in_h, uint32_t in_
     Runtime* runtime = static_cast<Runtime*>(arena.alloc(sizeof(Runtime), alignof(Runtime)));
     if (!runtime)
         return false;
-    std::memset(runtime, 0, sizeof(Runtime));
+    new (runtime) Runtime{};
 
     runtime->layers = static_cast<LayerPlan*>(arena.alloc(sizeof(LayerPlan) * n, alignof(LayerPlan)));
     if (!runtime->layers)
         return false;
-    std::memset(runtime->layers, 0, sizeof(LayerPlan) * n);
+    for (uint32_t i = 0; i < n; ++i)
+        new (runtime->layers + i) LayerPlan{};
     runtime->num_layers = n;
 
     uint32_t h = in_h;

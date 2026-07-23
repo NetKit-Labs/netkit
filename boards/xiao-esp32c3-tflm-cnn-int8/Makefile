@@ -4,7 +4,7 @@ BOARD_ROOT := $(abspath .)
 BOARD_COMMON := $(abspath ../xiao-esp32c3)
 include $(BOARD_COMMON)/common.mk
 
-.PHONY: all check-deps build flash monitor run clean
+.PHONY: all check-deps build flash monitor run clean fullclean
 
 all: check-deps build
 
@@ -31,3 +31,7 @@ run: flash
 
 clean:
 	rm -rf $(BOARD_ROOT)/.pio $(BOARD_ROOT)/managed_components $(BOARD_ROOT)/dependencies.lock
+
+fullclean:
+	$(XIAO_PIO_FULLCLEAN)
+	rm -rf $(BOARD_ROOT)/.pio

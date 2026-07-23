@@ -19,7 +19,7 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 | **mpu_arm** | Arm Cortex-A / RTOS-class | XNNPACK (default); CMSIS-NN off | **Done** — float32 + int8 |
 | **mpu_risc** | RISC-V MPU | XNNPACK (default); CMSIS-NN **forbidden** | **Done** — float32 + int8; same XNNPACK LayerFast stack as other MPUs (XNNPACK has strong RISC-V MPU support) |
 | **mcu_risc** | Non-Espressif RISC-V MCU (Nuclei / RV32) | NMSIS-NN (int8 production); float32 via reference (NMSIS-NN has no float API); CMSIS + XNNPACK + ESP-NN **forbidden** | **Done** — float32 + int8 runtime (host smoke via `NETKIT_HOST_SMOKE=1`); on-device peer benches TBD |
-| **mcu_esp** | Espressif MCU — Xtensa **and** RISC-V (ESP32 / S3 / C3 / C6 / P4) | ESP-NN (int8 production); float32 via reference (ESP-NN has no float API); XNNPACK **forbidden** | **Done** — float32 + int8 runtime; [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) peer A/B vs TFLM with matched `-O3` C++ (CNN ~255 ms / DS-CNN ~88 ms, 10/10); ImageNet skipped (flash) — [esp32c3_int8_ab_results.txt](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) |
+| **mcu_esp** | Espressif MCU — Xtensa **and** RISC-V (ESP32 / S3 / C3 / C6 / P4) | ESP-NN (int8 production); float32 via reference (ESP-NN has no float API); XNNPACK **forbidden** | **Done** — float32 + int8 runtime; [XIAO ESP32C3](../boards/xiao-esp32c3/README.md) peer A/B vs TFLM with matched `-O3` C++ (ESP-NN embed ~tied; reference netkit **5.3×** / **4.6×** vs TFLM on CNN / DS-CNN, 10/10); ImageNet skipped (flash) — [esp32c3_int8_ab_results.txt](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) · [esp32c3_int8_ref_ab_results.txt](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ref_ab_results.txt) |
 
 **Policy reminder:** XNNPACK is default on cpu and all MPUs, never on MCU. CMSIS-NN is Arm MCU only (production int8). ESP-NN is **all Espressif MCUs** (production int8) — including RISC-V C3/C6/P4; do not use `mcu_risc` for ESP32*. NMSIS-NN is **non-Espressif** RISC-V MCU only (production int8; same CMSIS-style Try* / plan wiring). Targets follow vendor + backend, not ISA alone — [PLATFORMS.md — Target ≠ CPU ISA](PLATFORMS.md#target--cpu-isa). **CMSIS-DSP is not used.** Float32 on MCU uses reference kernels (CMSIS float LayerFast exists on Arm; ESP-NN / NMSIS-NN float Try* always miss). `NETKIT_IM2COL` defaults to **0** on all targets (see [BUILD_TARGETS.md](BUILD_TARGETS.md#netkit_im2col-guidance)).
 
@@ -164,25 +164,34 @@ Boards: `nucleo-f446re-cnn-int8` / `nucleo-f446re-tflm-cnn-int8` / `nucleo-f446r
 
 ### MCU (Seeed XIAO ESP32C3)
 
-Canonical results: [`benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) (index: [`mcu_ab_logs/README.md`](../benchmark/mcu_ab_logs/README.md)). Chip: ESP32-C3 @ 160 MHz (RISC-V) · `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32C3` + **ESP-NN**. Methodology matches NUCLEO: 10×10, discard first invoke; order swaps `nk→tflm` / `tflm→nk`. Compiler match: netkit C++ uses the same speed flags as `esp-tflite-micro` (`-O3`, no RTTI/exceptions) — [`mcu_esp_tflm_match_compile.cmake`](../boards/xiao-esp32c3/mcu_esp_tflm_match_compile.cmake). **netkit** = quant lowered AOT. ImageNet / MobileNetV4 skipped (weights exceed the factory app partition).
+Canonical results: [`esp32c3_int8_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ab_results.txt) (ESP-NN) · [`esp32c3_int8_ref_ab_results.txt`](../benchmark/mcu_ab_logs/xiao_esp32c3/esp32c3_int8_ref_ab_results.txt) (reference) — index: [`mcu_ab_logs/README.md`](../benchmark/mcu_ab_logs/README.md). Chip: ESP32-C3 @ 160 MHz (RISC-V) · `NETKIT_TARGET=mcu_esp` + `NETKIT_ARCH=ESP32C3`. Methodology matches NUCLEO: 10×10, discard first invoke; order swaps `nk→tflm` / `tflm→nk`. Compiler match: netkit C++ uses the same speed flags as `esp-tflite-micro` (`-O3`, no RTTI/exceptions) — [`mcu_esp_tflm_match_compile.cmake`](../boards/xiao-esp32c3/mcu_esp_tflm_match_compile.cmake). ImageNet / MobileNetV4 skipped (weights exceed the factory app partition).
 
-**Latency — ESP-NN** (all 10/10; no FPU — int8 path only for peer A/B):
+**Latency — ESP-NN** (all 10/10; no FPU — int8 path only for peer A/B; netkit = **interpreter embed**, arena 64 KiB CNN / 96 KiB DS-CNN):
 
 | Model | netkit | TFLM | Gain (TFLM÷netkit) |
 |-------|-------:|-----:|-------------------:|
-| MNIST CNN | 254.6 ms | **253.2 ms** | 0.99× |
-| MNIST DS-CNN | 88.5 ms | **87.5 ms** | 0.99× |
+| MNIST CNN | 252.0 ms | **251.4 ms** | 1.00× |
+| MNIST DS-CNN | 87.7 ms | **87.5 ms** | 1.00× |
 
-**Flash / RAM** (PlatformIO size check):
+**Note (investigate):** quant lowered AOT is expected to be faster than interpreter embed (static plan / weights, no `.nk` loader). On this board an earlier ESP-NN lowered capture was a hair **slower** than embed (CNN ~254.6 vs 252.0 ms; DS-CNN ~88.5 vs 87.7 ms). Root cause TBD — do not treat lowered as the peer default until understood.
+
+**Latency — reference (ESP-NN off)** (all 10/10; netkit = embed + QuantOps):
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **226.8 ms** | 1205.5 ms | 5.32× |
+| MNIST DS-CNN | **85.8 ms** | 392.3 ms | 4.57× |
+
+**Flash / RAM** (PlatformIO size check, ESP-NN embeds):
 
 | Firmware | Flash | RAM (static) |
 |----------|------:|-------------:|
-| netkit CNN | 374 KiB | 72 KiB |
-| netkit DS-CNN | 364 KiB | 95 KiB |
-| TFLM CNN | 447 KiB | 108 KiB |
-| TFLM DS-CNN | 448 KiB | 108 KiB |
+| netkit CNN | 420 KiB | 75 KiB |
+| netkit DS-CNN | 405 KiB | 107 KiB |
+| TFLM CNN | 432 KiB | 106 KiB |
+| TFLM DS-CNN | 433 KiB | 106 KiB |
 
-Boards: [`xiao-esp32c3/`](../boards/xiao-esp32c3/README.md) index — `xiao-esp32c3-cnn-int8`, `xiao-esp32c3-cnn-dw-int8`, TFLM twins `xiao-esp32c3-tflm-*`. Runner: `boards/xiao-esp32c3/scripts/run_esp_int8_ab.sh`.
+Boards: [`xiao-esp32c3/`](../boards/xiao-esp32c3/README.md) index — `xiao-esp32c3-cnn-int8`, `xiao-esp32c3-cnn-dw-int8`, TFLM twins `xiao-esp32c3-tflm-*`. Runners: `run_esp_int8_ab.sh` / `run_esp_int8_ref_ab.sh`.
 
 ### YOLOX detection (host CPU, float32)
 
@@ -203,6 +212,7 @@ Boards: [`xiao-esp32c3/`](../boards/xiao-esp32c3/README.md) index — `xiao-esp3
 ## Open / next
 
 - **YOLOX detection accuracy** — runtime and host latency path land; more training / calibration needed for mAP
+- **XIAO ESP32C3: quant lowered AOT slower than embed** — lowered should win; measured a hair slower under ESP-NN (see MCU section). Investigate codegen / plan / call path before promoting lowered as the default peer.
 - **Deeper float AOT specialization** (optional) — fused/specialized codegen beyond calling shared `Kernels` / composite `::forward` APIs; not required for correctness
 - Espressif on-device peer benches on ESP32-S3 / P4 (XIAO C3 CNN/DS-CNN done)
 - RISC-V MCU on-device peer benches (Nuclei N300 / RV32* vs TFLM / NMSIS-NN)

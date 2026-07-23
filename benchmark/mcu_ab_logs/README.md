@@ -34,17 +34,27 @@ Canonical **netkit vs TFLM** int8 (ESP-NN) for MNIST CNN and DS-CNN @ 160 MHz.
 
 | Artifact | Contents |
 |----------|----------|
-| **[xiao_esp32c3/esp32c3_int8_ab_results.txt](xiao_esp32c3/esp32c3_int8_ab_results.txt)** | Latency table + methodology |
-| `xiao_esp32c3/*.log` | UART captures (order swaps) |
+| **[xiao_esp32c3/esp32c3_int8_ab_results.txt](xiao_esp32c3/esp32c3_int8_ab_results.txt)** | ESP-NN-on latency table |
+| **[xiao_esp32c3/esp32c3_int8_ref_ab_results.txt](xiao_esp32c3/esp32c3_int8_ref_ab_results.txt)** | ESP-NN-off (reference) latency table |
+| `xiao_esp32c3/*.log` / `xiao_esp32c3/ref_*.log` | UART captures (order swaps) |
 
 Methodology: 10×10; discard first invoke; `nk→tflm` / `tflm→nk` swaps. ImageNet skipped (flash).
 Published summary: [docs/STATUS.md — MCU (Seeed XIAO ESP32C3)](../../docs/STATUS.md#mcu-seeed-xiao-esp32c3).
 
-**Latency summary (ESP-NN, 10×10, all 10/10)**
+**Latency summary (ESP-NN, interpreter embed, 10×10, all 10/10)**
 
 | Model | netkit | TFLM | Gain (TFLM÷netkit) |
 |-------|-------:|-----:|-------------------:|
-| MNIST CNN | 254.6 ms | **253.2 ms** | 0.99× |
-| MNIST DS-CNN | 88.5 ms | **87.5 ms** | 0.99× |
+| MNIST CNN | 252.0 ms | **251.4 ms** | 1.00× |
+| MNIST DS-CNN | 87.7 ms | **87.5 ms** | 1.00× |
+
+Quant lowered AOT should be faster than embed but measured a hair slower on this board under ESP-NN — investigate before making lowered the peer default (see [STATUS](../../docs/STATUS.md#mcu-seeed-xiao-esp32c3)).
+
+**Reference (ESP-NN off, 10×10, all 10/10)**
+
+| Model | netkit | TFLM | Gain (TFLM÷netkit) |
+|-------|-------:|-----:|-------------------:|
+| MNIST CNN | **226.8 ms** | 1205.5 ms | 5.32× |
+| MNIST DS-CNN | **85.8 ms** | 392.3 ms | 4.57× |
 
 Board: ESP32-C3 @ 160 MHz. Matched C++ flags with `esp-tflite-micro` (`-O3`). No FPU (soft-float); peer A/B is int8 only.

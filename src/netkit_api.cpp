@@ -16,6 +16,7 @@
 #include "cli.hpp"
 #include "test.hpp"
 #endif
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <span>
@@ -140,6 +141,14 @@ namespace
     static_assert(sizeof(MlpHolder) <= NK_MLP_STORAGE_BYTES);
     static_assert(sizeof(CnnHolder) <= NK_CNN_STORAGE_BYTES);
     static_assert(sizeof(ModelState) <= NK_MODEL_STORAGE_BYTES);
+    // C `nk_tensor_t` is layout-compatible with C++ `Tensor` (dtype/type padded to 4 B).
+    static_assert(sizeof(Tensor) == sizeof(nk_tensor_t));
+    static_assert(offsetof(Tensor, data) == offsetof(nk_tensor_t, data));
+    static_assert(offsetof(Tensor, rank) == offsetof(nk_tensor_t, rank));
+    static_assert(offsetof(Tensor, shape) == offsetof(nk_tensor_t, shape));
+    static_assert(offsetof(Tensor, stride) == offsetof(nk_tensor_t, stride));
+    static_assert(offsetof(Tensor, num_elements) == offsetof(nk_tensor_t, num_elements));
+    static_assert(offsetof(Tensor, bytes) == offsetof(nk_tensor_t, bytes));
 
     Arena* ArenaPtr(nk_arena_t* arena) { return reinterpret_cast<Arena*>(arena->storage); }
     const Arena* ArenaPtr(const nk_arena_t* arena) { return reinterpret_cast<const Arena*>(arena->storage); }
