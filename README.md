@@ -460,7 +460,7 @@ See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [in
 
 ## Repository topics
 
-GitHub topics for discoverability: `embedded`, `embedded-systems`, `inference`, `edge-ai`, `machine-learning`, `neural-network`, `computer-vision`, `multimodal`, `onnx`, `firmware`, `aot`, `cmsis-nn`, `esp-nn`, `nmsis`, `xnnpack`, `riscv`, `esp32`, `mcu`, `cpp26`, `c23`.
+GitHub topics for discoverability: `embedded`, `embedded-systems`, `tinyml`, `edge-ai`, `inference`, `machine-learning`, `neural-network`, `computer-vision`, `firmware`, `aot`, `onnx`, `cmsis-nn`, `esp-nn`, `nmsis`, `xnnpack`, `riscv`, `esp32`, `stm32`, `mcu`, `cpp26`.
 
 ## License
 
