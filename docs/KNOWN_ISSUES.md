@@ -105,7 +105,7 @@ Not yet tried on XIAO ESP32C3 (no FPU float peer A/B). Treat as an **Espressif `
 | KI-D03b | ESP32-C6 on-device peer A/B | Board trees optional / not published |
 | KI-D04 | RISC-V MCU (`mcu_risc`) on-device peers | Runtime + host smoke done; Nuclei / RV32 vs TFLM / NMSIS-NN TBD |
 | KI-D05 | Broader int8 model coverage | Beyond MNIST + ImageNet MNv4 fixtures |
-| KI-D06 | float16 / int16 / int4 | Phase 2 — [DATATYPES.md](DATATYPES.md) |
+| KI-D06 | float16 / int16 / int4 | Planned — [DATATYPES.md](DATATYPES.md) |
 | KI-D07 | Voice modality fixtures | Roadmap |
 
 ---

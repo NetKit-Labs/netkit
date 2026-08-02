@@ -1,6 +1,6 @@
 # netkit Philosophy
 
-netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. Models ship as single **`.nk`** files. You develop and validate on the desktop (**CPU** build), then link the lean runtime into firmware (**MCU** / **MPU** builds). The engine is written in **C++26** (modern patterns, type-safe primary API) with a **C23** mirror for C-only firmware.
+netkit is a **general multi-modal inference engine** — voice, image, vision, and other neural workloads — with an **embedded-first** design optimized for **MCUs, MPUs, and NPUs**. Models ship as single **`.nk`** files. You develop and validate on the desktop (**CPU** build), then link the lean runtime into firmware (**MCU** / **MPU** builds). The engine is written in **C++26** (modern patterns, type-safe primary API) with a **C23** mirror for C-only firmware.
 
 **Status:** Active development. **Float32** and **int8** inference are complete ([DATATYPES.md](DATATYPES.md), [STATUS.md](STATUS.md)). Arm MCU / Espressif MCU (C3/S3/P4) / Arm MPU / host cpu peer paths are done; Espressif uses ESP-NN for int8; non-Espressif RISC-V MCU uses NMSIS-NN (`mcu_risc` on-device peers TBD); RISC MPU uses XNNPACK. float16, int16, and int4 are on the roadmap.
 
@@ -66,9 +66,7 @@ Interpreter embed:  model.nk  ──aot --no-lower──►  flash blob  ──l
 
 Details: [GETTING_STARTED.md](GETTING_STARTED.md#5-aot-compile-embed-nk-in-firmware), [BUILD_TARGETS.md](BUILD_TARGETS.md#layer-dispatch-opsresolver), [python/README.md](../python/README.md).
 
-## Two-phase roadmap
-
-### Phase 1 — Runtime + AOT lower (today)
+## Runtime + AOT lower
 
 The C++ engine supports both an **interpreter-style** forward executor and **AOT lowered** firmware emission:
 
@@ -97,13 +95,13 @@ MCU boards: `make` / `deploy-lowered` = plan lower; `make NETKIT_SPECIALIZE=1` /
 
 ResNet / ConvNeXt / YOLOX quant AOT remain out of scope (float on Linux-class devices).
 
-**Not in Phase 1:** training, autograd, dynamic shapes, automatic heap growth inside layer code.
+**Out of scope for the inference runtime:** training, autograd, dynamic shapes, automatic heap growth inside layer code.
 
-The Python packager (`python/netkit/`) converts **ONNX → `.nk`** and can embed regression test cases. It is primarily a **serializer** today — it records the graph and weights the runtime will interpret.
+The Python packager (`python/netkit/`) converts **ONNX → `.nk`** and can embed regression test cases. It records the graph and weights the runtime will interpret, and already applies some graph optimizations (BN fold, dense merge, activation fusion tags).
 
-### Phase 2 — Compiler optimizations (Python packager)
+## Packager optimizations (further work)
 
-Phase 2 moves optimization **into the packager** so firmware stays lean:
+More optimization can move **into the packager** so firmware stays lean:
 
 | Optimization | Effect |
 |------------------------|--------|
@@ -115,7 +113,7 @@ Phase 2 moves optimization **into the packager** so firmware stays lean:
 
 The runtime may gain **specialized fast paths** for fused op tags, but the default mental model remains: **packager compiles, runtime interprets**.
 
-See [DATATYPES.md](DATATYPES.md) for numeric roadmap.
+See [DATATYPES.md](DATATYPES.md) for numeric types.
 
 ## Memory philosophy
 

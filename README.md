@@ -1,6 +1,6 @@
 # netkit — Neural Network Kit
 
-netkit is a **multi-modal inference engine** (image / vision today; voice next) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. Primary API is **C++26**; firmware and FFI use a matching **C23** API over the same engine ([API parity](docs/API_PARITY.md)). Develop on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/NetKit-Labs/memkit) for memory management. **Open source (MIT)** — optional backends are Apache/BSD open-source libraries only ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+netkit is a **general multi-modal inference engine** — voice, image, vision, and other neural workloads — with an **embedded-first** design for **MCUs, MPUs, and NPUs**. Primary API is **C++26**; firmware and FFI use a matching **C23** API over the same engine ([API parity](docs/API_PARITY.md)). Develop on the desktop, then deploy the lean runtime to embedded targets. Companion to [memkit](https://github.com/NetKit-Labs/memkit) for memory management. **Open source (MIT)** — optional backends are Apache/BSD open-source libraries only ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 **Status:** **Float32** and **int8** inference are **complete** on six `NETKIT_TARGET` profiles:
 
@@ -198,7 +198,7 @@ Each board README covers toolchain, `make` / flash / UART (or SSH for the Pi), m
 | Guide | Description |
 |-------|-------------|
 | **[Third-party notices](THIRD_PARTY_NOTICES.md)** | Licenses for CMSIS, ESP-NN, NMSIS, XNNPACK, ONNX/ORT, TF Lite / TFLM, TVM, … |
-| **[Philosophy](docs/PHILOSOPHY.md)** | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager |
+| **[Philosophy](docs/PHILOSOPHY.md)** | Interpreter vs compiled deployment; packager vs runtime |
 | **[Status](docs/STATUS.md)** | Dtype + platform maturity; MCU / MPU / CPU peer-bench results |
 | **[Known issues](docs/KNOWN_ISSUES.md)** | Open bugs, anomalies, deferred follow-ups |
 | **[Getting Started](docs/GETTING_STARTED.md)** | Build, test, CLI, and first inference for new users |
@@ -239,7 +239,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 ## Features
 
-- **Multi-modal (image / vision first)** — classification and detection fixtures today; voice planned (embedded-first for MCU, MPU, NPU)
+- **General multi-modal inference** — same engine for voice, image, vision, and other NN graphs; current fixtures include classification and detection (embedded-first for MCU, MPU, NPU); more modality fixtures on the roadmap
 - **Six deployment targets** — `cpu`, `mcu_arm`, `mpu_arm`, `mcu_esp`, `mcu_risc`, `mpu_risc` with per-device cookbooks ([PLATFORMS.md](docs/PLATFORMS.md))
 - **Board firmware** — NUCLEO-F446RE (CMSIS-NN) · XIAO ESP32C3 / ESP32-S3 / ESP32-P4 (ESP-NN) · Pi Zero 2 W (XNNPACK MPU); setup index ([boards/README.md](boards/README.md))
 - **Peer-benched inference** — float32 + int8 A/B on Arm MCU, Espressif MCU (C3/S3/P4), Arm MPU, and CPU vs TFLM / microTVM / TF Lite / ORT ([STATUS.md](docs/STATUS.md)); gallery above
@@ -438,24 +438,23 @@ MNIST MLP: [MNIST.md](docs/MNIST.md). MNIST CNN: [MNIST_CNN.md](docs/MNIST_CNN.m
 See [PHILOSOPHY.md](docs/PHILOSOPHY.md) for the full narrative — including [interpreter vs compiled deployment](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). In brief:
 
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed
-- **Phase 1 (today)** — Float32 and int8 complete on six targets; Arm MCU + Espressif MCU (C3/S3/P4) + Arm MPU + CPU peer benches done; CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK; ONNX → `.nk` + AOT; YOLOX path in (accuracy training open); `mcu_risc` on-device peers next
-- **Phase 2 (planned)** — Broader quantization (float16, int16, int4), fusion, layout, NPU offload; `mcu_risc` on-device peers; YOLOX accuracy / voice fixtures
+- **Complete float32 + int8 engine** — six targets; Arm MCU + Espressif MCU (C3/S3/P4) + Arm MPU + CPU peer benches; CMSIS-NN / ESP-NN / NMSIS-NN / XNNPACK; ONNX → `.nk` + AOT; YOLOX path in
 - **Open-source stack** — MIT engine; optional OSS backends only (no proprietary SDKs). Reference kernels always available
 - **Memory-conscious** — Arena bump allocator; target-specific defaults (MCU 64 KiB / MPU·CPU 64 MiB; overridable)
 - **Single-threaded** — Sequential forward pass
 - **Inference-only** — No training
 
-## Roadmap
+## Status and further work
 
-**Phase 1 (today):** **Float32** and **int8** inference are **complete** for image/vision — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). **Peer A/B of the inference engine is finished** on **Arm MCU** (NUCLEO-F446RE vs TFLM / microTVM), **Espressif MCU** (XIAO ESP32C3 / ESP32-S3 / ESP32-P4-Function-EV vs TFLM / ESP-NN), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite / ORT). Production int8 kernels: **CMSIS-NN** (Arm MCU), **ESP-NN** (Espressif), **NMSIS-NN** (RISC-V MCU), **XNNPACK** (cpu / MPU). Next on-device peers: `mcu_risc` — [STATUS.md](docs/STATUS.md), [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md), [PLATFORMS.md](docs/PLATFORMS.md), [KERNELS.md](docs/KERNELS.md).
+The **general inference engine** is **complete** for float32 and int8 — `.nk` load or AOT embed, MLP/CNN + fused blocks (ResNet, MobileNetV4, ConvNeXt), depthwise conv, asymmetric padding, and **YOLOX** detection (PAFPN). Current fixtures and peer A/B emphasize image/vision workloads; the same runtime targets voice and other modalities. **Peer A/B is finished** on **Arm MCU** (NUCLEO-F446RE vs TFLM / microTVM), **Espressif MCU** (XIAO ESP32C3 / ESP32-S3 / ESP32-P4-Function-EV vs TFLM / ESP-NN), **Arm MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (vs TF Lite / ORT). Production int8 kernels: **CMSIS-NN** (Arm MCU), **ESP-NN** (Espressif), **NMSIS-NN** (RISC-V MCU), **XNNPACK** (cpu / MPU). Details: [STATUS.md](docs/STATUS.md), [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md), [PLATFORMS.md](docs/PLATFORMS.md), [KERNELS.md](docs/KERNELS.md).
 
-**Phase 2 (next):**
+Further work (not blockers for the core engine):
 
 - **RISC-V MCU (`mcu_risc`) on-device peers** (vs TFLM / NMSIS-NN; Espressif C3/S3/P4 done)
 - **YOLOX / detection accuracy** — more training and calibration (runtime and latency path already land)
-- **Voice modality** fixtures
+- **Additional modality fixtures** (voice and beyond)
 - **Numeric types:** float16, int16, int4; broader **int8** model coverage ([DATATYPES.md](docs/DATATYPES.md))
-- **Packager:** fusion, layout, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
+- **Packager:** more fusion, layout, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
 - **Import / runtime:** broader ONNX op coverage, NPU offload paths
 
 ## Repository topics

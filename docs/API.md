@@ -1,6 +1,6 @@
 # API Overview
 
-netkit is a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**. It exposes two language interfaces over the same **C++26** engine — a type-safe **C++26 API** and a **C23** mirror. **Float32** and **int8** inference are complete on Arm MCU/MPU, Espressif MCU, RISC-V MCU (NMSIS-NN), RISC MPU (XNNPACK), and host cpu — [STATUS.md](STATUS.md).
+netkit is a **general multi-modal inference engine** — voice, image, vision, and other neural workloads — with an **embedded-first** design for **MCUs, MPUs, and NPUs**. It exposes two language interfaces over the same **C++26** engine — a type-safe **C++26 API** and a **C23** mirror. **Float32** and **int8** inference are complete on Arm MCU/MPU, Espressif MCU, RISC-V MCU (NMSIS-NN), RISC MPU (XNNPACK), and host cpu — [STATUS.md](STATUS.md).
 
 **Deployment:** use the **`NkOpsResolver` interpreter** (load `.nk`, runtime layer dispatch) or the **compiled path** (AOT **lower** by default — static kernel / plan chain + weight arrays; `--no-lower` for interpreter embed). Both share the same kernels — [PHILOSOPHY.md](PHILOSOPHY.md#deployment-modes-interpreter-or-compiled). New users start with [GETTING_STARTED.md](GETTING_STARTED.md).
 
@@ -25,7 +25,7 @@ Core inference, loading, tensor/ops, MLP/CNN construction (including FeatureTap 
 
 | Document | Contents |
 |----------|----------|
-| [PHILOSOPHY.md](PHILOSOPHY.md) | Interpreter vs compiled deployment; Phase 1 runtime vs Phase 2 packager; memory and roadmap |
+| [PHILOSOPHY.md](PHILOSOPHY.md) | Interpreter vs compiled deployment; packager vs runtime; memory |
 | [STATUS.md](STATUS.md) | Dtype + platform maturity; recent peer-bench results |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Open bugs, anomalies, deferred follow-ups |
 | [GETTING_STARTED.md](GETTING_STARTED.md) | Clone, build, CLI, integrate C/C++ |

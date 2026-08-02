@@ -1,6 +1,6 @@
 # Data Types and Numeric Precision
 
-Part of the netkit roadmap — see [PHILOSOPHY.md](PHILOSOPHY.md) and [STATUS.md](STATUS.md). **Float32** and **int8** inference are **complete** on cpu, Arm MCU, Arm MPU, **Espressif MCU** (ESP-NN int8 / reference float), **RISC MPU** (XNNPACK), and **RISC MCU** (NMSIS-NN int8 / reference float). float16 / int16 / int4 remain Phase 2.
+See [PHILOSOPHY.md](PHILOSOPHY.md) and [STATUS.md](STATUS.md). **Float32** and **int8** inference are **complete** on cpu, Arm MCU, Arm MPU, **Espressif MCU** (ESP-NN int8 / reference float), **RISC MPU** (XNNPACK), and **RISC MCU** (NMSIS-NN int8 / reference float). float16 / int16 / int4 are planned.
 
 ## Float32 (default)
 
@@ -51,7 +51,7 @@ The `DataType` / `nk_dtype_t` enums list `Int8`, `UInt8`, and `Int16` for future
 
 ## Planned (roadmap)
 
-Additional reduced-precision paths are planned for **Phase 2** (Python packager + runtime decode kernels):
+Additional reduced-precision paths are planned (Python packager + runtime decode kernels):
 
 | Type | Status | Intended use |
 |------|--------|--------------|
@@ -64,7 +64,7 @@ When float16 / int16 / int4 land, expect:
 
 - Extended `.nk` format versions with per-tensor dtype tags
 - Packager-side quantization, calibration, and layout selection ([PHILOSOPHY.md](PHILOSOPHY.md))
-- Runtime load paths and kernels per dtype (possibly fused in Phase 2)
+- Runtime load paths and kernels per dtype (possibly fused in the packager)
 - Updated regression suites with tolerance policies per type
 
 Float32 remains the default for models without a dedicated int8 export — see [NK_FORMAT.md](NK_FORMAT.md) and [STATUS.md](STATUS.md).

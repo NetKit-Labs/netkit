@@ -1,6 +1,6 @@
 # netkit-tools (Python)
 
-Python tooling for **netkit** — a multi-modal (voice, image, vision) inference engine with an embedded-first design for MCU, MPU, and NPU targets. Converts ONNX models into binary **`.nk`** files for the C++26 / C23 runtime, and AOT-compiles them to firmware sources.
+Python tooling for **netkit** — a general multi-modal inference engine (voice, image, vision, and other NN workloads) with an embedded-first design for MCU, MPU, and NPU targets. Converts ONNX models into binary **`.nk`** files for the C++26 / C23 runtime, and AOT-compiles them to firmware sources.
 
 **Role in netkit:** ONNX → `.nk` packager for the **interpreter** path, and **AOT lower** (`.nk` → static `Kernels::` / `CmsisQuantPlan` call chains with weight arrays — no `.nk` loader by default). Use `aot --no-lower` only when you need interpreter embed (e.g. TFLM-fair A/B). Use `--strict-lower` to fail instead of falling back to embed. See [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md#terminology-embed-vs-lowered).
 

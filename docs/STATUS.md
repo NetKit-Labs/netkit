@@ -8,7 +8,7 @@ Snapshot of what works today, what was measured, and what is still open. Compani
 |-------|--------|-------|
 | **float32** | **Complete** | Default path on cpu / MCU / MPU; ImageNet MobileNetV4, MNIST CNN / DS-CNN / MLP, fused blocks |
 | **int8** | **Complete** | End-to-end int8 I/O (no C++ float↔int8); MNIST CNN / DS-CNN / MLP Arm MCU (CMSIS-NN); Espressif MCU via ESP-NN; RISC-V MCU via NMSIS-NN; host/MPU via XNNPACK qs8 or QuantOps reference; ImageNet MNv4 int8 |
-| float16 / int16 / int4 | Planned (Phase 2) | See [DATATYPES.md](DATATYPES.md) |
+| float16 / int16 / int4 | Planned | See [DATATYPES.md](DATATYPES.md) |
 
 ## Target maturity
 

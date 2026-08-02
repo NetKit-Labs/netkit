@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to netkit — a **multi-modal inference engine** (voice, image, vision) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm, Espressif, and RISC** MCU/MPU targets and host cpu: Arm MCU uses **CMSIS-NN**; Espressif MCU uses **ESP-NN**; RISC-V MCU uses **NMSIS-NN**; RISC MPU uses **XNNPACK** — [STATUS.md](STATUS.md).
+Welcome to netkit — a **general multi-modal inference engine** (voice, image, vision, and other NN workloads) with an **embedded-first** design for **MCUs, MPUs, and NPUs**, implemented in **C++26** with a **C23** API. **Float32** and **int8** inference are complete on **Arm, Espressif, and RISC** MCU/MPU targets and host cpu: Arm MCU uses **CMSIS-NN**; Espressif MCU uses **ESP-NN**; RISC-V MCU uses **NMSIS-NN**; RISC MPU uses **XNNPACK** — [STATUS.md](STATUS.md).
 
 **Configure a specific device:** [PLATFORMS.md](PLATFORMS.md) (cpu · Arm MCU/MPU · RISC-V MCU/MPU · Espressif).
 
@@ -377,7 +377,7 @@ Helper for target-default arena setup: `include/arena_util.hpp` (`ArenaUtil::Ini
 netkit/
 ├── include/           netkit.h (C) + *.hpp (C++)
 ├── src/               C++26 engine
-├── python/netkit/     ONNX → .nk packager + AOT compiler (Phase 2 optimizations land here)
+├── python/netkit/     ONNX → .nk packager + AOT compiler
 ├── examples/          infer_c.c, infer_cpp.cpp
 ├── tests/             test_c_api.c, embedded_smoke.c
 ├── models/            bundled .nk + .onnx

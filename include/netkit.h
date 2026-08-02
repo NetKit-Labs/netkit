@@ -5,7 +5,7 @@
  * (prequantized at .nk export time in Python — no C++ float→int8 or dequant).
  * Use `nk_model_run` for float32; `nk_model_run_int8` / AOT `forwardInt8` for int8.
  * Documentation:
- *   docs/PHILOSOPHY.md       — product vision, Phase 1/2, roadmap
+ *   docs/PHILOSOPHY.md       — product vision, deployment modes, further work
  *   docs/GETTING_STARTED.md  — build, test, first inference
  *   docs/BUILD_TARGETS.md    — NETKIT_TARGET (cpu/mcu_arm/mpu_arm/mcu_risc/mpu_risc/mcu_esp), arena, CMSIS/ESP/NMSIS/XNNPACK
  *   docs/PLATFORMS.md       — Per-device configuration cookbooks

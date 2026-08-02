@@ -260,4 +260,4 @@ CNNNetwork::forward
 
 - [BUILD_TARGETS.md](BUILD_TARGETS.md) — Make/CMake flags for CMSIS / ESP / NMSIS / XNNPACK
 - [PLATFORMS.md](PLATFORMS.md) — Per-device configuration cookbooks
-- [PHILOSOPHY.md](PHILOSOPHY.md) — interpreter vs compiled deployment; Phase 1 vs Phase 2 packager optimizations
+- [PHILOSOPHY.md](PHILOSOPHY.md) — interpreter vs compiled deployment; packager optimizations
