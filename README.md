@@ -21,6 +21,14 @@ Configure any device: [docs/PLATFORMS.md](docs/PLATFORMS.md). Models load from b
 
 Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at runtime) for development and flexible deployment, or **compile for maximum speed** (AOT embed, packager graph optimizations, trimmed op tables, CMSIS-NN / ESP-NN / NMSIS-NN backends) for production firmware. See [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled).
 
+## Engineering Highlights
+
+- **Measured on real targets:** Peer A/B inference benchmarks on STM32 NUCLEO-F446RE, ESP32-C3/S3/P4, Raspberry Pi Zero 2 W, and Apple Silicon, with logs, latency tables, and memory/flash comparisons ([status and methodology](docs/STATUS.md), [board bring-up](boards/README.md)).
+- **Representative performance:** On ESP32-S3, the int8 MNIST CNN **reference-kernel** path measured 112.1 ms vs 1,113.0 ms for TFLM reference (~9.9×); with both using ESP-NN, performance was near parity. Results depend on model and backend ([peer highlights](docs/STATUS.md#peer-highlights-wins)).
+- **Memory and deployment:** Static MCU arenas, explicit backend selection, interpreter loading of `.nk` models or trimmed AOT embeds, and shared C++26/C23 interfaces ([deployment modes](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled), [arena design](docs/ARENA.md), [API parity](docs/API_PARITY.md)).
+- **Test evidence:** 89 embedded regression cases exposed through C++ and C APIs; the **separately run manual** full suite adds 82 ONNX parity cases. CI runs the fast suite on push/PR ([testing](docs/TESTING.md), [test commands](#testing)).
+- **Scope and limitations:** RISC-V MCU peer tests remain outstanding, and Espressif float32 interpreter embeds have a documented correctness issue; lowered AOT float32 is the measured alternative ([known issues](docs/KNOWN_ISSUES.md), [target maturity](docs/STATUS.md#target-maturity)).
+
 ## Peer benchmarks (MCU · MPU · CPU)
 
 Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and **CPU** (TF Lite + ONNX Runtime; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Wins summary (LinkedIn one-panel): [STATUS — Peer highlights](docs/STATUS.md#peer-highlights-wins).
