@@ -15,7 +15,7 @@ netkit is a **general multi-modal inference engine** — voice, image, vision, a
 
 Targets follow **vendor + NN backend**, not ISA alone — Espressif RISC-V chips stay on `mcu_esp` ([PLATFORMS.md](docs/PLATFORMS.md#target--cpu-isa)).
 
-The inference engine is **peer-benched end-to-end** across **Arm MCU** (NUCLEO-F446RE vs TFLM and microTVM), **Espressif MCU** (XIAO ESP32C3 / ESP32-S3 / ESP32-P4-Function-EV vs TFLM / ESP-NN), **Arm MPU** (Raspberry Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite + ONNX Runtime) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. RISC-V MCU (`mcu_risc`) is runtime-complete with host smoke; on-device peers TBD. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Open issues: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
+The inference engine is **peer-benched end-to-end** across **Arm MCU** (NUCLEO-F446RE vs TFLM and microTVM), **Espressif MCU** (XIAO ESP32C3 / ESP32-S3 / ESP32-P4-Function-EV vs TFLM / ESP-NN), **Arm Cortex-A53 MPU** (vs TF Lite), and **CPU** (Apple M4 vs TF Lite + ONNX Runtime) for latency and flash/RAM — see [docs/STATUS.md](docs/STATUS.md) and the gallery below. RISC-V MCU (`mcu_risc`) is runtime-complete with host smoke; on-device peers TBD. **YOLOX** detection (MobileNetV4 + PAFPN) is supported and latency-competitive on host; **detector accuracy still needs more training / calibration**. Open issues: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md).
 
 Configure any device: [docs/PLATFORMS.md](docs/PLATFORMS.md). Models load from binary **`.nk`** files (architecture + weights). Convert from ONNX with `python -m netkit convert`, or embed a `.nk` in firmware with `python -m netkit aot`.
 
@@ -23,7 +23,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 
 ## Engineering Highlights
 
-- **Measured on real targets:** Peer A/B inference benchmarks on STM32 NUCLEO-F446RE, ESP32-C3/S3/P4, Raspberry Pi Zero 2 W, and Apple Silicon, with logs, latency tables, and memory/flash comparisons ([status and methodology](docs/STATUS.md), [board bring-up](boards/README.md)).
+- **Measured on real targets:** Peer A/B inference benchmarks on STM32 NUCLEO-F446RE, ESP32-C3/S3/P4, Arm Cortex-A53, and Apple Silicon, with logs, latency tables, and memory/flash comparisons ([status and methodology](docs/STATUS.md), [board bring-up](boards/README.md)).
 - **Representative performance:** On ESP32-S3, the int8 MNIST CNN **reference-kernel** path measured 112.1 ms vs 1,113.0 ms for TFLM reference (~9.9×); with both using ESP-NN, performance was near parity. Results depend on model and backend ([peer highlights](docs/STATUS.md#peer-highlights-wins)).
 - **Memory and deployment:** Static MCU arenas, explicit backend selection, interpreter loading of `.nk` models or trimmed AOT embeds, and shared C++26/C23 interfaces ([deployment modes](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled), [arena design](docs/ARENA.md), [API parity](docs/API_PARITY.md)).
 - **Test evidence:** 89 embedded regression cases exposed through C++ and C APIs; the **separately run manual** full suite adds 82 ONNX parity cases. CI runs the fast suite on push/PR ([testing](docs/TESTING.md), [test commands](#testing)).
@@ -31,7 +31,7 @@ Use netkit as an **`NkOpsResolver` interpreter** (load `.nk`, dispatch layers at
 
 ## Peer benchmarks (MCU · MPU · CPU)
 
-Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Pi Zero 2 W), and **CPU** (TF Lite + ONNX Runtime; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Wins summary (LinkedIn one-panel): [STATUS — Peer highlights](docs/STATUS.md#peer-highlights-wins).
+Fair A/B across **MCU** (TFLM + microTVM), **MPU** (TF Lite on Arm Cortex-A53), and **CPU** (TF Lite + ONNX Runtime; XNNPACK ON/OFF). Full tables and methodology: [docs/STATUS.md](docs/STATUS.md). Wins summary (LinkedIn one-panel): [STATUS — Peer highlights](docs/STATUS.md#peer-highlights-wins).
 
 ![netkit MCU · MPU · CPU wins vs TFLM / microTVM / TF Lite / ONNX Runtime](benchmark/linkedin/netkit_linkedin_wins.png)
 
