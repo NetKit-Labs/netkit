@@ -16,7 +16,7 @@ Several Espressif boards can coexist — each `boards/…` tree pins its own
 | [Seeed XIAO ESP32C3](#seeed-studio-xiao-esp32c3) | Espressif MCU (RISC-V → still `mcu_esp`) | `mcu_esp` + `NETKIT_ARCH=ESP32C3` | Peer-benched int8 CNN / DS-CNN vs TFLM (ESP-NN); MLP firmware too |
 | [Seeed XIAO ESP32-S3](#seeed-studio-xiao-esp32s3) | Espressif MCU (Xtensa) | `mcu_esp` + `NETKIT_ARCH=ESP32S3` | Peer-benched int8 + float32 CNN / DS-CNN vs TFLM (ESP-NN S3 asm) |
 | [ESP32-P4-Function-EV](#esp32-p4-function-ev) | Espressif MCU (RISC-V → still `mcu_esp`) | `mcu_esp` + `NETKIT_ARCH=ESP32P4` | Peer-benched int8 + float32 CNN / DS-CNN vs TFLM |
-| [Raspberry Pi Zero 2 W](#raspberry-pi-zero-2-w) | Arm MPU | `mpu_arm` | Peer-benched (XNNPACK ON/OFF vs TF Lite) |
+| [Arm Cortex-A53 (embedded Linux)](#arm-cortex-a53-embedded-linux) | Arm MPU | `mpu_arm` | Peer-benched (XNNPACK ON/OFF vs TF Lite) |
 | Other Espressif ESP32* | MCU | `mcu_esp` + matching `NETKIT_ARCH` | Runtime + host smoke; add a `boards/…` tree per board — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_esp--espressif-mcu) |
 | RISC-V MCU (Nuclei / RV32) | MCU | `mcu_risc` | Runtime + host smoke; **no `boards/` tree yet** — [PLATFORMS.md](../docs/PLATFORMS.md#mcu_risc--risc-v-mcu) |
 
@@ -158,7 +158,7 @@ float embed bug (S3 **and** P4): [KNOWN_ISSUES KI-001](../docs/KNOWN_ISSUES.md#k
 
 ---
 
-## Raspberry Pi Zero 2 W
+## Arm Cortex-A53 (embedded Linux)
 
 **ISA:** `linux/aarch64` (Cortex-A53) · **netkit:** `NETKIT_TARGET=mpu_arm` + XNNPACK  
 
