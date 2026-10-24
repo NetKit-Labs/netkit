@@ -1,7 +1,6 @@
-# Raspberry Pi Zero 2 W — MPU peer A/B
+# Arm Cortex-A53 — Embedded Linux MPU peer A/B
 
-Arm **MPU** peer for netkit vs **TF Lite / LiteRT** on a Raspberry Pi Zero 2 W
-(`aarch64`, Cortex-A53). This is the Linux/XNNPACK counterpart to the bare-metal
+Arm **Cortex-A53 MPU** peer for netkit vs **TF Lite / LiteRT** on `linux/aarch64`. This is the Linux/XNNPACK counterpart to the bare-metal
 NUCLEO-F446RE MCU boards under `boards/nucleo-f446re-*`.
 
 | Item | Value |
@@ -35,7 +34,7 @@ over SSH as a lean payload. Staging dirs under `benchmark/mpu_pi/` are local-onl
   targets under `benchmark/tflm/`)
 - `expect` (for `tools/pi_ssh.sh` password SSH/SCP)
 
-### Pi Zero 2 W
+### Target hardware and OS
 
 - 64-bit Raspberry Pi OS, SSH enabled, reachable on the LAN
 - Enough free space for a venv + LiteRT wheel + lean payload (~hundreds of MiB)
