@@ -1,6 +1,6 @@
 # Peer-suite infographics
 
-PNG summaries of completed inference A/B across **MCU** (vs TFLM), **MPU** (Pi Zero 2 W vs TF Lite), and **CPU** (Apple M4 vs TF Lite / ORT).
+PNG summaries of completed inference A/B across **MCU** (vs TFLM), **MPU** (Arm Cortex-A53 vs TF Lite), and **CPU** (Apple M4 vs TF Lite / ORT).
 
 | File | Contents |
 |------|----------|
