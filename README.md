@@ -117,7 +117,7 @@ netkit vs TFLM. Methodology: 10×10; discard first invoke; order swaps. Build / 
 
 Float interpreter embed is incorrect on this MCU and on S3 (~2/10) — [KNOWN_ISSUES.md KI-001](docs/KNOWN_ISSUES.md#ki-001--espressif-mcu-float32-interpreter-embed-mispredicts-on-device). ImageNet skipped (flash). Companion ESP32-C6 on the kit is WiFi-only.
 
-### MPU — Raspberry Pi Zero 2 W (aarch64)
+### MPU — Arm Cortex-A53 (aarch64)
 
 netkit vs TF Lite (XNNPACK ON / OFF). Order-averaged warm latency. Setup / rebuild: [`boards/pi-zero-2w/README.md`](boards/pi-zero-2w/README.md). Logs: [`benchmark/host_ab_suite_results_int8_pi_zero2w.txt`](benchmark/host_ab_suite_results_int8_pi_zero2w.txt), [`benchmark/host_ab_suite_results_float32_pi_zero2w.txt`](benchmark/host_ab_suite_results_float32_pi_zero2w.txt).
 
@@ -249,7 +249,7 @@ Application code is C++26. C23 is limited to the C header, the `extern "C"` brid
 
 - **General multi-modal inference** — same engine for voice, image, vision, and other NN graphs; current fixtures include classification and detection (embedded-first for MCU, MPU, NPU); more modality fixtures on the roadmap
 - **Six deployment targets** — `cpu`, `mcu_arm`, `mpu_arm`, `mcu_esp`, `mcu_risc`, `mpu_risc` with per-device cookbooks ([PLATFORMS.md](docs/PLATFORMS.md))
-- **Board firmware** — NUCLEO-F446RE (CMSIS-NN) · XIAO ESP32C3 / ESP32-S3 / ESP32-P4 (ESP-NN) · Pi Zero 2 W (XNNPACK MPU); setup index ([boards/README.md](boards/README.md))
+- **Board firmware** — NUCLEO-F446RE (CMSIS-NN) · XIAO ESP32C3 / ESP32-S3 / ESP32-P4 (ESP-NN) · Arm Cortex-A53 (XNNPACK MPU); setup index ([boards/README.md](boards/README.md))
 - **Peer-benched inference** — float32 + int8 A/B on Arm MCU, Espressif MCU (C3/S3/P4), Arm MPU, and CPU vs TFLM / microTVM / TF Lite / ORT ([STATUS.md](docs/STATUS.md)); gallery above
 - **Interpreter or compiled** — `NkOpsResolver` + `.nk` load for flexibility; AOT embed + packager optimizations + trimmed ops for production speed ([PHILOSOPHY.md](docs/PHILOSOPHY.md#deployment-modes-interpreter-or-compiled))
 - **Dual API** — C23 (`netkit.h`) and C++26 headers; same load/run path on every backend ([API_PARITY.md](docs/API_PARITY.md))
