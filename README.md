@@ -182,7 +182,7 @@ On-device firmware and peer setups live under [`boards/`](boards/). Full index (
 | Hardware | Class | Target | Setup / compile |
 |----------|-------|--------|-----------------|
 | **STM32 NUCLEO-F446RE** | Arm MCU | `mcu_arm` + `CM4` | [boards/README.md § NUCLEO](boards/README.md#stm32-nucleo-f446re) — netkit + TFLM + microTVM trees |
-| **Raspberry Pi Zero 2 W** | Arm MPU | `mpu_arm` | [boards/pi-zero-2w/README.md](boards/pi-zero-2w/README.md) — cross-build, SSH, TF Lite A/B |
+| **Arm Cortex-A53 (Linux/aarch64)** | Arm MPU | `mpu_arm` | [boards/pi-zero-2w/README.md](boards/pi-zero-2w/README.md) — cross-build, SSH, TF Lite A/B |
 | **Seeed XIAO ESP32C3** | Espressif MCU | `mcu_esp` | [xiao-esp32c3/](boards/xiao-esp32c3/README.md) · [STATUS](docs/STATUS.md#mcu-seeed-xiao-esp32c3) — RISC-V still uses ESP-NN, not `mcu_risc` |
 | **XIAO ESP32-S3** | Espressif MCU | `mcu_esp` | [xiao-esp32s3/](boards/xiao-esp32s3/README.md) · [STATUS](docs/STATUS.md#mcu-seeed-xiao-esp32s3) — int8 + float32 peers |
 | **ESP32-P4-Function-EV** | Espressif MCU | `mcu_esp` | [esp32-p4-function-ev/](boards/esp32-p4-function-ev/README.md) · [STATUS](docs/STATUS.md#mcu-espressif-esp32-p4-function-ev) — int8 + float32 peers |
@@ -199,7 +199,7 @@ On-device firmware and peer setups live under [`boards/`](boards/). Full index (
 | TFLM peers (MLP / CNN / DS-CNN) | [tflm](boards/nucleo-f446re-tflm/README.md) · [tflm-mlp-int8](boards/nucleo-f446re-tflm-mlp-int8/README.md) · [tflm-cnn-int8](boards/nucleo-f446re-tflm-cnn-int8/README.md) · [tflm-cnn-dw-int8](boards/nucleo-f446re-tflm-cnn-dw-int8/README.md) |
 | microTVM peers (CNN / DS-CNN int8) | [tvm-cnn-int8](boards/nucleo-f446re-tvm-cnn-int8/README.md) · [tvm-cnn-dw-int8](boards/nucleo-f446re-tvm-cnn-dw-int8/README.md) |
 
-Each board README covers toolchain, `make` / flash / UART (or SSH for the Pi), memory budget, and how that tree maps to the peer tables above.
+Each board README covers toolchain, `make` / flash / UART (or SSH for the Linux MPU), memory budget, and how that tree maps to the peer tables above.
 
 ## Documentation
 
@@ -213,7 +213,7 @@ Each board README covers toolchain, `make` / flash / UART (or SSH for the Pi), m
 | **[API Overview](docs/API.md)** | C vs C++ APIs, linking, memory model |
 | **[Build Targets](docs/BUILD_TARGETS.md)** | CPU / MCU / MPU flags and arena defaults |
 | **[Platforms](docs/PLATFORMS.md)** | Configure netkit for each supported device |
-| **[Boards](boards/README.md)** | On-device firmware index — NUCLEO, Espressif (C3·S3·P4), Pi Zero 2 W |
+| **[Boards](boards/README.md)** | On-device firmware index — Arm Cortex-M, Espressif (C3·S3·P4), Arm Cortex-A53 MPU |
 | **[Generic kernels](docs/GENERIC_KERNELS.md)** | How reference kernels are optimized for 32-bit+ devices |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
@@ -311,7 +311,7 @@ netkit/
 ├── python/netkit/          # ONNX → .nk packager + AOT
 ├── examples/               # C23 + C++26 infer demos
 ├── tests/                  # C API regression + embedded_smoke
-├── boards/                 # NUCLEO / Espressif (C3·S3·P4) / Pi Zero 2 W peer firmware
+├── boards/                 # STM32 / Espressif MCU / Arm Cortex-A53 MPU peer builds
 ├── models/                 # bundled .nk + .onnx fixtures
 ├── tools/                  # export, fetch_*, sync_third_party_licenses, smoke
 ├── third_party/            # CMSIS / ESP-NN / NMSIS / XNNPACK (fetch or submodule)
