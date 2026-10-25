@@ -77,6 +77,17 @@ jobs:
           run: sudo apt-get update && sudo apt-get install -y cppcheck
         - name: Analyze project-owned C/C++ sources
           run: |
+            # This version of Cppcheck flags existing aligned float-buffer casts,
+            # packed model-data access, deliberate fixed-point shifts, and
+            # value-initialized XNNPACK runtime objects. Exceptions apply only
+            # to reviewed files; remaining findings still fail this job.
             cppcheck --error-exitcode=1 --quiet --enable=warning,performance,portability \
               --inline-suppr --suppress=missingIncludeSystem --std=c++20 \
+              --suppress=invalidPointerCast:src/conv_dispatch.cpp \
+              --suppress=invalidPointerCast:src/nk_loader.cpp \
+              --suppress=invalidPointerCast:tests/test_c_api.c \
+              --suppress=memsetClassFloat:src/nk_loader.cpp \
+              --suppress=shiftTooManyBitsSigned:src/quant_softmax_s8.cpp \
+              --suppress=legacyUninitvar:src/xnnpack_float_backend.cpp \
+              --suppress=legacyUninitvar:src/xnnpack_quant_backend.cpp \
               -Iinclude include src tests
