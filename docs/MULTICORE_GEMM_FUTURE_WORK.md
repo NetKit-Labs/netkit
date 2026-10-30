@@ -51,14 +51,14 @@ The following table refers to **publicly inspected Espressif ESP-NN and ESP-DSP 
 
 For matrix multiplication `C = A × B` where `A` and `B` are 64×64, partition each into **four 32×32 blocks**:
 
-`
+```text
 A = [A11 A12; A21 A22],   B = [B11 B12; B21 B22]
 
 C11 = A11 B11 + A12 B21
 C12 = A11 B12 + A12 B22
 C21 = A21 B11 + A22 B21
 C22 = A21 B12 + A22 B22
-`
+```
 
 This requires **eight 32×32 block multiplications**, not four:
 
