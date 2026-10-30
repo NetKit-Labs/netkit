@@ -14,7 +14,41 @@ Evaluate **dual-core generalized matrix multiplication (GEMM)** for NetKit's Esp
 
 **Goal:** measure whether partitioning *one* matrix multiplication over the two high-performance cores improves *single-inference latency*. This is distinct from running two independent model instances on different cores, which primarily improves aggregate throughput.
 
-**Priority:** a practical, reusable multicore GEMM kernel is more relevant here than a dependency-aware, multithreaded graph scheduler. Leave NetKit's graph interpreter/AOT forward pass sequential; parallelize selected expensive kernels internally.
+**Priority:** first enable and benchmark the **upstream multicore ESP-NN convolution** capability that NetKit currently lacks; next investigate custom multicore GEMM; consider a dependency-aware graph scheduler only if models justify it. A practical, reusable multicore GEMM kernel is more relevant than a dependency-aware, multithreaded graph scheduler. Leave NetKit's graph interpreter/AOT forward pass sequential; parallelize selected expensive kernels internally.
+
+## Current NetKit convolution execution (verified source audit, October 29, 2026)
+
+**Both NetKit's ESP32-S3 and ESP32-P4 on-device INT8 convolution paths currently run on a single CPU core.** This describes the **NetKit builds**, not the capabilities of newer upstream ESP-NN. It does not imply that the ESP32-S3 or P4 is a single-core device.
+
+| NetKit board | Current convolution path | Dual-core convolution enabled? | Evidence |
+|---|---|---|---|
+| **XIAO ESP32-S3 (Xtensa)** | ESP-NN's optimized, chip-specific S3 assembly/C kernels | **No: single-core** | [S3 component's explicit ESP-NN source list](../boards/xiao-esp32s3/components/netkit/CMakeLists.txt) |
+| **ESP32-P4-Function-EV (RISC-V)** | ESP-NN portable/optimized C kernels; P4 PIE assembly presently disabled | **No: single-core** | [P4 component's explicit ESP-NN source list](../boards/esp32-p4-function-ev/components/netkit/CMakeLists.txt) and [KI-003](KNOWN_ISSUES.md#ki-003--esp32-p4-esp-nn-pie-asm-disabled-under-platformio-gas) |
+
+**Why the current builds are single-core:**
+
+1. [`tools/fetch_esp_nn.sh`](../tools/fetch_esp_nn.sh) pins ESP-NN to `d45b843ca5f873ca9d0706ab0e7f14eafd132e98` unless explicitly overridden. At this pinned revision, `include/esp_nn_multicore.h` and `src/common/esp_nn_multicore.c` are absent; the pinned S3 convolution code also does not call the newer dual-core API.
+2. Neither [S3 component](../boards/xiao-esp32s3/components/netkit/CMakeLists.txt) nor [P4 component](../boards/esp32-p4-function-ev/components/netkit/CMakeLists.txt) lists the newer `esp_nn_multicore.c` or related multicore wrapper/dispatcher sources. S3 chip-specific assembly optimization is **not** synonymous with dual-core execution.
+3. No `esp_nn_dual_core_enable()` invocation is present in the NetKit source tree as audited. Merely running a dual-core-capable ESP32 under FreeRTOS or linking ESP-NN does not activate the optional worker.
+4. P4 additionally does **not** currently use its highest-performance PIE assembly path because PlatformIO's assembler rejects some instructions. This is a **separate blocker** from multicore scheduling; solving only one issue must not be represented as solving both.
+
+The previously published S3/P4 [latency comparisons](STATUS.md) are therefore **single-core, optimized-backend comparisons** (S3 assembly; P4 portable ESP-NN), *not* measurements of ESP-NN dual-core convolution. No new on-device benchmark has been performed for this document.
+
+### New future-work priority 1: enable upstream dual-core ESP-NN convolution
+
+**Status: NOT IMPLEMENTED / NOT MEASURED IN NETKIT.** This is an **integration project**, not a proposal to write redundant custom convolution algorithms.
+
+- [ ] **Upgrade deliberately and pin reproducibly:** evaluate a newer, dual-core-capable upstream ESP-NN revision for both targets; record the new SHA and ESP-IDF/PlatformIO version. Inspect API changes, scratch requirements and existing kernels before changing the pin.
+- [ ] **Update both board build graphs:** integrate the new multicore worker and applicable convolution/depthwise wrappers and architecture-specific optimized kernels in the S3/P4 `CMakeLists.txt` files. Verify all required headers, macros, task configuration, and source files are included. Do not assume swapping the pin alone is sufficient.
+- [ ] **Opt in explicitly:** initialize the worker with `esp_nn_dual_core_enable()` once on the core running inference, before invoking supported kernels; confirm `esp_nn_dual_core_active()` and verify which kernels/shapes actually split work. Preserve the option to disable multicore for baseline and low-latency small operators.
+- [ ] **Address P4 optimized code separately:** resolve or use a compatible assembler/toolchain for PIE/QACC kernels; measure portable versus PIE single-core first, then dual-core. Do not compare P4 dual-core optimized kernels against an unfair portable baseline.
+- [ ] **Verify correctness and memory:** reproduce the existing NetKit and TFLM INT8 test inputs/results; test standard and depthwise convolution, output row/channel tails, non-splittable sizes, repeated invocations, stack/worker scratch, fallback, and core affinity.
+- [ ] **Benchmark fairly:** same model/weights, memory placement, clocks, compiler settings, core configuration, ESP-NN revision and optimized kernels for NetKit and TFLM peers; run **single-core versus dual-core** on both actual boards with raw timing logs, overhead and peak memory. Record absolute inference latency and real speedup, not just kernel microbenchmarks.
+- [ ] **Publish results only after measurement**, and update [STATUS.md](STATUS.md) / board README benchmarks with exact provenance. Keep the current published single-core measurements intact as historical baselines.
+
+Once these existing convolution capabilities are enabled and validated, proceed with **future-work priority 2: custom multicore INT8, INT16, and Float32 GEMM**, since these are not presently established ESP-NN/ESP-DSP dual-core library features.
+
+---
 
 ## Existing library capabilities: do not duplicate an established feature
 
@@ -35,7 +69,7 @@ The following table refers to **publicly inspected Espressif ESP-NN and ESP-DSP 
 **Current NetKit dependency/benchmark caveats:**
 
 - NetKit's Espressif INT8 implementation already invokes ESP-NN optimized kernels. Baseline NetKit/TFLM peers that both use ESP-NN are near parity ([STATUS.md](STATUS.md)); the existing numbers should **not** be represented as multicore results.
-- The NetKit [ESP-NN fetch script](../tools/fetch_esp_nn.sh) pins a specific upstream commit. The existing S3 board compilation assembles a specific set of ESP-NN source files; the new ESP-NN multicore runtime is **not automatically part of that build**. Audit and deliberately upgrade/integrate the backend before claiming dual-core convolution support in current NetKit firmware.
+- **Confirmed current state:** [NetKit's ESP-NN fetch script](../tools/fetch_esp_nn.sh) pins `d45b843ca5f873ca9d0706ab0e7f14eafd132e98`; current S3 and P4 on-device builds are **single-core for convolution**. See [Current NetKit convolution execution](#current-netkit-convolution-execution-verified-source-audit-october-29-2026) and its explicit integration checklist.
 - P4 peers presently use portable ESP-NN rather than optimized PIE assembly because of a PlatformIO assembler compatibility issue: [KI-003](KNOWN_ISSUES.md#ki-003--esp32-p4-esp-nn-pie-asm-disabled-under-platformio-gas). Resolve or account for this before drawing performance conclusions about RISC-V optimized or multicore kernels.
 - The Pi Zero 2 W is a **four-core Cortex-A53 Linux MPU**, not the primary target here. Its existing TF Lite/XNNPACK comparison intentionally uses **one thread** ([board setup](../boards/pi-zero-2w/README.md)). Regular TF Lite/LiteRT with XNNPACK is the more relevant peer on that board than TFLM; a multicore MPU experiment needs a separate thread-count-controlled benchmark.
 
@@ -96,7 +130,8 @@ A 64×64 × 64×64 example is a **correctness and initial timing fixture**, not 
 
 ## Proposed implementation stages (all future)
 
-- [ ] **Audit actual versions and baselines.** Record NetKit's ESP-NN pinned SHA, TFLM peer versions, ESP-IDF / PlatformIO versions, clocks, backend selection, build flags, memory placement, and whether ESP-NN's optional dual-core convolution is actually integrated/enabled.
+- [ ] **Complete priority 1, dual-core ESP-NN convolution integration and benchmarking above.** The current S3/P4 builds are single-core; do not mark this complete until verified on-device.
+- [ ] **Audit GEMM versions and baselines.** Record the new ESP-NN pinned SHA, TFLM peer versions, ESP-IDF / PlatformIO versions, clocks, backend selection, build flags, and memory placement.
 - [ ] **Establish single-core GEMM baseline.** On both S3 and P4, compare NetKit's suitable existing kernels with **ESP-DSP Float32/INT16** and **ESP-NN INT8 FC/batched FC** where shapes/quantization match. Avoid comparing non-equivalent operations or dtypes.
 - [ ] **Prototype a shared, row-partitioned dual-core GEMM dispatcher** (two cores, persistent worker, threshold/fallback) with **Float32 and INT8** microkernels. Keep build-time feature opt-in and no change to existing model execution by default.
 - [ ] **Prototype INT16 GEMM independently**; implement full INT16 runtime/packager functionality only as a separate dtype roadmap item.
