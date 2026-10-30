@@ -69,6 +69,8 @@ When float16 / int16 / int4 land, expect:
 
 Float32 remains the default for models without a dedicated int8 export — see [NK_FORMAT.md](NK_FORMAT.md) and [STATUS.md](STATUS.md).
 
+The proposed [ESP32-S3 / ESP32-P4 multicore GEMM work](MULTICORE_GEMM_FUTURE_WORK.md) covers **INT8, INT16, and Float32** kernels. This is **future work**; an independent INT16 GEMM prototype would **not** mean end-to-end INT16 model inference is implemented.
+
 ## API surface
 
 Float32 models use float I/O; int8 models use int8 I/O:
