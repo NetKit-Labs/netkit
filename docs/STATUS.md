@@ -302,3 +302,4 @@ Highlights:
 - **KI-003** — ESP32-P4 ESP-NN PIE asm disabled under PlatformIO gas
 - **KI-004** — YOLOX detection accuracy (training / calibration)
 - **KI-D04** — `mcu_risc` on-device peer A/B still TBD (S3 / KI-D03 done)
+- **Future design only:** [multicore GEMM on ESP32-S3 / ESP32-P4](MULTICORE_GEMM_FUTURE_WORK.md) — proposed dual-core INT8, INT16, and Float32 kernels; **not implemented or measured**. ESP-NN multicore convolution is upstream capability, not an assertion about NetKit's currently pinned or enabled ESP-NN build. INT16 inference remains planned.
