@@ -463,7 +463,8 @@ Further work (not blockers for the core engine):
 - **YOLOX / detection accuracy** — more training and calibration (runtime and latency path already land)
 - **Additional modality fixtures** (voice and beyond)
 - **Numeric types:** float16, int16, int4; broader **int8** model coverage ([DATATYPES.md](docs/DATATYPES.md))
-- **Multicore GEMM (proposed, not implemented):** investigate dual-core **INT8/INT16/Float32** matrix multiplication on ESP32-S3 (Xtensa) and ESP32-P4 (RISC-V), distinct from existing ESP-NN dual-core convolution; verify real on-device latency/accuracy before adoption ([design note](docs/MULTICORE_GEMM_FUTURE_WORK.md))
+- **Multicore ESP-NN convolution (proposed integration):** S3 and P4 NetKit builds currently run convolution on **one core** despite newer ESP-NN supporting dual-core convolution. Upgrade/pin ESP-NN, enable worker support, and benchmark fairly; P4 PIE assembler issue remains separate ([source audit and plan](docs/MULTICORE_GEMM_FUTURE_WORK.md#current-netkit-convolution-execution-verified-source-audit-october-29-2026)).
+- **Multicore GEMM (proposed, not implemented):** investigate dual-core **INT8/INT16/Float32** matrix multiplication on ESP32-S3 (Xtensa) and ESP32-P4 (RISC-V); verify real on-device latency/accuracy before adoption ([design note](docs/MULTICORE_GEMM_FUTURE_WORK.md))
 - **Packager:** more fusion, layout, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
 - **Import / runtime:** broader ONNX op coverage, NPU offload paths
 
