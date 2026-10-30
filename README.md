@@ -215,6 +215,7 @@ Each board README covers toolchain, `make` / flash / UART (or SSH for the Linux 
 | **[Platforms](docs/PLATFORMS.md)** | Configure netkit for each supported device |
 | **[Boards](boards/README.md)** | On-device firmware index — Arm Cortex-M, Espressif (C3·S3·P4), Arm Cortex-A53 MPU |
 | **[Generic kernels](docs/GENERIC_KERNELS.md)** | How reference kernels are optimized for 32-bit+ devices |
+| **[Multicore GEMM — future work](docs/MULTICORE_GEMM_FUTURE_WORK.md)** | Proposed dual-core INT8/INT16/Float32 GEMM for ESP32-S3 and ESP32-P4; design and benchmark plan, **not implemented** |
 | **[CLI Reference](docs/CLI.md)** | `test`, `run`, and `inspect` (CPU build) |
 | **[Arena Memory](docs/ARENA.md)** | Bump allocator — sizing, alignment, reset |
 | **[Data Types](docs/DATATYPES.md)** | Float32 + int8 (cpu / Arm / Espressif / RISC); float16 / int16 / int4 roadmap |
@@ -462,6 +463,7 @@ Further work (not blockers for the core engine):
 - **YOLOX / detection accuracy** — more training and calibration (runtime and latency path already land)
 - **Additional modality fixtures** (voice and beyond)
 - **Numeric types:** float16, int16, int4; broader **int8** model coverage ([DATATYPES.md](docs/DATATYPES.md))
+- **Multicore GEMM (proposed, not implemented):** investigate dual-core **INT8/INT16/Float32** matrix multiplication on ESP32-S3 (Xtensa) and ESP32-P4 (RISC-V), distinct from existing ESP-NN dual-core convolution; verify real on-device latency/accuracy before adoption ([design note](docs/MULTICORE_GEMM_FUTURE_WORK.md))
 - **Packager:** more fusion, layout, target-specific profiles ([PHILOSOPHY.md](docs/PHILOSOPHY.md))
 - **Import / runtime:** broader ONNX op coverage, NPU offload paths
 
